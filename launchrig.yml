@@ -1,0 +1,63 @@
+# LaunchRig v1: physical Android device first
+version: 1
+
+project:
+  name: Official MWA FakeDapp Fixture
+  packageName: com.solana.mobilewalletadapter.fakedapp
+  apk: ./.launchrig/cache/apks/fakedapp-v2.2.0-release.apk
+  install: true
+  installPolicy: if-missing
+
+target:
+  # The published v2.2.0 fakedapp is hard-coded upstream to Solana testnet.
+  # This reference suite proves MWA plumbing; later product fixtures use devnet.
+  network: testnet
+
+device:
+  # Select a device at runtime with --device; never commit its serial.
+  requirePhysical: true
+  minimumApiLevel: 26
+
+wallet:
+  mode: reference-fakewallet
+  packageName: com.solana.mobilewalletadapter.fakewallet
+  apk: ./.launchrig/cache/apks/fakewallet-v1-v2.2.0-release.apk
+  install: true
+  installPolicy: if-missing
+
+# Deterministic reference-pair smoke tests. No faucet or on-chain send required.
+scenarios:
+  - id: authorize
+    kind: mwa-authorize
+    name: Authorize and return to dApp
+    flow: ./launchrig-flows/reference-authorize.yaml
+    timeoutMs: 120000
+  - id: siws
+    kind: mwa-siws
+    name: Sign In With Solana
+    flow: ./launchrig-flows/reference-siws.yaml
+    timeoutMs: 120000
+  - id: sign-message
+    kind: mwa-sign-message
+    name: Sign one fixture message
+    flow: ./launchrig-flows/reference-sign-message.yaml
+    timeoutMs: 120000
+  - id: reject
+    kind: mwa-reject
+    name: Reject and recover cleanly
+    flow: ./launchrig-flows/reference-reject.yaml
+    timeoutMs: 120000
+
+artifacts:
+  directory: ./.launchrig/results
+  screenshots: failure
+  retention: 5
+
+privacy:
+  includeLogcat: false
+  logcatLines: 200
+  redactPatterns: []
+
+tooling:
+  # Pinned, checksum-verified Maestro cache. The whole .launchrig directory is gitignored.
+  maestro: ./.launchrig/tools/maestro-2.8.0/maestro/bin/maestro

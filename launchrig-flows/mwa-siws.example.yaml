@@ -1,0 +1,7 @@
+# Template only: replace the TODO selector before adding this flow to launchrig.yml.
+# Purpose: SIWS when the wallet advertises the capability
+appId: dev.launchrig.fixture
+---
+- launchApp:
+    clearState: false
+- assertVisible: "TODO: app-ready-selector"

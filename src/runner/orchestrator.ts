@@ -1,0 +1,509 @@
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type {
+  CheckResult,
+  DeviceSnapshot,
+  LaunchRigReport,
+  PackageSnapshot,
+  ResolvedLaunchRigConfig,
+  ScenarioConfig,
+} from "../types.js";
+import { AdbClient, selectDevice } from "../device/adb.js";
+import { createReport, createRunId } from "../report/model.js";
+import { writeReportArtifacts, type WrittenArtifacts } from "../report/write.js";
+import { redactText } from "../security/redact.js";
+import { sanitizeMaestroJunit } from "../security/maestro.js";
+import { adbCandidates, findExecutable, maestroCandidates } from "../utils/executable.js";
+import { MaestroClient } from "./maestro.js";
+
+export interface RunOptions {
+  deviceSerial?: string;
+  adbPath?: string;
+  maestroPath?: string;
+  scenarioId?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+export interface RunOutput {
+  report: LaunchRigReport;
+  artifacts: WrittenArtifacts;
+  exitCode: 0 | 1 | 3;
+}
+
+function result(input: Omit<CheckResult, "durationMs"> & { startedAt: number }): CheckResult {
+  const { startedAt, ...rest } = input;
+  return { ...rest, durationMs: Date.now() - startedAt };
+}
+
+function safeDetails(stdout: Buffer, stderr: Buffer, patterns: string[]): string | undefined {
+  const combined = [stdout.toString("utf8").trim(), stderr.toString("utf8").trim()].filter(Boolean).join("\n");
+  if (!combined) return undefined;
+  return redactText(combined, patterns).value.slice(0, 12000);
+}
+
+async function finalize(input: {
+  config: ResolvedLaunchRigConfig;
+  startedAt: Date;
+  runId: string;
+  runDirectory: string;
+  checks: CheckResult[];
+  device?: DeviceSnapshot;
+  app?: PackageSnapshot;
+  wallet?: PackageSnapshot;
+  setupError?: boolean;
+  mwaCoverageComplete?: boolean;
+}): Promise<RunOutput> {
+  const completedAt = new Date();
+  const report = createReport({
+    runId: input.runId,
+    project: input.config.project.name,
+    packageName: input.config.project.packageName,
+    network: input.config.target.network,
+    startedAt: input.startedAt,
+    completedAt,
+    checks: input.checks,
+    ...(input.app ? { app: input.app } : {}),
+    ...(input.wallet ? { wallet: input.wallet } : {}),
+    ...(input.device ? { device: input.device } : {}),
+    ...(input.setupError ? { setupError: true } : {}),
+    ...(input.mwaCoverageComplete ? { mwaCoverageComplete: true } : {}),
+  });
+  const artifacts = await writeReportArtifacts(report, input.runDirectory, input.config.privacy.redactPatterns);
+  return {
+    report,
+    artifacts,
+    exitCode: report.outcome === "passed" ? 0 : report.outcome === "failed" ? 1 : 3,
+  };
+}
+
+async function captureFailureEvidence(input: {
+  adb: AdbClient;
+  serial: string;
+  scenario: ScenarioConfig;
+  scenarioDirectory: string;
+  config: ResolvedLaunchRigConfig;
+  failed: boolean;
+}): Promise<string[]> {
+  const artifacts: string[] = [];
+  const shouldCaptureScreenshot =
+    input.config.artifacts.screenshots === "always" ||
+    (input.config.artifacts.screenshots === "failure" && input.failed);
+  if (shouldCaptureScreenshot) {
+    const screenshot = await input.adb.screenshot(input.serial);
+    if (screenshot.exitCode === 0 && screenshot.stdout.length > 0) {
+      const screenshotPath = path.join(input.scenarioDirectory, "failure.png");
+      await writeFile(screenshotPath, screenshot.stdout);
+      artifacts.push(path.relative(input.config.resolvedArtifactDirectory, screenshotPath));
+    }
+  }
+  if (input.failed && input.config.privacy.includeLogcat) {
+    const logcat = await input.adb.logcat(
+      input.serial,
+      input.config.privacy.logcatLines,
+      input.config.project.packageName,
+    );
+    if (logcat.exitCode === 0) {
+      const logPath = path.join(input.scenarioDirectory, "logcat.txt");
+      const sanitized = redactText(logcat.stdout.toString("utf8"), input.config.privacy.redactPatterns).value;
+      await writeFile(logPath, sanitized.slice(0, 512 * 1024), "utf8");
+      artifacts.push(path.relative(input.config.resolvedArtifactDirectory, logPath));
+    }
+  }
+  return artifacts;
+}
+
+export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: RunOptions = {}): Promise<RunOutput> {
+  const startedAt = new Date();
+  const runId = createRunId(startedAt);
+  const runDirectory = path.join(config.resolvedArtifactDirectory, runId);
+  await mkdir(runDirectory, { recursive: true });
+  const checks: CheckResult[] = [];
+  const env = options.env ?? process.env;
+  let deviceSnapshot: DeviceSnapshot | undefined;
+  let appSnapshot: PackageSnapshot | undefined;
+  let walletSnapshot: PackageSnapshot | undefined;
+
+  const adbStarted = Date.now();
+  const adbPath = await findExecutable(
+    "adb",
+    options.adbPath ?? config.tooling.adb ?? env.LAUNCHRIG_ADB_PATH ?? env.LAUNCHRIG_ADB,
+    adbCandidates(env),
+    env,
+  );
+  if (!adbPath) {
+    checks.push(
+      result({
+        id: "tool.adb",
+        name: "ADB available",
+        status: "fail",
+        required: true,
+        startedAt: adbStarted,
+        summary: "ADB was not found. Install Android Platform Tools or set LAUNCHRIG_ADB_PATH.",
+      }),
+    );
+    return await finalize({ config, startedAt, runId, runDirectory, checks, setupError: true });
+  }
+
+  const adb = new AdbClient(adbPath);
+  try {
+    const version = await adb.version();
+    checks.push(
+      result({
+        id: "tool.adb",
+        name: "ADB available",
+        status: "pass",
+        required: true,
+        startedAt: adbStarted,
+        summary: version.split(/\r?\n/)[0] ?? "ADB available",
+      }),
+    );
+  } catch (error) {
+    checks.push(
+      result({
+        id: "tool.adb",
+        name: "ADB available",
+        status: "fail",
+        required: true,
+        startedAt: adbStarted,
+        summary: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return await finalize({ config, startedAt, runId, runDirectory, checks, setupError: true });
+  }
+
+  const deviceStarted = Date.now();
+  let serial: string;
+  try {
+    const devices = await adb.listDevices();
+    const selected = selectDevice(
+      devices,
+      options.deviceSerial ?? env.ANDROID_SERIAL,
+      config.device.requirePhysical,
+    );
+    serial = selected.serial;
+    deviceSnapshot = await adb.snapshot(selected);
+    checks.push(
+      result({
+        id: "device.connected",
+        name: "Authorized physical Android device",
+        status: deviceSnapshot.isEmulator && config.device.requirePhysical ? "fail" : "pass",
+        required: true,
+        startedAt: deviceStarted,
+        summary: deviceSnapshot.manufacturer + " " + deviceSnapshot.model + " connected over USB/ADB",
+      }),
+    );
+  } catch (error) {
+    checks.push(
+      result({
+        id: "device.connected",
+        name: "Authorized physical Android device",
+        status: "fail",
+        required: true,
+        startedAt: deviceStarted,
+        summary: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return await finalize({ config, startedAt, runId, runDirectory, checks, setupError: true });
+  }
+
+  const apiStarted = Date.now();
+  const apiPass = deviceSnapshot.apiLevel >= config.device.minimumApiLevel;
+  checks.push(
+    result({
+      id: "device.api",
+      name: "Android API compatibility",
+      status: apiPass ? "pass" : "fail",
+      required: true,
+      startedAt: apiStarted,
+      summary: apiPass
+        ? "API " + deviceSnapshot.apiLevel + " meets the minimum " + config.device.minimumApiLevel
+        : "API " + deviceSnapshot.apiLevel + " is below the minimum " + config.device.minimumApiLevel,
+    }),
+  );
+
+  const appPresentBeforeInstall = await adb.isPackageInstalled(serial, config.project.packageName);
+  if (config.project.install && config.resolvedApk) {
+    const installStarted = Date.now();
+    if (appPresentBeforeInstall && config.project.installPolicy === "if-missing") {
+      checks.push(
+        result({
+          id: "app.install",
+          name: "Install app APK",
+          status: "pass",
+          required: true,
+          startedAt: installStarted,
+          summary: "App already installed; reinstall skipped by if-missing policy",
+        }),
+      );
+    } else {
+      const install = await adb.installApk(serial, config.resolvedApk);
+      const installDetails = safeDetails(install.stdout, install.stderr, config.privacy.redactPatterns);
+      checks.push(
+        result({
+          id: "app.install",
+          name: "Install app APK",
+          status: install.exitCode === 0 ? "pass" : "fail",
+          required: true,
+          startedAt: installStarted,
+          summary: install.exitCode === 0 ? "APK installed without clearing app data" : "ADB could not install the APK",
+          ...(installDetails ? { details: installDetails } : {}),
+        }),
+      );
+    }
+  }
+
+  const appStarted = Date.now();
+  const appInstalled = await adb.isPackageInstalled(serial, config.project.packageName);
+  if (appInstalled) appSnapshot = await adb.packageSnapshot(serial, config.project.packageName);
+  checks.push(
+    result({
+      id: "app.installed",
+      name: "App under test installed",
+      status: appInstalled ? "pass" : "fail",
+      required: true,
+      startedAt: appStarted,
+      summary: appInstalled
+        ? config.project.packageName + " is installed"
+        : config.project.packageName + " is not installed on the selected phone",
+    }),
+  );
+
+  if (config.wallet.packageName) {
+    const walletPresentBeforeInstall = await adb.isPackageInstalled(serial, config.wallet.packageName);
+    if (config.wallet.install && config.resolvedWalletApk) {
+      const walletInstallStarted = Date.now();
+      if (walletPresentBeforeInstall && config.wallet.installPolicy === "if-missing") {
+        checks.push(
+          result({
+            id: "wallet.install",
+            name: "Install allowlisted test wallet APK",
+            status: "pass",
+            required: true,
+            startedAt: walletInstallStarted,
+            summary: "Test wallet already installed; reinstall skipped by if-missing policy",
+          }),
+        );
+      } else {
+        const walletInstall = await adb.installApk(serial, config.resolvedWalletApk);
+        const walletInstallDetails = safeDetails(
+          walletInstall.stdout,
+          walletInstall.stderr,
+          config.privacy.redactPatterns,
+        );
+        checks.push(
+          result({
+            id: "wallet.install",
+            name: "Install allowlisted test wallet APK",
+            status: walletInstall.exitCode === 0 ? "pass" : "fail",
+            required: true,
+            startedAt: walletInstallStarted,
+            summary:
+              walletInstall.exitCode === 0
+                ? "Test wallet installed without clearing its data"
+                : "ADB could not install the test wallet APK",
+            ...(walletInstallDetails ? { details: walletInstallDetails } : {}),
+          }),
+        );
+      }
+    }
+    const walletStarted = Date.now();
+    const walletInstalled = await adb.isPackageInstalled(serial, config.wallet.packageName);
+    if (walletInstalled) walletSnapshot = await adb.packageSnapshot(serial, config.wallet.packageName);
+    checks.push(
+      result({
+        id: "wallet.installed",
+        name:
+          config.wallet.mode === "mock-mwa"
+            ? "Mock MWA Wallet installed"
+            : config.wallet.mode === "reference-fakewallet"
+              ? "Reference MWA fake wallet installed"
+              : "Wallet installed",
+        status: walletInstalled ? "pass" : "fail",
+        required: config.scenarios.length > 0,
+        startedAt: walletStarted,
+        summary: walletInstalled
+          ? config.wallet.packageName + " is installed"
+          : config.wallet.packageName + " is not installed on the selected phone",
+      }),
+    );
+  }
+
+  let scenarios = config.scenarios;
+  if (options.scenarioId) {
+    scenarios = scenarios.filter((scenario) => scenario.id === options.scenarioId);
+    if (scenarios.length === 0) {
+      checks.push(
+        result({
+          id: "scenario.selection",
+          name: "Scenario selection",
+          status: "fail",
+          required: true,
+          startedAt: Date.now(),
+          summary: "Scenario " + options.scenarioId + " does not exist in the configuration",
+        }),
+      );
+    }
+  }
+
+  if (scenarios.length === 0 && !options.scenarioId) {
+    checks.push(
+      result({
+        id: "scenario.none",
+        name: "MWA scenarios configured",
+        status: "warn",
+        required: false,
+        startedAt: Date.now(),
+        summary: "Device checks ran, but no Maestro/MWA flows are configured yet.",
+      }),
+    );
+  }
+
+  if (scenarios.length > 0) {
+    const maestroStarted = Date.now();
+    const maestroPath = await findExecutable(
+      "maestro",
+      options.maestroPath ?? config.tooling.maestro ?? env.LAUNCHRIG_MAESTRO_PATH,
+      maestroCandidates(),
+      env,
+    );
+    if (!maestroPath) {
+      checks.push(
+        result({
+          id: "tool.maestro",
+          name: "Maestro available",
+          status: "fail",
+          required: true,
+          startedAt: maestroStarted,
+          summary: "Maestro was not found. Install it or set LAUNCHRIG_MAESTRO_PATH.",
+        }),
+      );
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        ...(appSnapshot ? { app: appSnapshot } : {}),
+        ...(walletSnapshot ? { wallet: walletSnapshot } : {}),
+        setupError: true,
+      });
+    }
+    const maestro = new MaestroClient(maestroPath);
+    const maestroEnv = {
+      ...env,
+      PATH: path.dirname(adbPath) + path.delimiter + (env.PATH ?? ""),
+    };
+    const maestroVersion = await maestro.version(maestroEnv);
+    checks.push(
+      result({
+        id: "tool.maestro",
+        name: "Maestro available",
+        status: maestroVersion.exitCode === 0 ? "pass" : "fail",
+        required: true,
+        startedAt: maestroStarted,
+        summary:
+          maestroVersion.exitCode === 0
+            ? maestroVersion.stdout.toString("utf8").trim() || "Maestro available"
+            : "Maestro version check failed",
+      }),
+    );
+
+    for (const scenario of scenarios) {
+      const scenarioStarted = Date.now();
+      const scenarioDirectory = path.join(runDirectory, "scenarios", scenario.id);
+      if (config.wallet.mode === "reference-fakewallet" && config.wallet.packageName) {
+        const reset = await adb.forceStopPackage(serial, config.wallet.packageName);
+        if (reset.exitCode !== 0) {
+          const resetDetails = safeDetails(reset.stdout, reset.stderr, config.privacy.redactPatterns);
+          checks.push(
+            result({
+              id: "scenario." + scenario.id,
+              name: scenario.name,
+              status: "fail",
+              required: scenario.required,
+              startedAt: scenarioStarted,
+              summary: "Could not reset the allowlisted reference wallet before the flow",
+              ...(resetDetails ? { details: resetDetails } : {}),
+              reproduction: [
+                "Connect the same Android phone with USB debugging enabled.",
+                "Force-stop only " + config.wallet.packageName + ".",
+                "Run launchrig run --scenario " + scenario.id + ".",
+              ],
+            }),
+          );
+          continue;
+        }
+      }
+      const execution = await maestro.runFlow({
+        serial,
+        flowPath: scenario.resolvedFlow,
+        outputDirectory: scenarioDirectory,
+        timeoutMs: scenario.timeoutMs,
+        env: maestroEnv,
+      });
+      const failed = execution.exitCode !== 0;
+      const evidence = await captureFailureEvidence({
+        adb,
+        serial,
+        scenario,
+        scenarioDirectory,
+        config,
+        failed,
+      });
+      const maestroJunitPath = path.join(scenarioDirectory, "maestro-junit.xml");
+      try {
+        await access(maestroJunitPath);
+        const rawMaestroJunit = await readFile(maestroJunitPath, "utf8");
+        await writeFile(
+          maestroJunitPath,
+          sanitizeMaestroJunit(rawMaestroJunit, serial, config.privacy.redactPatterns),
+          "utf8",
+        );
+        evidence.unshift(path.relative(config.resolvedArtifactDirectory, maestroJunitPath));
+      } catch {
+        // The process output remains available in details when Maestro exits before writing JUnit.
+      }
+      const details = failed
+        ? safeDetails(execution.stdout, execution.stderr, config.privacy.redactPatterns)
+        : undefined;
+      checks.push(
+        result({
+          id: "scenario." + scenario.id,
+          name: scenario.name,
+          status: failed ? "fail" : "pass",
+          required: scenario.required,
+          startedAt: scenarioStarted,
+          summary: failed ? "Maestro flow failed" : "Maestro flow passed",
+          ...(details ? { details } : {}),
+          reproduction: [
+            "Connect the same Android phone with USB debugging enabled.",
+            config.wallet.mode === "mock-mwa"
+              ? "Authenticate Mock MWA Wallet before starting its 15-minute signing window."
+              : "Use only the configured reference test wallet for this fixture flow.",
+            "Run launchrig run --scenario " + scenario.id + ".",
+          ],
+          ...(evidence.length > 0 ? { artifacts: evidence } : {}),
+        }),
+      );
+    }
+  }
+
+  return await finalize({
+    config,
+    startedAt,
+    runId,
+    runDirectory,
+    checks,
+    device: deviceSnapshot,
+    ...(appSnapshot ? { app: appSnapshot } : {}),
+    ...(walletSnapshot ? { wallet: walletSnapshot } : {}),
+    mwaCoverageComplete:
+      ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"].every((kind) =>
+        scenarios.some((scenario) => scenario.kind === kind),
+      ) &&
+      scenarios.every((scenario) =>
+        !scenario.required || checks.some((check) => check.id === "scenario." + scenario.id && check.status === "pass"),
+      ),
+  });
+}

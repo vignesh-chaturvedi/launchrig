@@ -1,0 +1,26 @@
+appId: com.solana.mobilewalletadapter.fakedapp
+name: Reference MWA SIWS
+---
+- launchApp:
+    stopApp: true
+    clearState: false
+- extendedWaitUntil:
+    visible: "GET CAPABILITIES"
+    timeout: 15000
+- tapOn: "SIGN IN WITH SOLANA"
+- extendedWaitUntil:
+    visible: "Sign In Payload:"
+    timeout: 30000
+- assertVisible: "Sign into Fake dApp to do fake things!"
+- tapOn:
+    text: "^SIGN IN$"
+- extendedWaitUntil:
+    visible: "MWA 2.0"
+    timeout: 30000
+- assertVisible: "REAUTHORIZE"
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/cb_has_auth_token"
+    checked: true
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/btn_sign_msg_x1"
+    enabled: true

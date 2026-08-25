@@ -1,0 +1,23 @@
+{
+  "source": "https://github.com/solana-mobile/mobile-wallet-adapter/releases/tag/v2.2.0",
+  "tag": "v2.2.0",
+  "downloadedAt": "2026-08-25T06:27:00Z",
+  "fixtures": [
+    {
+      "name": "fakedapp-v2.2.0-release.apk",
+      "upstreamName": "fakedapp-release.apk",
+      "packageName": "com.solana.mobilewalletadapter.fakedapp",
+      "size": 9551283,
+      "sha256": "ceb5de2511bb61d89c2a3d46365b5acacf2ba22fd2ae6db85457eec16666403e",
+      "url": "https://github.com/solana-mobile/mobile-wallet-adapter/releases/download/v2.2.0/fakedapp-release.apk"
+    },
+    {
+      "name": "fakewallet-v1-v2.2.0-release.apk",
+      "upstreamName": "fakewallet-v1-release.apk",
+      "packageName": "com.solana.mobilewalletadapter.fakewallet",
+      "size": 11088490,
+      "sha256": "8951e22a09a91fb8525805e300d02b5685e03f7b4853d4295b9057c461ab59a2",
+      "url": "https://github.com/solana-mobile/mobile-wallet-adapter/releases/download/v2.2.0/fakewallet-v1-release.apk"
+    }
+  ]
+}

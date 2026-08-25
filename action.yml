@@ -1,0 +1,50 @@
+name: LaunchRig
+description: Validate or run LaunchRig release checks
+inputs:
+  command:
+    description: validate on hosted CI; run only on a self-hosted Android USB runner
+    required: false
+    default: validate
+  config:
+    description: Path to launchrig.yml inside the caller workspace
+    required: false
+    default: launchrig.yml
+  device:
+    description: Optional ADB serial for a self-hosted physical-device run
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Enable Corepack
+      shell: bash
+      run: corepack enable
+    - name: Install LaunchRig
+      shell: bash
+      run: pnpm --dir "$GITHUB_ACTION_PATH" install --frozen-lockfile
+    - name: Build LaunchRig
+      shell: bash
+      run: pnpm --dir "$GITHUB_ACTION_PATH" build
+    - name: Execute LaunchRig
+      shell: bash
+      env:
+        LAUNCHRIG_COMMAND: ${{ inputs.command }}
+        LAUNCHRIG_CONFIG: ${{ inputs.config }}
+        LAUNCHRIG_DEVICE: ${{ inputs.device }}
+      run: |
+        case "$LAUNCHRIG_COMMAND" in
+          validate)
+            node "$GITHUB_ACTION_PATH/dist/src/cli.js" validate --config "$GITHUB_WORKSPACE/$LAUNCHRIG_CONFIG"
+            ;;
+          run)
+            if [ -n "$LAUNCHRIG_DEVICE" ]; then
+              node "$GITHUB_ACTION_PATH/dist/src/cli.js" run --config "$GITHUB_WORKSPACE/$LAUNCHRIG_CONFIG" --device "$LAUNCHRIG_DEVICE"
+            else
+              node "$GITHUB_ACTION_PATH/dist/src/cli.js" run --config "$GITHUB_WORKSPACE/$LAUNCHRIG_CONFIG"
+            fi
+            ;;
+          *)
+            echo "command must be validate or run" >&2
+            exit 2
+            ;;
+        esac

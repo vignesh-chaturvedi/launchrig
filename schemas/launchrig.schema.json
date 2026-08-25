@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-v1.schema.json",
+  "title": "LaunchRig configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "project", "target", "device", "wallet", "scenarios", "artifacts", "privacy"],
+  "properties": {
+    "version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "packageName"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "packageName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$" },
+        "apk": { "type": "string", "minLength": 1 },
+        "install": { "type": "boolean", "default": false },
+        "installPolicy": { "enum": ["always", "if-missing"], "default": "always" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network"],
+      "properties": { "network": { "enum": ["devnet", "testnet"] } }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requirePhysical": { "type": "boolean", "default": true },
+        "minimumApiLevel": { "type": "integer", "minimum": 23, "default": 26 }
+      }
+    },
+    "wallet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["mock-mwa", "reference-fakewallet", "real"] },
+        "packageName": { "type": "string" },
+        "apk": { "type": "string", "minLength": 1 },
+        "install": { "type": "boolean", "default": false },
+        "installPolicy": { "enum": ["always", "if-missing"], "default": "always" }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "name", "flow"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "kind": { "enum": ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject", "custom"] },
+          "name": { "type": "string", "minLength": 1 },
+          "flow": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean", "default": true },
+          "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 600000, "default": 120000 }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory"],
+      "properties": {
+        "directory": { "type": "string", "minLength": 1 },
+        "screenshots": { "enum": ["failure", "always", "never"], "default": "failure" },
+        "retention": { "type": "integer", "minimum": 1, "maximum": 25, "default": 5 }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "includeLogcat": { "type": "boolean", "default": false },
+        "logcatLines": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 },
+        "redactPatterns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "tooling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "adb": { "type": "string" },
+        "maestro": { "type": "string" }
+      }
+    }
+  }
+}

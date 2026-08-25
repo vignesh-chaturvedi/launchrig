@@ -1,0 +1,35 @@
+appId: com.solana.mobilewalletadapter.fakedapp
+name: Reference MWA rejection recovery
+---
+- launchApp:
+    stopApp: true
+    clearState: false
+- extendedWaitUntil:
+    visible: "GET CAPABILITIES"
+    timeout: 15000
+- tapOn:
+    text: "^AUTHORIZE$"
+- extendedWaitUntil:
+    visible: "AUTHORIZE DAPP"
+    timeout: 30000
+- tapOn:
+    text: "^AUTHORIZE$"
+- extendedWaitUntil:
+    visible: "MWA 2.0"
+    timeout: 30000
+- tapOn: "SIGN MSG X1"
+- extendedWaitUntil:
+    visible: "SIGN MESSAGE\\(S\\)"
+    timeout: 30000
+- tapOn:
+    text: "^DECLINE$"
+- assertVisible: "Wallet request failed; check logcat for details"
+- extendedWaitUntil:
+    visible: "MWA 2.0"
+    timeout: 30000
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/cb_has_auth_token"
+    checked: true
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/btn_sign_msg_x1"
+    enabled: true
