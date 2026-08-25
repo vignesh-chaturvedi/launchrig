@@ -20,7 +20,31 @@ jobs:
       - run: pnpm run check
       - run: pnpm test
       - run: pnpm run build
+      - run: pnpm fixtures:fetch
       - run: node dist/src/cli.js validate --config launchrig.yml
+
+  fixture-app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/fixture-dapp
+    env:
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/fixture-dapp/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm run test
+      - run: pnpm run lint:check
+      - run: pnpm run format:check
 
   # Full `run` belongs on a later self-hosted runner physically attached to Android.
   # A GitHub-hosted runner cannot access the developer's USB phone.

@@ -4,13 +4,23 @@ import path from "node:path";
 import { ConfigError } from "./config/schema.js";
 import { doctor } from "./commands/doctor.js";
 import { initProject } from "./commands/init.js";
+import {
+  FixtureMatrixEnvironmentError,
+  runFixtureMatrix,
+  type RunFixtureMatrixOutput,
+} from "./commands/matrix.js";
 import { runProject } from "./commands/run.js";
 import { validateProject } from "./commands/validate.js";
+import { FixtureMatrixValidationError } from "./fixtures/matrix.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
 
 export interface CliIO {
   out(message: string): void;
   error(message: string): void;
+}
+
+export interface CliDependencies {
+  runFixtureMatrix?: typeof runFixtureMatrix;
 }
 
 const defaultIO: CliIO = {
@@ -26,6 +36,7 @@ const HELP = [
   "  launchrig validate [--config launchrig.yml] [--json]",
   "  launchrig doctor [--config launchrig.yml] [--device SERIAL] [--json]",
   "  launchrig run [--config launchrig.yml] [--device SERIAL] [--scenario ID]",
+  "  launchrig matrix [--device SERIAL] [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -33,6 +44,22 @@ const HELP = [
   "",
   "Exit codes: 0 pass, 1 test failure, 2 config/usage, 3 environment/device, 4 internal.",
 ].join("\n");
+
+function humanMatrix(value: RunFixtureMatrixOutput): string {
+  const lines = [
+    "LaunchRig fixture matrix: " + (value.evaluation.accepted ? "accepted" : "rejected"),
+    "app SHA-256: " + value.provenance.app.sha256,
+    "wallet SHA-256: " + value.provenance.wallet.sha256,
+  ];
+  for (const execution of value.executions) {
+    lines.push(
+      execution.variant + ": " + execution.output.report.outcome + ", exit " + execution.output.exitCode,
+      execution.variant + " JSON: " + execution.output.artifacts.json,
+    );
+  }
+  for (const issue of value.evaluation.issues) lines.push("- " + issue.message);
+  return lines.join("\n");
+}
 
 function humanDoctor(value: Awaited<ReturnType<typeof doctor>>): string {
   const lines = [value.ok ? "LaunchRig doctor: ready" : "LaunchRig doctor: action required"];
@@ -60,7 +87,11 @@ function humanDoctor(value: Awaited<ReturnType<typeof doctor>>): string {
   return lines.join("\n");
 }
 
-export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<number> {
+export async function runCli(
+  argv: string[],
+  io: CliIO = defaultIO,
+  dependencies: CliDependencies = {},
+): Promise<number> {
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -158,6 +189,17 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
       return output.exitCode;
     }
 
+    if (command === "matrix") {
+      const matrixRunner = dependencies.runFixtureMatrix ?? runFixtureMatrix;
+      const output = await matrixRunner({
+        ...(device ? { deviceSerial: device } : {}),
+        ...(adb ? { adbPath: adb } : {}),
+        ...(maestro ? { maestroPath: maestro } : {}),
+      });
+      io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanMatrix(output));
+      return output.exitCode;
+    }
+
     io.error("Unknown command: " + command);
     io.error(HELP);
     return 2;
@@ -165,6 +207,14 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
     if (error instanceof ConfigError) {
       io.error("Configuration error:\n" + error.issues.map((issue) => "- " + issue).join("\n"));
       return 2;
+    }
+    if (error instanceof FixtureMatrixValidationError) {
+      io.error("Fixture matrix error:\n" + error.issues.map((issue) => "- " + issue).join("\n"));
+      return 2;
+    }
+    if (error instanceof FixtureMatrixEnvironmentError) {
+      io.error("Fixture matrix environment error:\n" + error.issues.map((issue) => "- " + issue).join("\n"));
+      return 3;
     }
     io.error(error instanceof Error ? error.message : String(error));
     return 4;

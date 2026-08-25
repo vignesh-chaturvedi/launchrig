@@ -1,0 +1,70 @@
+# UNVERIFIED current-wallet compatibility lane.
+#
+# This pairs the official MWA v2.2.0 FakeDapp with the current Mock MWA
+# Wallet 1.0.1 APK built from source revision d444aff. It is not the
+# LaunchRig-controlled devnet fixture and must not be reported as that lane.
+#
+# Before running, open Mock MWA Wallet and authenticate manually. Authentication
+# enables signing for 15 minutes. Keep the current wallet as the selected MWA
+# handler if Android presents an app chooser.
+version: 1
+
+project:
+  name: "UNVERIFIED: Official MWA v2.2.0 FakeDapp with current Mock MWA Wallet"
+  packageName: com.solana.mobilewalletadapter.fakedapp
+  apk: ./.launchrig/cache/apks/fakedapp-v2.2.0-release.apk
+  install: true
+  installPolicy: if-missing
+
+target:
+  # The published v2.2.0 FakeDapp is hard-coded upstream to Solana testnet.
+  network: testnet
+
+device:
+  # Select a device at runtime with --device; never commit its serial.
+  requirePhysical: true
+  minimumApiLevel: 26
+
+wallet:
+  mode: mock-mwa
+  packageName: com.solana.mwallet
+  apk: ./.launchrig/cache/apks/mock-mwa-1.0.1-d444aff-debug.apk
+  install: true
+  # Preserve the key and the authentication setup of an existing installation.
+  installPolicy: if-missing
+
+# Compatibility probes only. No faucet or on-chain send is required.
+scenarios:
+  - id: authorize
+    kind: mwa-authorize
+    name: "UNVERIFIED current Mock MWA authorize compatibility"
+    flow: ./launchrig-flows/mock-reference-authorize.yaml
+    timeoutMs: 120000
+  - id: siws
+    kind: mwa-siws
+    name: "UNVERIFIED current Mock MWA SIWS compatibility"
+    flow: ./launchrig-flows/mock-reference-siws.yaml
+    timeoutMs: 120000
+  - id: sign-message
+    kind: mwa-sign-message
+    name: "UNVERIFIED current Mock MWA sign-message compatibility"
+    flow: ./launchrig-flows/mock-reference-sign-message.yaml
+    timeoutMs: 120000
+  - id: reject
+    kind: mwa-reject
+    name: "UNVERIFIED current Mock MWA rejection compatibility"
+    flow: ./launchrig-flows/mock-reference-reject.yaml
+    timeoutMs: 120000
+
+artifacts:
+  directory: ./.launchrig/results
+  screenshots: failure
+  retention: 5
+
+privacy:
+  includeLogcat: false
+  logcatLines: 200
+  redactPatterns: []
+
+tooling:
+  maestro: ./.launchrig/tools/maestro-2.8.0/maestro/bin/maestro

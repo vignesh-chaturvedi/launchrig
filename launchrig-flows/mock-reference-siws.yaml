@@ -1,0 +1,42 @@
+# UNVERIFIED compatibility probe for official MWA v2.2.0 FakeDapp and the
+# current Mock MWA Wallet. Authenticate the wallet manually before this flow.
+appId: com.solana.mobilewalletadapter.fakedapp
+name: Unverified current Mock MWA SIWS compatibility
+---
+- launchApp:
+    stopApp: true
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "com.solana.mobilewalletadapter.fakedapp:id/btn_get_capabilities"
+    timeout: 15000
+- tapOn:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/btn_sign_in"
+- tapOn:
+    text: "^Mock MWA Wallet$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "com.solana.mwallet:id/btn_approve"
+    timeout: 30000
+- assertVisible:
+    id: "com.solana.mwallet:id/text_subtitle"
+    text: "^wants you to sign in with your Solana account$"
+- tapOn:
+    id: "com.solana.mwallet:id/btn_approve"
+- extendedWaitUntil:
+    visible:
+      id: "com.solana.mobilewalletadapter.fakedapp:id/btn_reauthorize"
+    timeout: 30000
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/tv_session_version"
+    text: "^MWA 2\\.0$"
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/cb_has_auth_token"
+    checked: true
+- assertVisible:
+    id: "com.solana.mobilewalletadapter.fakedapp:id/btn_sign_msg_x1"
+    enabled: true

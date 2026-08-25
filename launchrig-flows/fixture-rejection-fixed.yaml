@@ -1,0 +1,74 @@
+appId: dev.launchrig.fixture
+name: Controlled wallet rejection recovery
+---
+- launchApp:
+    stopApp: true
+    clearState: false
+- openLink:
+    link: "launchrig://fixture/rejection?variant=fixed"
+- extendedWaitUntil:
+    visible:
+      id: "fixture-ready"
+      text: "^READY$"
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "^Connect wallet$"
+    commands:
+      - tapOn:
+          id: "connect-wallet"
+      - tapOn:
+          text: "^Mock MWA Wallet$"
+          optional: true
+      - tapOn:
+          text: "^Just once$"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "com.solana.mwallet:id/btn_connect"
+          timeout: 30000
+      - tapOn:
+          id: "com.solana.mwallet:id/btn_connect"
+- extendedWaitUntil:
+    visible:
+      id: "wallet-state"
+      text: "^CONNECTED$"
+    timeout: 30000
+- tapOn:
+    id: "request-rejection"
+- tapOn:
+    text: "^Mock MWA Wallet$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: "com.solana.mwallet:id/btn_connect"
+    commands:
+      - tapOn:
+          id: "com.solana.mwallet:id/btn_connect"
+- extendedWaitUntil:
+    visible:
+      id: "com.solana.mwallet:id/btn_cancel"
+    timeout: 30000
+- assertVisible:
+    id: "com.solana.mwallet:id/text_subtitle"
+    text: "^Sign message\\(s\\)$"
+- tapOn:
+    id: "com.solana.mwallet:id/btn_cancel"
+- extendedWaitUntil:
+    visible:
+      id: "request-pending"
+      text: "^false$"
+    timeout: 30000
+- assertVisible:
+    id: "rejection-recovered"
+    text: "^USER_REJECTED$"
+- assertVisible:
+    id: "request-action-enabled"
+    text: "^true$"
+- assertVisible:
+    id: "request-rejection"
+    enabled: true

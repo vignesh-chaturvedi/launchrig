@@ -18,6 +18,8 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm run build && node --test --test-concurrency=1 dist/test/*.test.js",
     "fixtures:fetch": "node scripts/fetch-mwa-fixtures.mjs",
+    "fixtures:build-dapp": "node scripts/build-fixture-dapp.mjs",
+    "fixtures:build-mock-wallet": "node scripts/build-mock-mwa-fixture.mjs",
     "results:sanitize": "node scripts/sanitize-results.mjs",
     "launchrig": "node dist/src/cli.js"
   },
