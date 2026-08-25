@@ -28,6 +28,7 @@ const MOCK_MWA_MANIFEST = "fixtures/mock-mwa-main.json";
 const REJECTION_RECOVERY_CASE_ID = "rejection-recovery";
 const EXPECTED_APP_PACKAGE = "dev.launchrig.fixture";
 const EXPECTED_WALLET_PACKAGE = "com.solana.mwallet";
+const EXPECTED_BROKEN_FAILURE_MARKER = "id: request-pending";
 const EXECUTION_ORDER: readonly FixtureMatrixVariant[] = ["broken", "fixed"];
 
 export type FixtureMatrixProjectRunner = (configPath: string, options?: RunOptions) => Promise<RunOutput>;
@@ -528,17 +529,15 @@ async function preflightFixtureMatrix(input: {
     }),
   );
   const variants = Object.fromEntries(variantEntries) as Record<FixtureMatrixVariant, PreparedVariant>;
-  const normalizedBrokenFlow = variants.broken.flowSource.replace(
-    matrixCase.expectations.broken.launchUri,
-    "launchrig://fixture/rejection?variant=VARIANT",
-  );
-  const normalizedFixedFlow = variants.fixed.flowSource.replace(
-    matrixCase.expectations.fixed.launchUri,
-    "launchrig://fixture/rejection?variant=VARIANT",
-  );
+  const normalizedBrokenFlow = variants.broken.flowSource
+    .replace(matrixCase.expectations.broken.launchUri, "launchrig://fixture/rejection?variant=VARIANT")
+    .replace('text: "^broken$"', 'text: "^VARIANT$"');
+  const normalizedFixedFlow = variants.fixed.flowSource
+    .replace(matrixCase.expectations.fixed.launchUri, "launchrig://fixture/rejection?variant=VARIANT")
+    .replace('text: "^fixed$"', 'text: "^VARIANT$"');
   if (normalizedBrokenFlow !== normalizedFixedFlow) {
     throw new FixtureMatrixValidationError([
-      "Broken and fixed fixture flows must be identical except for the controlled variant URI",
+      "Broken and fixed fixture flows must be identical except for the controlled variant URI and label",
     ]);
   }
   const [appProvenance, walletProvenance] = await Promise.all([
@@ -654,6 +653,15 @@ function validateExecutionEvidence(
     const check = matches[0];
     if (!check || !check.required || check.status !== "pass") {
       issues.push(prefix + checkId + " evidence check must be required and pass");
+    }
+  }
+  if (execution.variant === "broken") {
+    const target = report.checks.find((check) => check.id === "scenario." + execution.scenarioId);
+    if (
+      target?.status === "fail" &&
+      (!target.details?.includes("Assertion is false") || !target.details.includes(EXPECTED_BROKEN_FAILURE_MARKER))
+    ) {
+      issues.push(prefix + "must fail at the controlled request-pending recovery assertion");
     }
   }
   return issues;

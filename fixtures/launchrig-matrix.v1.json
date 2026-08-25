@@ -9,7 +9,7 @@
         "broken": {
           "launchUri": "launchrig://fixture/rejection?variant=broken",
           "configSha256": "f0fa915ee548fde354956c1a4bf5b3dc49f54e68b203e0b806810f30253cdfd5",
-          "flowSha256": "d64cd86713348caf96cc1e5740abc046b47cbdabcd05f48f1a799257779d4cb5",
+          "flowSha256": "dc50c55a9646ab917fefb32c6cafb7d5e99b4acec4f82971d72a0db00e0990d9",
           "scenarioStatus": "fail",
           "outcome": "failed",
           "exitCode": 1
@@ -17,7 +17,7 @@
         "fixed": {
           "launchUri": "launchrig://fixture/rejection?variant=fixed",
           "configSha256": "d5db65006080f544dd7f7399e96411170b3b9d29576985a0f7c7f47133b66d42",
-          "flowSha256": "51c86ab76aa0a5c423997311c1a1517687ddc68db6e24f9334f1fb35a90c4d15",
+          "flowSha256": "e120f0866fa3e634a5c6798e0941bcfdeaa55b61adfc45d46f1cf8d38d9cd49f",
           "scenarioStatus": "pass",
           "outcome": "passed",
           "exitCode": 0

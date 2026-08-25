@@ -1,15 +1,17 @@
 appId: dev.launchrig.fixture
 name: Controlled wallet rejection recovery
 ---
-- launchApp:
-    stopApp: true
-    clearState: false
 - openLink:
     link: "launchrig://fixture/rejection?variant=fixed"
 - extendedWaitUntil:
     visible:
       id: "fixture-ready"
       text: "^READY$"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "fixture-variant"
+      text: "^fixed$"
     timeout: 15000
 - runFlow:
     when:

@@ -226,6 +226,7 @@ function outputFor(workspace: MatrixWorkspace, variant: FixtureMatrixVariant): R
         required: true,
         durationMs: 1000,
         summary: broken ? "Healthy recovery assertions failed" : "Healthy recovery assertions passed",
+        ...(broken ? { details: 'Assertion is false: "^false$", id: request-pending is visible' } : {}),
       },
     ],
     device: {
@@ -320,12 +321,18 @@ test("broken reinstalls the verified pair and fixed reuses it", async () => {
 
 test("variant flows differ only by deep link and assert the same healthy recovery", async () => {
   const [broken, fixed] = await Promise.all([readFile(BROKEN_FLOW, "utf8"), readFile(FIXED_FLOW, "utf8")]);
-  const normalizedBroken = broken.replace("variant=broken", "variant=VARIANT");
-  const normalizedFixed = fixed.replace("variant=fixed", "variant=VARIANT");
+  const normalizedBroken = broken
+    .replace("variant=broken", "variant=VARIANT")
+    .replace('text: "^broken$"', 'text: "^VARIANT$"');
+  const normalizedFixed = fixed
+    .replace("variant=fixed", "variant=VARIANT")
+    .replace('text: "^fixed$"', 'text: "^VARIANT$"');
 
   assert.equal(normalizedBroken, normalizedFixed);
   assert.match(broken, /launchrig:\/\/fixture\/rejection\?variant=broken/);
   assert.match(fixed, /launchrig:\/\/fixture\/rejection\?variant=fixed/);
+  assert.match(broken, /id: "fixture-variant"[\s\S]*text: "\^broken\$"/);
+  assert.match(fixed, /id: "fixture-variant"[\s\S]*text: "\^fixed\$"/);
   for (const source of [broken, fixed]) {
     assert.match(
       source,
@@ -539,6 +546,23 @@ test("matrix rejects missing, emulated, and wrong-version execution evidence", a
       );
     });
   }
+});
+
+test("matrix rejects a broken run that fails before the controlled recovery assertion", async (context) => {
+  const workspace = await createMatrixWorkspace(context);
+  const brokenOutput = outputFor(workspace, "broken");
+  const target = brokenOutput.report.checks.find((check) => check.id === "scenario." + SCENARIO_ID);
+  assert.ok(target);
+  target.details = 'Assertion is false: "^broken$", id: fixture-variant is visible';
+  await assert.rejects(
+    runFixtureMatrix({
+      cwd: workspace.root,
+      projectRunner: fakeProjectRunner(workspace, brokenOutput, outputFor(workspace, "fixed"), []),
+    }),
+    (error: unknown) =>
+      error instanceof FixtureMatrixValidationError &&
+      error.issues.some((issue) => issue.includes("must fail at the controlled request-pending recovery assertion")),
+  );
 });
 
 test("missing cached matrix artifacts retain environment exit code three", async (context) => {
