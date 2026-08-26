@@ -92,8 +92,23 @@ test("Mock MWA validates its staged APK before replacing the stable artifact", a
 
 test("dApp builder classifies staged bytes and keeps a candidate off the stable alias", async () => {
   const source = await readFile(path.join(process.cwd(), "scripts", "build-fixture-dapp.mjs"), "utf8");
+  const sourceSnapshotIndex = source.indexOf("const fixtureSource = await fixtureSourceSnapshot();");
+  const frozenInstallIndex = source.indexOf('await run(pnpm, ["install", "--frozen-lockfile", "--force"]');
+  const sourceVerificationIndex = source.indexOf("assertUnchangedSource(fixtureSource, await fixtureSourceSnapshot());");
+  const artifactStagingIndex = source.indexOf("await unlink(temporaryApk)");
 
-  assert.match(source, /const classification = classifyArtifact\(/);
+  assert.ok(sourceSnapshotIndex >= 0);
+  assert.ok(frozenInstallIndex > sourceSnapshotIndex);
+  assert.ok(sourceVerificationIndex > frozenInstallIndex);
+  assert.ok(artifactStagingIndex > sourceVerificationIndex);
+  assert.match(source, /"status", "--porcelain=v1", "--untracked-files=all"/);
+  assert.match(source, /"ls-files", "-z", "--cached", "--others", "--exclude-standard"/);
+  assert.match(source, /sourceStatusSha256/);
+  assert.match(source, /sourceTreeSha256/);
+  assert.match(source, /\.\.\.fixtureSource/);
+  assert.doesNotMatch(source, /installedModulesPath/);
+  assert.match(source, /fixtureManifest\.validatedArtifact\s*\?\s*classifyArtifact\(/);
+  assert.match(source, /status: "candidate"[\s\S]*expected: null[\s\S]*actual: actualArtifact/);
   assert.match(source, /classification\.status === "validated"\s*\? targetApk/);
   assert.match(source, /candidateArtifactName\(artifactName, digest\)/);
   assert.match(source, /status: classification\.status/);

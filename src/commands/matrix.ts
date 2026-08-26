@@ -20,16 +20,78 @@ import { runProject } from "./run.js";
 import type { RunOptions, RunOutput } from "../runner/orchestrator.js";
 
 export const DEFAULT_FIXTURE_MATRIX_MANIFEST = "fixtures/launchrig-matrix.v1.json";
-export const DEFAULT_BROKEN_FIXTURE_CONFIG = "launchrig-fixture-broken.yml";
-export const DEFAULT_FIXED_FIXTURE_CONFIG = "launchrig-fixture-fixed.yml";
 
-const CONTROLLED_DAPP_MANIFEST = "fixtures/launchrig-dapp-v0.1.0.json";
+const CONTROLLED_DAPP_MANIFEST = "fixtures/launchrig-dapp-v0.2.0.json";
 const MOCK_MWA_MANIFEST = "fixtures/mock-mwa-main.json";
-const REJECTION_RECOVERY_CASE_ID = "rejection-recovery";
 const EXPECTED_APP_PACKAGE = "dev.launchrig.fixture";
 const EXPECTED_WALLET_PACKAGE = "com.solana.mwallet";
-const EXPECTED_BROKEN_FAILURE_MARKER = "id: request-pending";
 const EXECUTION_ORDER: readonly FixtureMatrixVariant[] = ["broken", "fixed"];
+
+interface ControlledCaseContract {
+  id: string;
+  scenarioId: string;
+  scenarioKind: string;
+  configPaths: Record<FixtureMatrixVariant, string>;
+  flowPaths: Record<FixtureMatrixVariant, string>;
+  installPolicies: Record<FixtureMatrixVariant, ResolvedLaunchRigConfig["project"]["installPolicy"]>;
+  brokenFailureMarker: string;
+  openLinkCount: number;
+  requiresProcessDeath: boolean;
+}
+
+export const CONTROLLED_CASES = [
+  {
+    id: "rejection-recovery",
+    scenarioId: "rejection-recovery",
+    scenarioKind: "mwa-reject",
+    configPaths: {
+      broken: "launchrig-fixture-rejection-broken.yml",
+      fixed: "launchrig-fixture-rejection-fixed.yml",
+    },
+    flowPaths: {
+      broken: "launchrig-flows/fixture-rejection-broken.yaml",
+      fixed: "launchrig-flows/fixture-rejection-fixed.yaml",
+    },
+    installPolicies: { broken: "always", fixed: "if-missing" },
+    brokenFailureMarker: "id: request-pending",
+    openLinkCount: 1,
+    requiresProcessDeath: false,
+  },
+  {
+    id: "stale-authorization-recovery",
+    scenarioId: "stale-authorization-recovery",
+    scenarioKind: "mwa-stale-authorization",
+    configPaths: {
+      broken: "launchrig-fixture-stale-authorization-broken.yml",
+      fixed: "launchrig-fixture-stale-authorization-fixed.yml",
+    },
+    flowPaths: {
+      broken: "launchrig-flows/fixture-stale-authorization-broken.yaml",
+      fixed: "launchrig-flows/fixture-stale-authorization-fixed.yaml",
+    },
+    installPolicies: { broken: "if-missing", fixed: "if-missing" },
+    brokenFailureMarker: "id: reauthorization-pending",
+    openLinkCount: 1,
+    requiresProcessDeath: false,
+  },
+  {
+    id: "process-death-recovery",
+    scenarioId: "process-death-recovery",
+    scenarioKind: "mwa-process-death",
+    configPaths: {
+      broken: "launchrig-fixture-process-death-broken.yml",
+      fixed: "launchrig-fixture-process-death-fixed.yml",
+    },
+    flowPaths: {
+      broken: "launchrig-flows/fixture-process-death-broken.yaml",
+      fixed: "launchrig-flows/fixture-process-death-fixed.yaml",
+    },
+    installPolicies: { broken: "if-missing", fixed: "if-missing" },
+    brokenFailureMarker: "id: process-death-state",
+    openLinkCount: 2,
+    requiresProcessDeath: true,
+  },
+] as const satisfies readonly ControlledCaseContract[];
 
 export type FixtureMatrixProjectRunner = (configPath: string, options?: RunOptions) => Promise<RunOutput>;
 
@@ -63,6 +125,12 @@ export interface FixtureVariantProvenance {
 export interface FixtureMatrixProvenance {
   app: FixtureArtifactProvenance;
   wallet: FixtureArtifactProvenance;
+  cases: FixtureMatrixCaseProvenance[];
+}
+
+export interface FixtureMatrixCaseProvenance {
+  caseId: string;
+  scenarioId: string;
   variants: Record<FixtureMatrixVariant, FixtureVariantProvenance>;
 }
 
@@ -108,7 +176,7 @@ interface FixtureArtifactContract {
   size: number;
   sha256: string;
   network?: string;
-  deepLinks?: Record<FixtureMatrixVariant, string>;
+  deepLinks?: Record<string, Record<FixtureMatrixVariant, string>>;
 }
 
 interface PreparedVariant {
@@ -118,12 +186,18 @@ interface PreparedVariant {
   provenance: FixtureVariantProvenance;
 }
 
-interface MatrixPreflight {
+interface PreparedCase {
   matrixCase: FixtureMatrixCaseV1;
+  contract: ControlledCaseContract;
+  variants: Record<FixtureMatrixVariant, PreparedVariant>;
+}
+
+interface MatrixPreflight {
+  manifest: FixtureMatrixManifestV1;
+  cases: PreparedCase[];
   manifestPath: string;
   manifestSha256: string;
   artifacts: { app: FixtureArtifactContract; wallet: FixtureArtifactContract };
-  variants: Record<FixtureMatrixVariant, PreparedVariant>;
   provenance: FixtureMatrixProvenance;
 }
 
@@ -192,16 +266,26 @@ async function loadManifest(manifestPath: string): Promise<LoadedMatrixManifest>
   return { manifest: parseFixtureMatrixManifest(loaded.value), source: loaded.source };
 }
 
-function selectExecutableCase(manifest: FixtureMatrixManifestV1): FixtureMatrixCaseV1 {
-  const executable = manifest.cases.filter((matrixCase) => matrixCase.id === REJECTION_RECOVERY_CASE_ID);
-  if (manifest.cases.length !== 1 || executable.length !== 1) {
-    throw new FixtureMatrixValidationError([
-      "The controlled fixture runner requires exactly one " + REJECTION_RECOVERY_CASE_ID + " case",
-    ]);
+function selectExecutableCases(manifest: FixtureMatrixManifestV1): PreparedCase[] {
+  const issues: string[] = [];
+  if (manifest.cases.length !== CONTROLLED_CASES.length) {
+    issues.push("The controlled fixture runner requires exactly " + CONTROLLED_CASES.length + " ordered cases");
   }
-  const matrixCase = executable[0];
-  if (!matrixCase) throw new Error("Fixture matrix invariant failed: executable case was not found");
-  return matrixCase;
+
+  const cases = CONTROLLED_CASES.flatMap((contract, index): PreparedCase[] => {
+    const matrixCase = manifest.cases[index];
+    if (!matrixCase) return [];
+    if (matrixCase.id !== contract.id) {
+      issues.push("Fixture matrix case " + index + " must be " + contract.id);
+    }
+    if (matrixCase.scenarioId !== contract.scenarioId) {
+      issues.push(contract.id + " scenarioId must be " + contract.scenarioId);
+    }
+    return [{ matrixCase, contract, variants: {} as Record<FixtureMatrixVariant, PreparedVariant> }];
+  });
+
+  if (issues.length > 0) throw new FixtureMatrixValidationError(issues);
+  return cases;
 }
 
 function fixtureArtifactContract(
@@ -244,17 +328,27 @@ function fixtureArtifactContract(
     issues.push(role + " validated artifact sha256 must be 64 lowercase hexadecimal characters");
   }
 
-  let deepLinks: Record<FixtureMatrixVariant, string> | undefined;
+  let deepLinks: Record<string, Record<FixtureMatrixVariant, string>> | undefined;
   let network: string | undefined;
   if (role === "app") {
     network = typeof record.network === "string" ? record.network : "";
     if (network !== "devnet") issues.push("app fixture network must be devnet");
     const links = isRecord(record.deepLinks) ? record.deepLinks : {};
-    if (typeof links.broken !== "string" || typeof links.fixed !== "string") {
-      issues.push("app fixture deepLinks must contain broken and fixed URIs");
-    } else {
-      deepLinks = { broken: links.broken, fixed: links.fixed };
+    const parsedLinks: Record<string, Record<FixtureMatrixVariant, string>> = {};
+    const expectedIds = new Set<string>(CONTROLLED_CASES.map((contract) => contract.id));
+    for (const key of Object.keys(links)) {
+      if (!expectedIds.has(key)) issues.push("app fixture deepLinks contains unsupported case " + key);
     }
+    for (const contract of CONTROLLED_CASES) {
+      const caseLinksValue = links[contract.id];
+      const caseLinks = isRecord(caseLinksValue) ? caseLinksValue : {};
+      if (typeof caseLinks.broken !== "string" || typeof caseLinks.fixed !== "string") {
+        issues.push("app fixture deepLinks." + contract.id + " must contain broken and fixed URIs");
+      } else {
+        parsedLinks[contract.id] = { broken: caseLinks.broken, fixed: caseLinks.fixed };
+      }
+    }
+    deepLinks = parsedLinks;
   }
 
   if (issues.length > 0) throw new FixtureMatrixValidationError(issues);
@@ -342,18 +436,40 @@ function collectOpenLinks(value: unknown, links: string[], invalid: string[]): v
   }
 }
 
+function collectCommandValues(value: unknown, command: string, values: unknown[]): void {
+  if (value === command) {
+    values.push(true);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) collectCommandValues(entry, command, values);
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === command) values.push(entry);
+    collectCommandValues(entry, command, values);
+  }
+}
+
+function occurrences(source: string, value: string): number {
+  return source.split(value).length - 1;
+}
+
 async function inspectFlow(
   root: string,
   flowPath: string,
   expectedPackage: string,
   expectedLaunchUri: string,
   variant: FixtureMatrixVariant,
+  contract: ControlledCaseContract,
 ): Promise<{ flowPath: string; flowSha256: string; source: string }> {
-  await verifyRealWorkspacePath(root, flowPath, variant + " Maestro flow");
-  const source = await readText(flowPath, variant + " Maestro flow");
+  const label = contract.id + " " + variant;
+  await verifyRealWorkspacePath(root, flowPath, label + " Maestro flow");
+  const source = await readText(flowPath, label + " Maestro flow");
   const documents = parseAllDocuments(source);
   const issues = documents.flatMap((document) => document.errors.map((error) => error.message));
-  if (documents.length !== 2) issues.push(variant + " Maestro flow must contain metadata and command documents");
+  if (documents.length !== 2) issues.push(label + " Maestro flow must contain metadata and command documents");
 
   let metadata: unknown;
   let commands: unknown;
@@ -364,19 +480,63 @@ async function inspectFlow(
     issues.push(error instanceof Error ? error.message : String(error));
   }
   if (!isRecord(metadata) || metadata.appId !== expectedPackage) {
-    issues.push(variant + " Maestro flow appId must be " + expectedPackage);
+    issues.push(label + " Maestro flow appId must be " + expectedPackage);
   }
   const links: string[] = [];
   collectOpenLinks(commands, links, issues);
-  if (links.length !== 1 || links[0] !== expectedLaunchUri) {
-    issues.push(variant + " Maestro flow must contain exactly one openLink for " + expectedLaunchUri);
+  if (links.length !== contract.openLinkCount || links.some((link) => link !== expectedLaunchUri)) {
+    issues.push(
+      label +
+        " Maestro flow must contain exactly " +
+        contract.openLinkCount +
+        " openLink command(s) for " +
+        expectedLaunchUri,
+    );
+  }
+
+  const killAppValues: unknown[] = [];
+  const stopAppValues: unknown[] = [];
+  collectCommandValues(commands, "killApp", killAppValues);
+  collectCommandValues(commands, "stopApp", stopAppValues);
+  if (contract.requiresProcessDeath) {
+    if (stopAppValues.length !== 1 || stopAppValues[0] !== expectedPackage) {
+      issues.push(label + " Maestro flow must contain exactly one stopApp targeting " + expectedPackage);
+    }
+    if (killAppValues.length > 0) issues.push(label + " Maestro flow must not contain killApp");
+  } else if (killAppValues.length > 0) {
+    issues.push(label + " Maestro flow must not contain killApp");
+  } else if (stopAppValues.length > 0) {
+    issues.push(label + " Maestro flow must not contain stopApp");
+  }
+
+  for (const forbidden of ["clearState", "clearKeychain", "runScript", "evalScript"]) {
+    const values: unknown[] = [];
+    collectCommandValues(commands, forbidden, values);
+    if (values.length > 0) issues.push(label + " Maestro flow must not contain " + forbidden);
   }
   if (issues.length > 0) throw new FixtureMatrixValidationError(issues);
   return {
-    flowPath: repositoryRelative(root, flowPath, variant + " Maestro flow"),
+    flowPath: repositoryRelative(root, flowPath, label + " Maestro flow"),
     flowSha256: sha256Text(source),
     source,
   };
+}
+
+function normalizePairedFlow(
+  source: string,
+  launchUri: string,
+  variant: FixtureMatrixVariant,
+  contract: ControlledCaseContract,
+): string {
+  const variantSelector = 'text: "^' + variant + '$"';
+  if (occurrences(source, launchUri) !== contract.openLinkCount || occurrences(source, variantSelector) !== 1) {
+    throw new FixtureMatrixValidationError([
+      contract.id + " " + variant + " flow does not have the expected controlled URI and variant selector count",
+    ]);
+  }
+  return source
+    .replaceAll(launchUri, "launchrig://fixture/CONTROLLED?variant=VARIANT")
+    .replaceAll(variantSelector, 'text: "^VARIANT$"');
 }
 
 function validateConfigContract(input: {
@@ -384,179 +544,236 @@ function validateConfigContract(input: {
   config: ResolvedLaunchRigConfig;
   variant: FixtureMatrixVariant;
   matrixCase: FixtureMatrixCaseV1;
+  contract: ControlledCaseContract;
   app: FixtureArtifactContract;
   wallet: FixtureArtifactContract;
 }): void {
-  const { root, config, variant, matrixCase, app, wallet } = input;
+  const { root, config, variant, matrixCase, contract, app, wallet } = input;
   const issues: string[] = [];
-  const expectedPolicy = variant === "broken" ? "always" : "if-missing";
-  const expectedConfigPath = path.join(
-    root,
-    variant === "broken" ? DEFAULT_BROKEN_FIXTURE_CONFIG : DEFAULT_FIXED_FIXTURE_CONFIG,
-  );
-  const expectedFlowPath = path.join(root, "launchrig-flows", "fixture-rejection-" + variant + ".yaml");
+  const label = contract.id + " " + variant;
+  const expectedPolicy = contract.installPolicies[variant];
+  const expectedConfigPath = path.join(root, contract.configPaths[variant]);
+  const expectedFlowPath = path.join(root, contract.flowPaths[variant]);
   if (config.configPath !== expectedConfigPath) {
-    issues.push(variant + " config must use " + repositoryRelative(root, expectedConfigPath, variant + " config"));
+    issues.push(label + " config must use " + repositoryRelative(root, expectedConfigPath, label + " config"));
   }
   if (config.project.packageName !== app.packageName) {
-    issues.push(variant + " project packageName must be " + app.packageName);
+    issues.push(label + " project packageName must be " + app.packageName);
   }
   if (!config.project.install || config.project.installPolicy !== expectedPolicy) {
-    issues.push(variant + " project install must be true with installPolicy " + expectedPolicy);
+    issues.push(label + " project install must be true with installPolicy " + expectedPolicy);
   }
   if (config.resolvedApk !== app.artifactPath) {
-    issues.push(variant + " project APK must be " + repositoryRelative(root, app.artifactPath, "app APK"));
+    issues.push(label + " project APK must be " + repositoryRelative(root, app.artifactPath, "app APK"));
   }
-  if (config.target.network !== "devnet") issues.push(variant + " target network must be devnet");
-  if (!config.device.requirePhysical) issues.push(variant + " config must require a physical Android device");
+  if (config.target.network !== "devnet") issues.push(label + " target network must be devnet");
+  if (!config.device.requirePhysical) issues.push(label + " config must require a physical Android device");
+  if (config.device.minimumApiLevel !== 26) issues.push(label + " minimum API level must be 26");
   if (config.wallet.mode !== "mock-mwa" || config.wallet.packageName !== wallet.packageName) {
-    issues.push(variant + " wallet must be mock-mwa package " + wallet.packageName);
+    issues.push(label + " wallet must be mock-mwa package " + wallet.packageName);
   }
   if (!config.wallet.install || config.wallet.installPolicy !== expectedPolicy) {
-    issues.push(variant + " wallet install must be true with installPolicy " + expectedPolicy);
+    issues.push(label + " wallet install must be true with installPolicy " + expectedPolicy);
   }
   if (config.resolvedWalletApk !== wallet.artifactPath) {
-    issues.push(variant + " wallet APK must be " + repositoryRelative(root, wallet.artifactPath, "wallet APK"));
+    issues.push(label + " wallet APK must be " + repositoryRelative(root, wallet.artifactPath, "wallet APK"));
   }
   if (config.scenarios.length !== 1) {
-    issues.push(variant + " config must contain exactly one scenario");
+    issues.push(label + " config must contain exactly one scenario");
   }
   const scenario = config.scenarios[0];
-  if (!scenario || scenario.id !== matrixCase.scenarioId || scenario.kind !== "mwa-reject" || !scenario.required) {
-    issues.push(variant + " config must contain one required mwa-reject scenario " + matrixCase.scenarioId);
+  if (
+    !scenario ||
+    scenario.id !== matrixCase.scenarioId ||
+    scenario.kind !== contract.scenarioKind ||
+    !scenario.required
+  ) {
+    issues.push(
+      label + " config must contain one required " + contract.scenarioKind + " scenario " + matrixCase.scenarioId,
+    );
   }
   if (scenario && scenario.resolvedFlow !== expectedFlowPath) {
-    issues.push(variant + " scenario must use " + repositoryRelative(root, expectedFlowPath, variant + " flow"));
+    issues.push(label + " scenario must use " + repositoryRelative(root, expectedFlowPath, label + " flow"));
   }
-  repositoryRelative(root, config.configPath, variant + " config");
-  repositoryRelative(root, config.resolvedArtifactDirectory, variant + " artifact directory");
-  if (scenario) repositoryRelative(root, scenario.resolvedFlow, variant + " Maestro flow");
+  const expectedTimeout = contract.requiresProcessDeath ? 150000 : 120000;
+  if (scenario && scenario.timeoutMs !== expectedTimeout) {
+    issues.push(label + " scenario timeout must be " + expectedTimeout + " milliseconds");
+  }
+  const expectedArtifactDirectory = path.join(
+    root,
+    ".launchrig",
+    "results",
+    "fixture-matrix",
+    contract.id,
+    variant,
+  );
+  if (config.resolvedArtifactDirectory !== expectedArtifactDirectory) {
+    issues.push(label + " artifacts must use " + repositoryRelative(root, expectedArtifactDirectory, label + " artifacts"));
+  }
+  if (config.artifacts.screenshots !== "failure") issues.push(label + " screenshots must be failure-only");
+  if (config.privacy.includeLogcat) issues.push(label + " must keep logcat disabled");
+  if (config.tooling.maestro !== "./.launchrig/tools/maestro-2.8.0/maestro/bin/maestro") {
+    issues.push(label + " must pin Maestro 2.8.0");
+  }
+  repositoryRelative(root, config.configPath, label + " config");
+  repositoryRelative(root, config.resolvedArtifactDirectory, label + " artifact directory");
+  if (scenario) repositoryRelative(root, scenario.resolvedFlow, label + " Maestro flow");
   if (issues.length > 0) throw new FixtureMatrixValidationError(issues);
 }
 
 async function preflightFixtureMatrix(input: {
   root: string;
   manifestPath: string;
-  configPaths: Record<FixtureMatrixVariant, string>;
 }): Promise<MatrixPreflight> {
   const expectedManifestPath = path.join(input.root, DEFAULT_FIXTURE_MATRIX_MANIFEST);
-  const expectedConfigPaths: Record<FixtureMatrixVariant, string> = {
-    broken: path.join(input.root, DEFAULT_BROKEN_FIXTURE_CONFIG),
-    fixed: path.join(input.root, DEFAULT_FIXED_FIXTURE_CONFIG),
-  };
-  const pathIssues: string[] = [];
   if (input.manifestPath !== expectedManifestPath) {
-    pathIssues.push("The controlled fixture matrix must use " + DEFAULT_FIXTURE_MATRIX_MANIFEST);
+    throw new FixtureMatrixValidationError([
+      "The controlled fixture matrix must use " + DEFAULT_FIXTURE_MATRIX_MANIFEST,
+    ]);
   }
-  for (const variant of EXECUTION_ORDER) {
-    if (input.configPaths[variant] !== expectedConfigPaths[variant]) {
-      pathIssues.push(
-        "The " +
-          variant +
-          " fixture matrix must use " +
-          (variant === "broken" ? DEFAULT_BROKEN_FIXTURE_CONFIG : DEFAULT_FIXED_FIXTURE_CONFIG),
-      );
-    }
-  }
-  if (pathIssues.length > 0) throw new FixtureMatrixValidationError(pathIssues);
+
+  const configPaths = CONTROLLED_CASES.flatMap((contract) =>
+    EXECUTION_ORDER.map((variant) => path.join(input.root, contract.configPaths[variant])),
+  );
   await Promise.all([
     verifyRealWorkspacePath(input.root, input.manifestPath, "fixture matrix manifest"),
-    verifyRealWorkspacePath(input.root, input.configPaths.broken, "broken fixture config"),
-    verifyRealWorkspacePath(input.root, input.configPaths.fixed, "fixed fixture config"),
+    ...configPaths.map((configPath) =>
+      verifyRealWorkspacePath(input.root, configPath, repositoryRelative(input.root, configPath, "fixture config")),
+    ),
   ]);
   const manifestRelativePath = repositoryRelative(input.root, input.manifestPath, "fixture matrix manifest");
-  const [loadedManifest, app, wallet, brokenConfig, fixedConfig] = await Promise.all([
+  const [loadedManifest, app, wallet, ...loadedConfigs] = await Promise.all([
     loadManifest(input.manifestPath),
     loadFixtureArtifactContract(input.root, CONTROLLED_DAPP_MANIFEST, "app"),
     loadFixtureArtifactContract(input.root, MOCK_MWA_MANIFEST, "wallet"),
-    loadConfig(input.configPaths.broken),
-    loadConfig(input.configPaths.fixed),
+    ...configPaths.map((configPath) => loadConfig(configPath)),
   ]);
-  const matrixCase = selectExecutableCase(loadedManifest.manifest);
-  const configs = { broken: brokenConfig, fixed: fixedConfig };
+  const selectedCases = selectExecutableCases(loadedManifest.manifest);
+  const configByPath = new Map(configPaths.map((configPath, index) => [configPath, loadedConfigs[index]]));
   const issues: string[] = [];
-  for (const variant of EXECUTION_ORDER) {
-    const appLink = app.deepLinks?.[variant];
-    const matrixLink = matrixCase.expectations[variant].launchUri;
-    if (appLink !== matrixLink) issues.push(variant + " launch URI differs between the app and matrix manifests");
-    try {
-      validateConfigContract({ root: input.root, config: configs[variant], variant, matrixCase, app, wallet });
-    } catch (error) {
-      if (error instanceof FixtureMatrixValidationError) issues.push(...error.issues);
-      else throw error;
+  for (const selected of selectedCases) {
+    for (const variant of EXECUTION_ORDER) {
+      const appLink = app.deepLinks?.[selected.contract.id]?.[variant];
+      const matrixLink = selected.matrixCase.expectations[variant].launchUri;
+      if (appLink !== matrixLink) {
+        issues.push(selected.contract.id + " " + variant + " launch URI differs between the app and matrix manifests");
+      }
+      const configPath = path.join(input.root, selected.contract.configPaths[variant]);
+      const config = configByPath.get(configPath);
+      if (!config) throw new Error("Fixture matrix invariant failed: config was not loaded");
+      try {
+        validateConfigContract({
+          root: input.root,
+          config,
+          variant,
+          matrixCase: selected.matrixCase,
+          contract: selected.contract,
+          app,
+          wallet,
+        });
+      } catch (error) {
+        if (error instanceof FixtureMatrixValidationError) issues.push(...error.issues);
+        else throw error;
+      }
     }
   }
   if (issues.length > 0) throw new FixtureMatrixValidationError(issues);
 
-  const variantEntries = await Promise.all(
-    EXECUTION_ORDER.map(async (variant): Promise<[FixtureMatrixVariant, PreparedVariant]> => {
-      const config = configs[variant];
-      const scenario = config.scenarios[0];
-      if (!scenario) throw new Error("Fixture matrix invariant failed: scenario was not found");
-      const expectedLaunchUri = matrixCase.expectations[variant].launchUri;
-      const [configSource, flow] = await Promise.all([
-        readText(config.configPath, variant + " config"),
-        inspectFlow(input.root, scenario.resolvedFlow, app.packageName, expectedLaunchUri, variant),
-      ]);
-      const expectation = matrixCase.expectations[variant];
-      const configSha256 = sha256Text(configSource);
-      if (configSha256 !== expectation.configSha256) {
-        throw new FixtureMatrixValidationError([
-          variant + " config SHA-256 differs from the controlled matrix manifest",
+  const preparedCases: PreparedCase[] = [];
+  for (const selected of selectedCases) {
+    const variantEntries = await Promise.all(
+      EXECUTION_ORDER.map(async (variant): Promise<[FixtureMatrixVariant, PreparedVariant]> => {
+        const absoluteConfigPath = path.join(input.root, selected.contract.configPaths[variant]);
+        const config = configByPath.get(absoluteConfigPath);
+        if (!config) throw new Error("Fixture matrix invariant failed: config was not loaded");
+        const scenario = config.scenarios[0];
+        if (!scenario) throw new Error("Fixture matrix invariant failed: scenario was not found");
+        const expectedLaunchUri = selected.matrixCase.expectations[variant].launchUri;
+        const label = selected.contract.id + " " + variant;
+        const [configSource, flow] = await Promise.all([
+          readText(config.configPath, label + " config"),
+          inspectFlow(
+            input.root,
+            scenario.resolvedFlow,
+            app.packageName,
+            expectedLaunchUri,
+            variant,
+            selected.contract,
+          ),
         ]);
-      }
-      if (flow.flowSha256 !== expectation.flowSha256) {
-        throw new FixtureMatrixValidationError([
-          variant + " flow SHA-256 differs from the controlled matrix manifest",
-        ]);
-      }
-      const configPath = repositoryRelative(input.root, config.configPath, variant + " config");
-      return [
-        variant,
-        {
-          config,
-          configPath,
-          flowSource: flow.source,
-          provenance: {
+        const expectation = selected.matrixCase.expectations[variant];
+        const configSha256 = sha256Text(configSource);
+        if (configSha256 !== expectation.configSha256) {
+          throw new FixtureMatrixValidationError([
+            label + " config SHA-256 differs from the controlled matrix manifest",
+          ]);
+        }
+        if (flow.flowSha256 !== expectation.flowSha256) {
+          throw new FixtureMatrixValidationError([
+            label + " flow SHA-256 differs from the controlled matrix manifest",
+          ]);
+        }
+        const configPath = repositoryRelative(input.root, config.configPath, label + " config");
+        return [
+          variant,
+          {
+            config,
             configPath,
-            configSha256,
-            flowPath: flow.flowPath,
-            flowSha256: flow.flowSha256,
-            launchUri: expectedLaunchUri,
+            flowSource: flow.source,
+            provenance: {
+              configPath,
+              configSha256,
+              flowPath: flow.flowPath,
+              flowSha256: flow.flowSha256,
+              launchUri: expectedLaunchUri,
+            },
           },
-        },
-      ];
-    }),
-  );
-  const variants = Object.fromEntries(variantEntries) as Record<FixtureMatrixVariant, PreparedVariant>;
-  const normalizedBrokenFlow = variants.broken.flowSource
-    .replace(matrixCase.expectations.broken.launchUri, "launchrig://fixture/rejection?variant=VARIANT")
-    .replace('text: "^broken$"', 'text: "^VARIANT$"');
-  const normalizedFixedFlow = variants.fixed.flowSource
-    .replace(matrixCase.expectations.fixed.launchUri, "launchrig://fixture/rejection?variant=VARIANT")
-    .replace('text: "^fixed$"', 'text: "^VARIANT$"');
-  if (normalizedBrokenFlow !== normalizedFixedFlow) {
-    throw new FixtureMatrixValidationError([
-      "Broken and fixed fixture flows must be identical except for the controlled variant URI and label",
-    ]);
+        ];
+      }),
+    );
+    const variants = Object.fromEntries(variantEntries) as Record<FixtureMatrixVariant, PreparedVariant>;
+    const normalizedBroken = normalizePairedFlow(
+      variants.broken.flowSource,
+      selected.matrixCase.expectations.broken.launchUri,
+      "broken",
+      selected.contract,
+    );
+    const normalizedFixed = normalizePairedFlow(
+      variants.fixed.flowSource,
+      selected.matrixCase.expectations.fixed.launchUri,
+      "fixed",
+      selected.contract,
+    );
+    if (normalizedBroken !== normalizedFixed) {
+      throw new FixtureMatrixValidationError([
+        selected.contract.id +
+          " broken and fixed flows must be identical except for every controlled variant URI and one label",
+      ]);
+    }
+    preparedCases.push({ matrixCase: selected.matrixCase, contract: selected.contract, variants });
   }
+
   const [appProvenance, walletProvenance] = await Promise.all([
     verifyArtifact(input.root, app, "app"),
     verifyArtifact(input.root, wallet, "wallet"),
   ]);
   return {
-    matrixCase,
+    manifest: loadedManifest.manifest,
+    cases: preparedCases,
     manifestPath: manifestRelativePath,
     manifestSha256: sha256Text(loadedManifest.source),
     artifacts: { app, wallet },
-    variants,
     provenance: {
       app: appProvenance,
       wallet: walletProvenance,
-      variants: {
-        broken: variants.broken.provenance,
-        fixed: variants.fixed.provenance,
-      },
+      cases: preparedCases.map((prepared) => ({
+        caseId: prepared.matrixCase.id,
+        scenarioId: prepared.matrixCase.scenarioId,
+        variants: {
+          broken: prepared.variants.broken.provenance,
+          fixed: prepared.variants.fixed.provenance,
+        },
+      })),
     },
   };
 }
@@ -571,10 +788,55 @@ function projectRunOptions(options: RunFixtureMatrixOptions, scenarioId: string)
   };
 }
 
+async function verifyPreparedVariantIntegrity(input: {
+  root: string;
+  prepared: PreparedVariant;
+  label: string;
+  phase: string;
+}): Promise<void> {
+  const { root, prepared, label, phase } = input;
+  const scenario = prepared.config.scenarios[0];
+  if (!scenario) throw new Error("Fixture matrix invariant failed: scenario was not found");
+
+  await Promise.all([
+    verifyRealWorkspacePath(root, prepared.config.configPath, label + " config"),
+    verifyRealWorkspacePath(root, scenario.resolvedFlow, label + " Maestro flow"),
+  ]);
+  const [configSource, flowSource] = await Promise.all([
+    readText(prepared.config.configPath, label + " config"),
+    readText(scenario.resolvedFlow, label + " Maestro flow"),
+  ]);
+  const issues: string[] = [];
+  if (sha256Text(configSource) !== prepared.provenance.configSha256) {
+    issues.push(label + " config changed after controlled matrix preflight " + phase);
+  }
+  if (sha256Text(flowSource) !== prepared.provenance.flowSha256) {
+    issues.push(label + " Maestro flow changed after controlled matrix preflight " + phase);
+  }
+  if (issues.length > 0) throw new FixtureMatrixValidationError(issues);
+}
+
+async function verifyPreparedMatrixIntegrity(
+  root: string,
+  cases: readonly PreparedCase[],
+  phase: string,
+): Promise<void> {
+  for (const preparedCase of cases) {
+    for (const variant of EXECUTION_ORDER) {
+      await verifyPreparedVariantIntegrity({
+        root,
+        prepared: preparedCase.variants[variant],
+        label: preparedCase.matrixCase.id + " " + variant,
+        phase,
+      });
+    }
+  }
+}
+
 function publicRunOutput(
   root: string,
   output: RunOutput,
-  variant: FixtureMatrixVariant,
+  label: string,
   redactPatterns: string[],
 ): RunOutput {
   return {
@@ -582,10 +844,10 @@ function publicRunOutput(
     report: redactJsonValue(output.report, redactPatterns).value,
     artifacts: {
       ...output.artifacts,
-      directory: repositoryRelative(root, output.artifacts.directory, variant + " artifact directory"),
-      json: repositoryRelative(root, output.artifacts.json, variant + " JSON report"),
-      html: repositoryRelative(root, output.artifacts.html, variant + " HTML report"),
-      junit: repositoryRelative(root, output.artifacts.junit, variant + " JUnit report"),
+      directory: repositoryRelative(root, output.artifacts.directory, label + " artifact directory"),
+      json: repositoryRelative(root, output.artifacts.json, label + " JSON report"),
+      html: repositoryRelative(root, output.artifacts.html, label + " HTML report"),
+      junit: repositoryRelative(root, output.artifacts.junit, label + " JUnit report"),
     },
   };
 }
@@ -615,11 +877,12 @@ function validatePackageEvidence(input: {
 function validateExecutionEvidence(
   execution: FixtureMatrixExecution,
   prepared: PreparedVariant,
+  contract: ControlledCaseContract,
   provenance: FixtureMatrixProvenance,
 ): string[] {
   const issues: string[] = [];
   const report = execution.output.report;
-  const prefix = execution.variant + " report ";
+  const prefix = execution.caseId + " " + execution.variant + " report ";
   if (report.project !== prepared.config.project.name) issues.push(prefix + "project name differs from its config");
   if (report.packageName !== provenance.app.packageName) {
     issues.push(prefix + "packageName must be " + provenance.app.packageName);
@@ -659,9 +922,9 @@ function validateExecutionEvidence(
     const target = report.checks.find((check) => check.id === "scenario." + execution.scenarioId);
     if (
       target?.status === "fail" &&
-      (!target.details?.includes("Assertion is false") || !target.details.includes(EXPECTED_BROKEN_FAILURE_MARKER))
+      (!target.details?.includes("Assertion is false") || !target.details.includes(contract.brokenFailureMarker))
     ) {
-      issues.push(prefix + "must fail at the controlled request-pending recovery assertion");
+      issues.push(prefix + "must fail at the controlled " + contract.brokenFailureMarker + " assertion");
     }
   }
   return issues;
@@ -676,36 +939,58 @@ export async function runFixtureMatrix(options: RunFixtureMatrixOptions = {}): P
     throw new FixtureMatrixEnvironmentError(["Cannot resolve the LaunchRig workspace: " + message]);
   }
   const manifestPath = path.resolve(cwd, options.manifestPath ?? DEFAULT_FIXTURE_MATRIX_MANIFEST);
-  const configPaths: Record<FixtureMatrixVariant, string> = {
-    broken: path.resolve(cwd, options.brokenConfigPath ?? DEFAULT_BROKEN_FIXTURE_CONFIG),
-    fixed: path.resolve(cwd, options.fixedConfigPath ?? DEFAULT_FIXED_FIXTURE_CONFIG),
-  };
-  const preflight = await preflightFixtureMatrix({ root: cwd, manifestPath, configPaths });
+  if (options.brokenConfigPath || options.fixedConfigPath) {
+    throw new FixtureMatrixValidationError([
+      "The controlled fixture matrix does not accept alternate config paths",
+    ]);
+  }
+  const preflight = await preflightFixtureMatrix({ root: cwd, manifestPath });
   const projectRunner = options.projectRunner ?? runProject;
   const executions: FixtureMatrixExecution[] = [];
 
-  for (const variant of EXECUTION_ORDER) {
-    const prepared = preflight.variants[variant];
-    const output = await projectRunner(
-      prepared.config.configPath,
-      projectRunOptions(options, preflight.matrixCase.scenarioId),
-    );
-    executions.push({
-      caseId: preflight.matrixCase.id,
-      scenarioId: preflight.matrixCase.scenarioId,
-      variant,
-      configPath: prepared.configPath,
-      output: publicRunOutput(cwd, output, variant, prepared.config.privacy.redactPatterns),
-    });
+  for (const preparedCase of preflight.cases) {
+    for (const variant of EXECUTION_ORDER) {
+      const prepared = preparedCase.variants[variant];
+      const label = preparedCase.matrixCase.id + " " + variant;
+      await verifyPreparedMatrixIntegrity(cwd, preflight.cases, "before " + label + " execution");
+      let output: RunOutput;
+      try {
+        output = await projectRunner(
+          prepared.config.configPath,
+          projectRunOptions(options, preparedCase.matrixCase.scenarioId),
+        );
+      } finally {
+        await verifyPreparedMatrixIntegrity(cwd, preflight.cases, "after " + label + " execution");
+      }
+      executions.push({
+        caseId: preparedCase.matrixCase.id,
+        scenarioId: preparedCase.matrixCase.scenarioId,
+        variant,
+        configPath: prepared.configPath,
+        output: publicRunOutput(
+          cwd,
+          output,
+          preparedCase.matrixCase.id + " " + variant,
+          prepared.config.privacy.redactPatterns,
+        ),
+      });
+    }
   }
 
   const setupError = executions.some(
     (execution) => execution.output.exitCode === 3 || execution.output.report.outcome === "setup-error",
   );
   if (!setupError) {
-    const evidenceIssues = executions.flatMap((execution) =>
-      validateExecutionEvidence(execution, preflight.variants[execution.variant], preflight.provenance),
-    );
+    const evidenceIssues = executions.flatMap((execution) => {
+      const preparedCase = preflight.cases.find((entry) => entry.matrixCase.id === execution.caseId);
+      if (!preparedCase) return ["Execution references an unknown controlled case " + execution.caseId];
+      return validateExecutionEvidence(
+        execution,
+        preparedCase.variants[execution.variant],
+        preparedCase.contract,
+        preflight.provenance,
+      );
+    });
     if (evidenceIssues.length > 0) throw new FixtureMatrixValidationError(evidenceIssues);
   }
 
@@ -715,7 +1000,7 @@ export async function runFixtureMatrix(options: RunFixtureMatrixOptions = {}): P
   ]);
 
   const evaluation = evaluateFixtureMatrix(
-    { schemaVersion: 1, cases: [preflight.matrixCase] },
+    preflight.manifest,
     executions.map((execution) =>
       createFixtureMatrixRun({
         caseId: execution.caseId,

@@ -1,0 +1,43 @@
+version: 1
+
+project:
+  name: "LaunchRig stale authorization fixture: fixed"
+  packageName: dev.launchrig.fixture
+  apk: ./.launchrig/cache/apks/launchrig-fixture-v0.2.0-arm64-release.apk
+  install: true
+  installPolicy: if-missing
+
+target:
+  network: devnet
+
+device:
+  requirePhysical: true
+  minimumApiLevel: 26
+
+wallet:
+  mode: mock-mwa
+  packageName: com.solana.mwallet
+  apk: ./.launchrig/cache/apks/mock-mwa-1.0.1-d444aff-debug.apk
+  install: true
+  installPolicy: if-missing
+
+scenarios:
+  - id: stale-authorization-recovery
+    kind: mwa-stale-authorization
+    name: "Controlled stale authorization recovery"
+    flow: ./launchrig-flows/fixture-stale-authorization-fixed.yaml
+    required: true
+    timeoutMs: 120000
+
+artifacts:
+  directory: ./.launchrig/results/fixture-matrix/stale-authorization-recovery/fixed
+  screenshots: failure
+  retention: 5
+
+privacy:
+  includeLogcat: false
+  logcatLines: 200
+  redactPatterns: []
+
+tooling:
+  maestro: ./.launchrig/tools/maestro-2.8.0/maestro/bin/maestro

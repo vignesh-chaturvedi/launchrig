@@ -11,7 +11,14 @@ export interface ProjectConfig {
 
 export interface ScenarioConfig {
   id: string;
-  kind: "mwa-authorize" | "mwa-siws" | "mwa-sign-message" | "mwa-reject" | "custom";
+  kind:
+    | "mwa-authorize"
+    | "mwa-siws"
+    | "mwa-sign-message"
+    | "mwa-reject"
+    | "mwa-stale-authorization"
+    | "mwa-process-death"
+    | "custom";
   name: string;
   flow: string;
   required: boolean;

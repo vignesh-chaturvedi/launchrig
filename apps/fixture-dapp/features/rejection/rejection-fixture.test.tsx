@@ -1,7 +1,7 @@
 import { fireEvent, render } from '@testing-library/react-native'
 import type { Address } from '@solana/kit'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { parseFixtureVariant } from '@/features/rejection/fixture-variant'
+import { parseFixtureVariant } from '@/features/fixture/fixture-variant'
 import { RejectionFixture } from '@/features/rejection/rejection-fixture'
 
 const wallet = vi.hoisted(() => ({
@@ -26,9 +26,9 @@ describe('RejectionFixture', () => {
     wallet.current.signMessages.mockReset()
   })
 
-  it('defaults unknown deep-link variants to fixed mode', () => {
-    expect(parseFixtureVariant(undefined)).toBe('fixed')
-    expect(parseFixtureVariant('anything-else')).toBe('fixed')
+  it('rejects unknown deep-link variants', () => {
+    expect(parseFixtureVariant(undefined)).toBeNull()
+    expect(parseFixtureVariant('anything-else')).toBeNull()
     expect(parseFixtureVariant(['broken', 'fixed'])).toBe('broken')
   })
 

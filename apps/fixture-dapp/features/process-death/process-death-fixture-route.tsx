@@ -1,15 +1,15 @@
 import { useLocalSearchParams } from 'expo-router'
 import { InvalidFixtureScreen } from '@/features/fixture/fixture-ui'
 import { parseFixtureVariant } from '@/features/fixture/fixture-variant'
-import { RejectionFixture } from '@/features/rejection/rejection-fixture'
+import { ProcessDeathFixture } from '@/features/process-death/process-death-fixture'
 
-export function RejectionFixtureRoute() {
+export function ProcessDeathFixtureRoute() {
   const { variant } = useLocalSearchParams<{ variant?: string | string[] }>()
   const fixtureVariant = parseFixtureVariant(variant)
 
   if (!fixtureVariant) {
-    return <InvalidFixtureScreen scenario="rejection-recovery" />
+    return <InvalidFixtureScreen scenario="process-death" />
   }
 
-  return <RejectionFixture key={fixtureVariant} variant={fixtureVariant} />
+  return <ProcessDeathFixture key={fixtureVariant} variant={fixtureVariant} />
 }

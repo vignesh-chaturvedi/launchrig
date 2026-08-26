@@ -52,9 +52,10 @@ function humanMatrix(value: RunFixtureMatrixOutput): string {
     "wallet SHA-256: " + value.provenance.wallet.sha256,
   ];
   for (const execution of value.executions) {
+    const label = execution.caseId + " " + execution.variant;
     lines.push(
-      execution.variant + ": " + execution.output.report.outcome + ", exit " + execution.output.exitCode,
-      execution.variant + " JSON: " + execution.output.artifacts.json,
+      label + ": " + execution.output.report.outcome + ", exit " + execution.output.exitCode,
+      label + " JSON: " + execution.output.artifacts.json,
     );
   }
   for (const issue of value.evaluation.issues) lines.push("- " + issue.message);

@@ -1,0 +1,103 @@
+appId: dev.launchrig.fixture
+name: Controlled stale authorization recovery
+---
+- openLink:
+    link: "launchrig://fixture/stale-authorization?variant=broken"
+- extendedWaitUntil:
+    visible:
+      id: "fixture-ready"
+      text: "^READY$"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "fixture-variant"
+      text: "^broken$"
+    timeout: 15000
+- assertVisible:
+    id: "fixture-scenario"
+    text: "^stale-authorization$"
+- runFlow:
+    when:
+      visible:
+        id: "wallet-state"
+        text: "^DISCONNECTED$"
+    commands:
+      - tapOn:
+          id: "connect-wallet"
+      - tapOn:
+          text: "^Mock MWA Wallet$"
+          optional: true
+      - tapOn:
+          text: "^Just once$"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "com.solana.mwallet:id/btn_connect"
+          timeout: 30000
+      - tapOn:
+          id: "com.solana.mwallet:id/btn_connect"
+- extendedWaitUntil:
+    visible:
+      id: "wallet-state"
+      text: "^CONNECTED$"
+    timeout: 30000
+- tapOn:
+    id: "seed-stale-authorization"
+- tapOn:
+    text: "^Mock MWA Wallet$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "stale-auth-seeded"
+      text: "^true$"
+    timeout: 30000
+- assertVisible:
+    id: "stale-auth-recovered"
+    text: "^STALE_TOKEN$"
+- tapOn:
+    id: "request-reauthorization"
+- tapOn:
+    text: "^Mock MWA Wallet$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "reauthorization-pending"
+      text: "^false$"
+    timeout: 30000
+- assertVisible:
+    id: "stale-auth-recovered"
+    text: "^AUTHORIZATION_CLEARED$"
+- assertVisible:
+    id: "reconnect-enabled"
+    text: "^true$"
+- tapOn:
+    id: "connect-wallet"
+- tapOn:
+    text: "^Mock MWA Wallet$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "com.solana.mwallet:id/btn_connect"
+    timeout: 30000
+- tapOn:
+    id: "com.solana.mwallet:id/btn_connect"
+- extendedWaitUntil:
+    visible:
+      id: "wallet-state"
+      text: "^CONNECTED$"
+    timeout: 30000
+- assertVisible:
+    id: "stale-auth-recovered"
+    text: "^RECONNECTED$"
+- assertVisible:
+    id: "seed-action-enabled"
+    text: "^true$"

@@ -13,6 +13,9 @@ name: Controlled wallet rejection recovery
       id: "fixture-variant"
       text: "^broken$"
     timeout: 15000
+- assertVisible:
+    id: "fixture-scenario"
+    text: "^rejection-recovery$"
 - runFlow:
     when:
       visible: "^Connect wallet$"

@@ -8,16 +8,62 @@
       "expectations": {
         "broken": {
           "launchUri": "launchrig://fixture/rejection?variant=broken",
-          "configSha256": "f0fa915ee548fde354956c1a4bf5b3dc49f54e68b203e0b806810f30253cdfd5",
-          "flowSha256": "dc50c55a9646ab917fefb32c6cafb7d5e99b4acec4f82971d72a0db00e0990d9",
+          "configSha256": "e5588a5c0862840666acd00abb1ec00e5c3d9c6fc131b5091e6d666440548c0d",
+          "flowSha256": "ad6de5af6424237f79505bd50633af8de00f0616c4c74d1b42cfea0c0fef6912",
           "scenarioStatus": "fail",
           "outcome": "failed",
           "exitCode": 1
         },
         "fixed": {
           "launchUri": "launchrig://fixture/rejection?variant=fixed",
-          "configSha256": "d5db65006080f544dd7f7399e96411170b3b9d29576985a0f7c7f47133b66d42",
-          "flowSha256": "e120f0866fa3e634a5c6798e0941bcfdeaa55b61adfc45d46f1cf8d38d9cd49f",
+          "configSha256": "0b4638f65e8c32e676dc6c3651df14e1b5d9c226f95e4f553bda6b8677b7c1b0",
+          "flowSha256": "a7425fcfd3d579d788b6d46f8041aef1ea5a4a31d3b1b884acfe430e983193ab",
+          "scenarioStatus": "pass",
+          "outcome": "passed",
+          "exitCode": 0
+        }
+      }
+    },
+    {
+      "id": "stale-authorization-recovery",
+      "name": "Stale authorization recovery",
+      "scenarioId": "stale-authorization-recovery",
+      "expectations": {
+        "broken": {
+          "launchUri": "launchrig://fixture/stale-authorization?variant=broken",
+          "configSha256": "61e7a0c8ebf3b584cd305ace87de2bc8b5b2e403d60154a87d3b38c011a899a6",
+          "flowSha256": "6bac2b5fb00a4de6fbb68ca3b24dfa9c67064128ac272d2cb053156c6b51e561",
+          "scenarioStatus": "fail",
+          "outcome": "failed",
+          "exitCode": 1
+        },
+        "fixed": {
+          "launchUri": "launchrig://fixture/stale-authorization?variant=fixed",
+          "configSha256": "7e4f7b842f99db90de88e4858068590495382227a3e5cb1c2dec0211335af3f3",
+          "flowSha256": "b144a7ff13d96f9192af02733cc45debfc4db038f3cb2f7c9402db6e08313405",
+          "scenarioStatus": "pass",
+          "outcome": "passed",
+          "exitCode": 0
+        }
+      }
+    },
+    {
+      "id": "process-death-recovery",
+      "name": "Process-death recovery",
+      "scenarioId": "process-death-recovery",
+      "expectations": {
+        "broken": {
+          "launchUri": "launchrig://fixture/process-death?variant=broken",
+          "configSha256": "a5a6f20745f4bb1e8f6220a4d51a80741982081439f8c676ea4187cb68466481",
+          "flowSha256": "0ea30d061341c83b47a31769be6f1a70c3b822235356c8c52737858c90e6a3b3",
+          "scenarioStatus": "fail",
+          "outcome": "failed",
+          "exitCode": 1
+        },
+        "fixed": {
+          "launchUri": "launchrig://fixture/process-death?variant=fixed",
+          "configSha256": "0d501699c8660eec71fcf2e3881503bce3fbc6d990250593963a21d83dba76aa",
+          "flowSha256": "48d23fb075262b0828c3290b1b051e8e4b51a89c9469f1c288ddbe26ed29925f",
           "scenarioStatus": "pass",
           "outcome": "passed",
           "exitCode": 0

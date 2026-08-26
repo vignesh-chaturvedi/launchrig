@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 import { parseAllDocuments } from "yaml";
 import { runCli, type CliIO } from "../src/cli.js";
 import {
+  CONTROLLED_CASES,
   FixtureMatrixEnvironmentError,
   runFixtureMatrix,
   type FixtureMatrixProjectRunner,
@@ -19,20 +20,56 @@ import { createReport } from "../src/report/model.js";
 import type { RunOutput } from "../src/runner/orchestrator.js";
 
 const WORKSPACE = process.cwd();
-const BROKEN_CONFIG = path.join(WORKSPACE, "launchrig-fixture-broken.yml");
-const FIXED_CONFIG = path.join(WORKSPACE, "launchrig-fixture-fixed.yml");
-const BROKEN_FLOW = path.join(WORKSPACE, "launchrig-flows", "fixture-rejection-broken.yaml");
-const FIXED_FLOW = path.join(WORKSPACE, "launchrig-flows", "fixture-rejection-fixed.yaml");
-const SCENARIO_ID = "rejection-recovery";
 const APP_PACKAGE = "dev.launchrig.fixture";
 const WALLET_PACKAGE = "com.solana.mwallet";
-const BROKEN_URI = "launchrig://fixture/rejection?variant=broken";
-const FIXED_URI = "launchrig://fixture/rejection?variant=fixed";
+const VARIANTS: readonly FixtureMatrixVariant[] = ["broken", "fixed"];
+
+interface MatrixCaseContract {
+  id: string;
+  name: string;
+  kind: "mwa-reject" | "mwa-stale-authorization" | "mwa-process-death";
+  flowStem: string;
+  route: string;
+  marker: string;
+  openLinkCount: number;
+  processDeath: boolean;
+}
+
+const CASES: readonly MatrixCaseContract[] = [
+  {
+    id: "rejection-recovery",
+    name: "Wallet rejection recovery",
+    kind: "mwa-reject",
+    flowStem: "rejection",
+    route: "rejection",
+    marker: "id: request-pending",
+    openLinkCount: 1,
+    processDeath: false,
+  },
+  {
+    id: "stale-authorization-recovery",
+    name: "Stale authorization recovery",
+    kind: "mwa-stale-authorization",
+    flowStem: "stale-authorization",
+    route: "stale-authorization",
+    marker: "id: reauthorization-pending",
+    openLinkCount: 1,
+    processDeath: false,
+  },
+  {
+    id: "process-death-recovery",
+    name: "Process-death recovery",
+    kind: "mwa-process-death",
+    flowStem: "process-death",
+    route: "process-death",
+    marker: "id: process-death-state",
+    openLinkCount: 2,
+    processDeath: true,
+  },
+];
 
 interface MatrixWorkspace {
   root: string;
-  brokenConfig: string;
-  fixedConfig: string;
   appArtifact: string;
   appSha256: string;
   walletSha256: string;
@@ -42,29 +79,57 @@ function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
+function configName(matrixCase: MatrixCaseContract, variant: FixtureMatrixVariant): string {
+  return "launchrig-fixture-" + matrixCase.flowStem + "-" + variant + ".yml";
 }
 
-function flowSource(uri: string): string {
-  return [
+function flowName(matrixCase: MatrixCaseContract, variant: FixtureMatrixVariant): string {
+  return "fixture-" + matrixCase.flowStem + "-" + variant + ".yaml";
+}
+
+function launchUri(matrixCase: MatrixCaseContract, variant: FixtureMatrixVariant): string {
+  return "launchrig://fixture/" + matrixCase.route + "?variant=" + variant;
+}
+
+function flowSource(
+  matrixCase: MatrixCaseContract,
+  variant: FixtureMatrixVariant,
+  options: { includeKill?: boolean; includeStop?: boolean } = {},
+): string {
+  const uri = launchUri(matrixCase, variant);
+  const lines = [
     "appId: " + APP_PACKAGE,
-    "name: Controlled wallet rejection recovery",
+    "name: " + matrixCase.name,
     "---",
     "- openLink:",
     '    link: "' + uri + '"',
     "- assertVisible:",
-    '    id: "fixture-ready"',
-    "",
-  ].join("\n");
+    '    id: "fixture-variant"',
+    '    text: "^' + variant + '$"',
+  ];
+  if (options.includeKill) {
+    lines.push("- killApp:", "    appId: " + APP_PACKAGE);
+  }
+  if (matrixCase.processDeath && options.includeStop !== false) lines.push("- stopApp: " + APP_PACKAGE);
+  if (matrixCase.openLinkCount === 2) {
+    lines.push("- openLink:", '    link: "' + uri + '"');
+  }
+  return lines.join("\n") + "\n";
 }
 
-function configSource(variant: FixtureMatrixVariant, appArtifactName: string, walletArtifactName: string): string {
-  const policy = variant === "broken" ? "always" : "if-missing";
+function configSource(
+  matrixCase: MatrixCaseContract,
+  variant: FixtureMatrixVariant,
+  appArtifactName: string,
+  walletArtifactName: string,
+): string {
+  const firstRun = matrixCase.id === CASES[0]?.id && variant === "broken";
+  const policy = firstRun ? "always" : "if-missing";
+  const timeout = matrixCase.processDeath ? 150000 : 120000;
   return [
     "version: 1",
     "project:",
-    '  name: "Fixture ' + variant + '"',
+    '  name: "Fixture ' + matrixCase.id + " " + variant + '"',
     "  packageName: " + APP_PACKAGE,
     "  apk: ./.launchrig/cache/apks/" + appArtifactName,
     "  install: true",
@@ -81,29 +146,27 @@ function configSource(variant: FixtureMatrixVariant, appArtifactName: string, wa
     "  install: true",
     "  installPolicy: " + policy,
     "scenarios:",
-    "  - id: " + SCENARIO_ID,
-    "    kind: mwa-reject",
-    '    name: "Controlled wallet rejection recovery"',
-    "    flow: ./launchrig-flows/fixture-rejection-" + variant + ".yaml",
+    "  - id: " + matrixCase.id,
+    "    kind: " + matrixCase.kind,
+    '    name: "' + matrixCase.name + '"',
+    "    flow: ./launchrig-flows/" + flowName(matrixCase, variant),
     "    required: true",
-    "    timeoutMs: 120000",
+    "    timeoutMs: " + timeout,
     "artifacts:",
-    "  directory: ./results/" + variant,
+    "  directory: ./.launchrig/results/fixture-matrix/" + matrixCase.id + "/" + variant,
     "  screenshots: failure",
     "  retention: 5",
     "privacy:",
     "  includeLogcat: false",
     "  logcatLines: 200",
     "  redactPatterns: []",
-    "tooling: {}",
+    "tooling:",
+    "  maestro: ./.launchrig/tools/maestro-2.8.0/maestro/bin/maestro",
     "",
   ].join("\n");
 }
 
-async function createMatrixWorkspace(
-  context: TestContext,
-  options: { brokenFlowUri?: string } = {},
-): Promise<MatrixWorkspace> {
+async function createMatrixWorkspace(context: TestContext): Promise<MatrixWorkspace> {
   const root = await mkdtemp(path.join(tmpdir(), "launchrig-matrix-"));
   context.after(async () => await rm(root, { recursive: true, force: true }));
   const fixturesDirectory = path.join(root, "fixtures");
@@ -123,45 +186,42 @@ async function createMatrixWorkspace(
   const walletArtifact = path.join(apkDirectory, walletArtifactName);
   const appSha256 = sha256(appBytes);
   const walletSha256 = sha256(walletBytes);
-  const brokenFlowSource = flowSource(options.brokenFlowUri ?? BROKEN_URI);
-  const fixedFlowSource = flowSource(FIXED_URI);
-  const brokenConfigSource = configSource("broken", appArtifactName, walletArtifactName);
-  const fixedConfigSource = configSource("fixed", appArtifactName, walletArtifactName);
-  const matrixManifest = {
-    schemaVersion: 1,
-    cases: [
-      {
-        id: SCENARIO_ID,
-        name: "Wallet rejection recovery",
-        scenarioId: SCENARIO_ID,
-        expectations: {
-          broken: {
-            launchUri: BROKEN_URI,
-            configSha256: sha256(brokenConfigSource),
-            flowSha256: sha256(brokenFlowSource),
-            scenarioStatus: "fail",
-            outcome: "failed",
-            exitCode: 1,
-          },
-          fixed: {
-            launchUri: FIXED_URI,
-            configSha256: sha256(fixedConfigSource),
-            flowSha256: sha256(fixedFlowSource),
-            scenarioStatus: "pass",
-            outcome: "passed",
-            exitCode: 0,
-          },
-        },
-      },
-    ],
-  };
+  const deepLinks: Record<string, Record<FixtureMatrixVariant, string>> = {};
+  const manifestCases = [];
+  const writes: Array<Promise<void>> = [];
+
+  for (const matrixCase of CASES) {
+    deepLinks[matrixCase.id] = {
+      broken: launchUri(matrixCase, "broken"),
+      fixed: launchUri(matrixCase, "fixed"),
+    };
+    const expectations: Record<string, unknown> = {};
+    for (const variant of VARIANTS) {
+      const flow = flowSource(matrixCase, variant);
+      const config = configSource(matrixCase, variant, appArtifactName, walletArtifactName);
+      writes.push(
+        writeFile(path.join(flowsDirectory, flowName(matrixCase, variant)), flow),
+        writeFile(path.join(root, configName(matrixCase, variant)), config),
+      );
+      expectations[variant] = {
+        launchUri: launchUri(matrixCase, variant),
+        configSha256: sha256(config),
+        flowSha256: sha256(flow),
+        scenarioStatus: variant === "broken" ? "fail" : "pass",
+        outcome: variant === "broken" ? "failed" : "passed",
+        exitCode: variant === "broken" ? 1 : 0,
+      };
+    }
+    manifestCases.push({ id: matrixCase.id, name: matrixCase.name, scenarioId: matrixCase.id, expectations });
+  }
+
   const appManifest = {
     schemaVersion: 1,
     packageName: APP_PACKAGE,
-    versionName: "0.1.0",
-    versionCode: 1,
+    versionName: "0.2.0",
+    versionCode: 2,
     network: "devnet",
-    deepLinks: { broken: BROKEN_URI, fixed: FIXED_URI },
+    deepLinks,
     build: { artifactName: appArtifactName },
     validatedArtifact: { size: appBytes.byteLength, sha256: appSha256 },
   };
@@ -173,26 +233,35 @@ async function createMatrixWorkspace(
     artifactName: walletArtifactName,
     validatedArtifact: { size: walletBytes.byteLength, sha256: walletSha256 },
   };
-  const brokenConfig = path.join(root, "launchrig-fixture-broken.yml");
-  const fixedConfig = path.join(root, "launchrig-fixture-fixed.yml");
-  await Promise.all([
-    writeFile(path.join(fixturesDirectory, "launchrig-matrix.v1.json"), JSON.stringify(matrixManifest)),
-    writeFile(path.join(fixturesDirectory, "launchrig-dapp-v0.1.0.json"), JSON.stringify(appManifest)),
+  writes.push(
+    writeFile(
+      path.join(fixturesDirectory, "launchrig-matrix.v1.json"),
+      JSON.stringify({ schemaVersion: 1, cases: manifestCases }),
+    ),
+    writeFile(path.join(fixturesDirectory, "launchrig-dapp-v0.2.0.json"), JSON.stringify(appManifest)),
     writeFile(path.join(fixturesDirectory, "mock-mwa-main.json"), JSON.stringify(walletManifest)),
-    writeFile(path.join(flowsDirectory, "fixture-rejection-broken.yaml"), brokenFlowSource),
-    writeFile(path.join(flowsDirectory, "fixture-rejection-fixed.yaml"), fixedFlowSource),
-    writeFile(brokenConfig, brokenConfigSource),
-    writeFile(fixedConfig, fixedConfigSource),
     writeFile(appArtifact, appBytes),
     writeFile(walletArtifact, walletBytes),
-  ]);
-  return { root, brokenConfig, fixedConfig, appArtifact, appSha256, walletSha256 };
+  );
+  await Promise.all(writes);
+  return { root, appArtifact, appSha256, walletSha256 };
 }
 
-function outputFor(workspace: MatrixWorkspace, variant: FixtureMatrixVariant): RunOutput {
+function contractForConfig(configPath: string): { matrixCase: MatrixCaseContract; variant: FixtureMatrixVariant } {
+  for (const matrixCase of CASES) {
+    for (const variant of VARIANTS) {
+      if (path.basename(configPath) === configName(matrixCase, variant)) return { matrixCase, variant };
+    }
+  }
+  throw new Error("Unexpected config path " + configPath);
+}
+
+function outputFor(
+  workspace: MatrixWorkspace,
+  matrixCase: MatrixCaseContract,
+  variant: FixtureMatrixVariant,
+): RunOutput {
   const broken = variant === "broken";
-  const startedAt = new Date("2026-08-25T12:00:00.000Z");
-  const completedAt = new Date("2026-08-25T12:00:01.000Z");
   const evidenceChecks = [
     "tool.adb",
     "device.connected",
@@ -211,26 +280,26 @@ function outputFor(workspace: MatrixWorkspace, variant: FixtureMatrixVariant): R
     summary: id + " passed",
   }));
   const report = createReport({
-    runId: "fixture-" + variant,
-    project: "Fixture " + variant,
+    runId: matrixCase.id + "-" + variant,
+    project: "Fixture " + matrixCase.id + " " + variant,
     packageName: APP_PACKAGE,
     network: "devnet",
-    startedAt,
-    completedAt,
+    startedAt: new Date("2026-08-25T12:00:00.000Z"),
+    completedAt: new Date("2026-08-25T12:00:01.000Z"),
     checks: [
       ...evidenceChecks,
       {
-        id: "scenario." + SCENARIO_ID,
-        name: "Controlled wallet rejection recovery",
+        id: "scenario." + matrixCase.id,
+        name: matrixCase.name,
         status: broken ? "fail" : "pass",
         required: true,
         durationMs: 1000,
-        summary: broken ? "Healthy recovery assertions failed" : "Healthy recovery assertions passed",
-        ...(broken ? { details: 'Assertion is false: "^false$", id: request-pending is visible' } : {}),
+        summary: broken ? "Controlled assertion failed" : "Recovery assertions passed",
+        ...(broken ? { details: "Assertion is false: controlled target, " + matrixCase.marker + " is visible" } : {}),
       },
     ],
     device: {
-      serial: "TEST-DEVICE",
+      serial: "***TEST",
       manufacturer: "LaunchRig",
       model: "Physical fixture",
       androidVersion: "12",
@@ -239,10 +308,18 @@ function outputFor(workspace: MatrixWorkspace, variant: FixtureMatrixVariant): R
       securityPatch: "2026-08-01",
       isEmulator: false,
     },
-    app: { packageName: APP_PACKAGE, versionName: "0.1.0", versionCode: "1" },
+    app: { packageName: APP_PACKAGE, versionName: "0.2.0", versionCode: "2" },
     wallet: { packageName: WALLET_PACKAGE, versionName: "1.0.1", versionCode: "2" },
   });
-  const directory = path.join(workspace.root, "results", variant, "fixture-run");
+  const directory = path.join(
+    workspace.root,
+    ".launchrig",
+    "results",
+    "fixture-matrix",
+    matrixCase.id,
+    variant,
+    "fixture-run",
+  );
   return {
     report,
     artifacts: {
@@ -258,453 +335,294 @@ function outputFor(workspace: MatrixWorkspace, variant: FixtureMatrixVariant): R
 
 function fakeProjectRunner(
   workspace: MatrixWorkspace,
-  brokenOutput: RunOutput,
-  fixedOutput: RunOutput,
-  calls: Array<{ configPath: string; scenarioId: string | undefined }>,
+  calls: Array<{ configPath: string; scenarioId: string | undefined }> = [],
+  mutate?: (
+    output: RunOutput,
+    matrixCase: MatrixCaseContract,
+    variant: FixtureMatrixVariant,
+  ) => void | Promise<void>,
 ): FixtureMatrixProjectRunner {
   return async (configPath, options = {}) => {
+    const contract = contractForConfig(configPath);
+    const output = outputFor(workspace, contract.matrixCase, contract.variant);
+    await mutate?.(output, contract.matrixCase, contract.variant);
     calls.push({ configPath, scenarioId: options.scenarioId });
-    return configPath === workspace.brokenConfig ? brokenOutput : fixedOutput;
+    return output;
   };
+}
+
+async function refreshFlowHash(
+  workspace: MatrixWorkspace,
+  matrixCase: MatrixCaseContract,
+  variant: FixtureMatrixVariant,
+): Promise<void> {
+  const manifestPath = path.join(workspace.root, "fixtures", "launchrig-matrix.v1.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    cases: Array<{ id: string; expectations: Record<FixtureMatrixVariant, { flowSha256: string }> }>;
+  };
+  const entry = manifest.cases.find((candidate) => candidate.id === matrixCase.id);
+  assert.ok(entry);
+  const flow = await readFile(path.join(workspace.root, "launchrig-flows", flowName(matrixCase, variant)));
+  entry.expectations[variant].flowSha256 = sha256(flow);
+  await writeFile(manifestPath, JSON.stringify({ schemaVersion: 1, cases: manifest.cases }));
 }
 
 function captureIO(): { io: CliIO; output: string[]; errors: string[] } {
   const output: string[] = [];
   const errors: string[] = [];
   return {
-    io: {
-      out: (message) => output.push(message),
-      error: (message) => errors.push(message),
-    },
+    io: { out: (message) => output.push(message), error: (message) => errors.push(message) },
     output,
     errors,
   };
 }
 
-test("broken reinstalls the verified pair and fixed reuses it", async () => {
-  const [broken, fixed] = await Promise.all([loadConfig(BROKEN_CONFIG), loadConfig(FIXED_CONFIG)]);
-  const expectedAppApk = path.join(
-    WORKSPACE,
-    ".launchrig",
-    "cache",
-    "apks",
-    "launchrig-fixture-v0.1.0-arm64-release.apk",
-  );
-  const expectedWalletApk = path.join(
-    WORKSPACE,
-    ".launchrig",
-    "cache",
-    "apks",
-    "mock-mwa-1.0.1-d444aff-debug.apk",
-  );
-
-  for (const config of [broken, fixed]) {
-    assert.equal(config.project.packageName, APP_PACKAGE);
-    assert.equal(config.project.install, true);
-    assert.equal(config.resolvedApk, expectedAppApk);
-    assert.equal(config.target.network, "devnet");
-    assert.equal(config.wallet.mode, "mock-mwa");
-    assert.equal(config.wallet.packageName, WALLET_PACKAGE);
-    assert.equal(config.wallet.install, true);
-    assert.equal(config.resolvedWalletApk, expectedWalletApk);
-    assert.equal(config.scenarios.length, 1);
-    assert.equal(config.scenarios[0]?.id, SCENARIO_ID);
-    assert.equal(config.scenarios[0]?.required, true);
-  }
-  assert.equal(broken.project.installPolicy, "always");
-  assert.equal(broken.wallet.installPolicy, "always");
-  assert.equal(fixed.project.installPolicy, "if-missing");
-  assert.equal(fixed.wallet.installPolicy, "if-missing");
-  assert.equal(broken.scenarios[0]?.resolvedFlow, BROKEN_FLOW);
-  assert.equal(fixed.scenarios[0]?.resolvedFlow, FIXED_FLOW);
-});
-
-test("variant flows differ only by deep link and assert the same healthy recovery", async () => {
-  const [broken, fixed] = await Promise.all([readFile(BROKEN_FLOW, "utf8"), readFile(FIXED_FLOW, "utf8")]);
-  const normalizedBroken = broken
-    .replace("variant=broken", "variant=VARIANT")
-    .replace('text: "^broken$"', 'text: "^VARIANT$"');
-  const normalizedFixed = fixed
-    .replace("variant=fixed", "variant=VARIANT")
-    .replace('text: "^fixed$"', 'text: "^VARIANT$"');
-
-  assert.equal(normalizedBroken, normalizedFixed);
-  assert.match(broken, /launchrig:\/\/fixture\/rejection\?variant=broken/);
-  assert.match(fixed, /launchrig:\/\/fixture\/rejection\?variant=fixed/);
-  assert.match(broken, /id: "fixture-variant"[\s\S]*text: "\^broken\$"/);
-  assert.match(fixed, /id: "fixture-variant"[\s\S]*text: "\^fixed\$"/);
-  for (const source of [broken, fixed]) {
-    assert.match(
-      source,
-      /id: "request-rejection"[\s\S]*when:\n\s+visible:\n\s+id: "com\.solana\.mwallet:id\/btn_connect"[\s\S]*commands:/,
-    );
-    assert.match(source, /id: "request-pending"[\s\S]*text: "\^false\$"/);
-    assert.match(source, /id: "rejection-recovered"[\s\S]*text: "\^USER_REJECTED\$"/);
-    assert.match(source, /id: "request-action-enabled"[\s\S]*text: "\^true\$"/);
-    const documents = parseAllDocuments(source);
-    assert.equal(documents.length, 2);
-    assert.deepEqual(documents.flatMap((document) => document.errors), []);
+test("tracked lifecycle configs and flows match the six-run contract", async () => {
+  assert.deepEqual(CONTROLLED_CASES.map((entry) => entry.id), CASES.map((entry) => entry.id));
+  for (const [caseIndex, matrixCase] of CASES.entries()) {
+    const sources: Record<FixtureMatrixVariant, string> = { broken: "", fixed: "" };
+    for (const variant of VARIANTS) {
+      const config = await loadConfig(path.join(WORKSPACE, configName(matrixCase, variant)));
+      assert.equal(config.scenarios[0]?.kind, matrixCase.kind);
+      assert.equal(
+        config.resolvedArtifactDirectory,
+        path.join(WORKSPACE, ".launchrig", "results", "fixture-matrix", matrixCase.id, variant),
+      );
+      assert.equal(config.project.installPolicy, caseIndex === 0 && variant === "broken" ? "always" : "if-missing");
+      sources[variant] = await readFile(path.join(WORKSPACE, "launchrig-flows", flowName(matrixCase, variant)), "utf8");
+      const documents = parseAllDocuments(sources[variant]);
+      assert.equal(documents.length, 2);
+      assert.deepEqual(documents.flatMap((document) => document.errors), []);
+    }
+    const normalizedBroken = sources.broken
+      .replaceAll(launchUri(matrixCase, "broken"), "URI")
+      .replace('text: "^broken$"', 'text: "^VARIANT$"');
+    const normalizedFixed = sources.fixed
+      .replaceAll(launchUri(matrixCase, "fixed"), "URI")
+      .replace('text: "^fixed$"', 'text: "^VARIANT$"');
+    assert.equal(normalizedBroken, normalizedFixed);
+    assert.equal((sources.broken.match(/- openLink:/g) ?? []).length, matrixCase.openLinkCount);
+    assert.equal((sources.broken.match(/- stopApp:/g) ?? []).length, matrixCase.processDeath ? 1 : 0);
+    assert.equal((sources.broken.match(/- killApp:/g) ?? []).length, 0);
   }
 });
 
-test("matrix preflight binds flows and verified APK hashes to relative evidence", async (context) => {
+test("matrix executes three red and green pairs in canonical order", async (context) => {
   const workspace = await createMatrixWorkspace(context);
-  const brokenOutput = outputFor(workspace, "broken");
-  const fixedOutput = outputFor(workspace, "fixed");
   const calls: Array<{ configPath: string; scenarioId: string | undefined }> = [];
-  const result = await runFixtureMatrix({
-    cwd: workspace.root,
-    projectRunner: fakeProjectRunner(workspace, brokenOutput, fixedOutput, calls),
-  });
+  const result = await runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace, calls) });
 
-  assert.deepEqual(calls, [
-    { configPath: workspace.brokenConfig, scenarioId: SCENARIO_ID },
-    { configPath: workspace.fixedConfig, scenarioId: SCENARIO_ID },
-  ]);
-  assert.equal(result.manifestPath, "fixtures/launchrig-matrix.v1.json");
-  assert.match(result.manifestSha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(
+    calls.map((call) => [path.basename(call.configPath), call.scenarioId]),
+    CASES.flatMap((matrixCase) => VARIANTS.map((variant) => [configName(matrixCase, variant), matrixCase.id])),
+  );
+  assert.equal(result.executions.length, 6);
+  assert.equal(result.provenance.cases.length, 3);
   assert.equal(result.provenance.app.sha256, workspace.appSha256);
   assert.equal(result.provenance.wallet.sha256, workspace.walletSha256);
-  assert.equal(result.provenance.app.artifactPath, ".launchrig/cache/apks/controlled-app.apk");
-  assert.equal(result.provenance.wallet.artifactPath, ".launchrig/cache/apks/mock-wallet.apk");
-  assert.equal(result.provenance.variants.broken.launchUri, BROKEN_URI);
-  assert.equal(result.provenance.variants.fixed.launchUri, FIXED_URI);
-  assert.equal(result.provenance.variants.broken.configSha256, sha256(await readFile(workspace.brokenConfig)));
-  assert.equal(
-    result.provenance.variants.fixed.flowSha256,
-    sha256(await readFile(path.join(workspace.root, "launchrig-flows", "fixture-rejection-fixed.yaml"))),
-  );
-  assert.equal(result.executions[0]?.configPath, "launchrig-fixture-broken.yml");
-  assert.equal(result.executions[1]?.configPath, "launchrig-fixture-fixed.yml");
-  assert.notStrictEqual(result.executions[0]?.output.report, brokenOutput.report);
-  assert.notStrictEqual(result.executions[1]?.output.report, fixedOutput.report);
-  assert.deepEqual(result.executions[0]?.output.report, brokenOutput.report);
-  assert.deepEqual(result.executions[1]?.output.report, fixedOutput.report);
-  assert.equal(result.executions[0]?.output.artifacts.json, "results/broken/fixture-run/launchrig-report.json");
-  assert.equal(brokenOutput.artifacts.json, path.join(workspace.root, "results/broken/fixture-run/launchrig-report.json"));
-  assert.equal(result.executions[0]?.output.report.outcome, "failed");
-  assert.equal(result.executions[0]?.output.exitCode, 1);
-  assert.equal(result.executions[1]?.output.report.outcome, "passed");
-  assert.equal(result.executions[1]?.output.exitCode, 0);
+  assert.equal(result.provenance.cases[2]?.variants.fixed.launchUri, launchUri(CASES[2]!, "fixed"));
   assert.equal(result.evaluation.accepted, true);
   assert.equal(result.exitCode, 0);
-  assert.doesNotMatch(JSON.stringify(result), new RegExp(escapeRegex(workspace.root)));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(workspace.root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-test("matrix preflight rejects a flow that does not launch its manifest URI", async (context) => {
-  const workspace = await createMatrixWorkspace(context, { brokenFlowUri: FIXED_URI });
-  let calls = 0;
+test("matrix rejects missing or reordered controlled cases", async (context) => {
+  const workspace = await createMatrixWorkspace(context);
+  const manifestPath = path.join(workspace.root, "fixtures", "launchrig-matrix.v1.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { schemaVersion: 1; cases: unknown[] };
+  manifest.cases.reverse();
+  await writeFile(manifestPath, JSON.stringify(manifest));
   await assert.rejects(
-    runFixtureMatrix({
-      cwd: workspace.root,
-      projectRunner: async () => {
-        calls += 1;
-        return outputFor(workspace, "fixed");
-      },
-    }),
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
+    (error: unknown) =>
+      error instanceof FixtureMatrixValidationError && error.issues.some((issue) => issue.includes("case 0 must be")),
+  );
+});
+
+test("matrix rejects process-death flows without an explicit package-scoped stop", async (context) => {
+  const workspace = await createMatrixWorkspace(context);
+  const matrixCase = CASES[2]!;
+  const flowPath = path.join(workspace.root, "launchrig-flows", flowName(matrixCase, "broken"));
+  await writeFile(flowPath, flowSource(matrixCase, "broken", { includeStop: false }));
+  await refreshFlowHash(workspace, matrixCase, "broken");
+  await assert.rejects(
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
     (error: unknown) =>
       error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("exactly one openLink for " + BROKEN_URI)),
+      error.issues.some((issue) => issue.includes("exactly one stopApp targeting " + APP_PACKAGE)),
   );
-  assert.equal(calls, 0);
 });
 
-test("matrix preflight rejects a cached APK that differs from tracked provenance", async (context) => {
+test("matrix rejects nondeterministic killApp fallback even when the hash is updated", async (context) => {
   const workspace = await createMatrixWorkspace(context);
+  const matrixCase = CASES[2]!;
+  const flowPath = path.join(workspace.root, "launchrig-flows", flowName(matrixCase, "fixed"));
+  await writeFile(flowPath, flowSource(matrixCase, "fixed", { includeKill: true }));
+  await refreshFlowHash(workspace, matrixCase, "fixed");
+  await assert.rejects(
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
+    (error: unknown) =>
+      error instanceof FixtureMatrixValidationError && error.issues.some((issue) => issue.includes("must not contain killApp")),
+  );
+});
+
+test("matrix rejects changed paired flows and artifact mutations", async (context) => {
+  const workspace = await createMatrixWorkspace(context);
+  const matrixCase = CASES[1]!;
+  const flowPath = path.join(workspace.root, "launchrig-flows", flowName(matrixCase, "fixed"));
+  await writeFile(flowPath, (await readFile(flowPath, "utf8")) + "# reviewed difference\n");
+  await refreshFlowHash(workspace, matrixCase, "fixed");
+  await assert.rejects(
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
+    (error: unknown) =>
+      error instanceof FixtureMatrixValidationError && error.issues.some((issue) => issue.includes("must be identical")),
+  );
+
+  await writeFile(flowPath, flowSource(matrixCase, "fixed"));
+  await refreshFlowHash(workspace, matrixCase, "fixed");
   await writeFile(workspace.appArtifact, "tampered fixture APK");
   await assert.rejects(
-    runFixtureMatrix({
-      cwd: workspace.root,
-      projectRunner: async () => outputFor(workspace, "fixed"),
-    }),
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
     (error: unknown) =>
-      error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("app fixture APK")),
+      error instanceof FixtureMatrixValidationError && error.issues.some((issue) => issue.includes("app fixture APK")),
   );
 });
 
-test("matrix preflight rejects configs that do not reinstall the exact broken pair", async (context) => {
+test("matrix rejects a config mutated during a controlled run", async (context) => {
   const workspace = await createMatrixWorkspace(context);
-  const source = await readFile(workspace.brokenConfig, "utf8");
-  await writeFile(workspace.brokenConfig, source.replaceAll("installPolicy: always", "installPolicy: if-missing"));
+  const firstCase = CASES[0]!;
+  const configPath = path.join(workspace.root, configName(firstCase, "broken"));
+
   await assert.rejects(
     runFixtureMatrix({
       cwd: workspace.root,
-      projectRunner: async () => outputFor(workspace, "fixed"),
+      projectRunner: fakeProjectRunner(workspace, [], async (_output, matrixCase, variant) => {
+        if (matrixCase.id === firstCase.id && variant === "broken") {
+          await writeFile(configPath, (await readFile(configPath, "utf8")) + "# mutation during run\n");
+        }
+      }),
     }),
     (error: unknown) =>
       error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("broken project install must be true with installPolicy always")) &&
-      error.issues.some((issue) => issue.includes("broken wallet install must be true with installPolicy always")),
+      error.issues.some((issue) =>
+        issue.includes(firstCase.id + " broken config changed after controlled matrix preflight after"),
+      ),
   );
 });
 
-test("matrix preflight rejects alternate config paths and nonphysical profiles", async (context) => {
+test("matrix rejects a flow mutated during a controlled run", async (context) => {
   const workspace = await createMatrixWorkspace(context);
-  const alternateConfig = path.join(workspace.root, "alternate-broken.yml");
-  await writeFile(alternateConfig, await readFile(workspace.brokenConfig));
-  await assert.rejects(
-    runFixtureMatrix({
-      cwd: workspace.root,
-      brokenConfigPath: alternateConfig,
-      projectRunner: async () => outputFor(workspace, "fixed"),
-    }),
-    (error: unknown) =>
-      error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("must use " + path.basename(workspace.brokenConfig))),
-  );
+  const firstCase = CASES[0]!;
+  const flowPath = path.join(workspace.root, "launchrig-flows", flowName(firstCase, "broken"));
 
-  const source = await readFile(workspace.brokenConfig, "utf8");
-  await writeFile(workspace.brokenConfig, source.replace("requirePhysical: true", "requirePhysical: false"));
   await assert.rejects(
     runFixtureMatrix({
       cwd: workspace.root,
-      projectRunner: async () => outputFor(workspace, "fixed"),
+      projectRunner: fakeProjectRunner(workspace, [], async (_output, matrixCase, variant) => {
+        if (matrixCase.id === firstCase.id && variant === "broken") {
+          await writeFile(flowPath, (await readFile(flowPath, "utf8")) + "# mutation during run\n");
+        }
+      }),
     }),
     (error: unknown) =>
       error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("must require a physical Android device")),
+      error.issues.some((issue) =>
+        issue.includes(firstCase.id + " broken Maestro flow changed after controlled matrix preflight after"),
+      ),
   );
 });
 
-test("matrix preflight rejects a changed canonical flow even when its launch URI remains valid", async (context) => {
+test("matrix rejects alternate paths and escaping flow symlinks", async (context) => {
   const workspace = await createMatrixWorkspace(context);
-  const brokenFlow = path.join(workspace.root, "launchrig-flows", "fixture-rejection-broken.yaml");
-  await writeFile(brokenFlow, (await readFile(brokenFlow, "utf8")) + "# changed after review\n");
   await assert.rejects(
     runFixtureMatrix({
       cwd: workspace.root,
-      projectRunner: async () => outputFor(workspace, "fixed"),
+      brokenConfigPath: path.join(workspace.root, "alternate.yml"),
+      projectRunner: fakeProjectRunner(workspace),
     }),
     (error: unknown) =>
-      error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("flow SHA-256 differs")),
+      error instanceof FixtureMatrixValidationError && error.issues.some((issue) => issue.includes("alternate config")),
   );
-});
 
-test("matrix preflight rejects a canonical flow symlink that escapes the workspace", async (context) => {
-  const workspace = await createMatrixWorkspace(context);
+  const matrixCase = CASES[0]!;
+  const flowPath = path.join(workspace.root, "launchrig-flows", flowName(matrixCase, "broken"));
   const externalDirectory = await mkdtemp(path.join(tmpdir(), "launchrig-external-flow-"));
   context.after(async () => await rm(externalDirectory, { recursive: true, force: true }));
-  const brokenFlow = path.join(workspace.root, "launchrig-flows", "fixture-rejection-broken.yaml");
-  const externalFlow = path.join(externalDirectory, "fixture-rejection-broken.yaml");
-  await writeFile(externalFlow, await readFile(brokenFlow));
-  await rm(brokenFlow);
-  await symlink(externalFlow, brokenFlow);
-
+  const externalFlow = path.join(externalDirectory, "flow.yaml");
+  await writeFile(externalFlow, await readFile(flowPath));
+  await rm(flowPath);
+  await symlink(externalFlow, flowPath);
   await assert.rejects(
-    runFixtureMatrix({
-      cwd: workspace.root,
-      projectRunner: async () => outputFor(workspace, "fixed"),
-    }),
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
     (error: unknown) =>
       error instanceof FixtureMatrixValidationError &&
       error.issues.some((issue) => issue.includes("resolves outside the LaunchRig workspace")),
   );
 });
 
-test("matrix rejects missing, emulated, and wrong-version execution evidence", async (context) => {
-  const cases = [
-    {
-      name: "missing device",
-      mutate: (output: RunOutput) => {
-        delete output.report.device;
-      },
-      expected: "physical-device evidence is missing",
-    },
-    {
-      name: "emulator",
-      mutate: (output: RunOutput) => {
-        assert.ok(output.report.device);
-        output.report.device.isEmulator = true;
-      },
-      expected: "must come from a physical Android device",
-    },
-    {
-      name: "wrong app version",
-      mutate: (output: RunOutput) => {
-        output.report.app.versionCode = "999";
-      },
-      expected: "app package versionCode must be 1",
-    },
-  ];
-
-  for (const evidenceCase of cases) {
-    await context.test(evidenceCase.name, async (subcontext) => {
-      const workspace = await createMatrixWorkspace(subcontext);
-      const brokenOutput = outputFor(workspace, "broken");
-      const fixedOutput = outputFor(workspace, "fixed");
-      evidenceCase.mutate(fixedOutput);
-      await assert.rejects(
-        runFixtureMatrix({
-          cwd: workspace.root,
-          projectRunner: fakeProjectRunner(workspace, brokenOutput, fixedOutput, []),
-        }),
-        (error: unknown) =>
-          error instanceof FixtureMatrixValidationError &&
-          error.issues.some((issue) => issue.includes(evidenceCase.expected)),
-      );
-    });
-  }
-});
-
-test("matrix rejects a broken run that fails before the controlled recovery assertion", async (context) => {
+test("matrix requires each broken run to fail at its controlled marker", async (context) => {
   const workspace = await createMatrixWorkspace(context);
-  const brokenOutput = outputFor(workspace, "broken");
-  const target = brokenOutput.report.checks.find((check) => check.id === "scenario." + SCENARIO_ID);
-  assert.ok(target);
-  target.details = 'Assertion is false: "^broken$", id: fixture-variant is visible';
   await assert.rejects(
     runFixtureMatrix({
       cwd: workspace.root,
-      projectRunner: fakeProjectRunner(workspace, brokenOutput, outputFor(workspace, "fixed"), []),
+      projectRunner: fakeProjectRunner(workspace, [], (output, matrixCase, variant) => {
+        if (matrixCase.id === CASES[1]?.id && variant === "broken") {
+          const target = output.report.checks.find((check) => check.id === "scenario." + matrixCase.id);
+          assert.ok(target);
+          target.details = "Assertion is false: id: fixture-ready";
+        }
+      }),
     }),
     (error: unknown) =>
       error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("must fail at the controlled request-pending recovery assertion")),
+      error.issues.some((issue) => issue.includes("id: reauthorization-pending")),
   );
 });
 
-test("missing cached matrix artifacts retain environment exit code three", async (context) => {
+test("matrix preserves setup-error exit code and missing-artifact environment errors", async (context) => {
   const workspace = await createMatrixWorkspace(context);
+  const result = await runFixtureMatrix({
+    cwd: workspace.root,
+    projectRunner: fakeProjectRunner(workspace, [], (output, matrixCase, variant) => {
+      if (matrixCase.id === CASES[0]?.id && variant === "broken") {
+        output.report.outcome = "setup-error";
+        output.exitCode = 3;
+      }
+    }),
+  });
+  assert.equal(result.exitCode, 3);
+  assert.equal(result.evaluation.accepted, false);
+
   await rm(workspace.appArtifact);
-  const dependency = async (options: RunFixtureMatrixOptions = {}): Promise<RunFixtureMatrixOutput> =>
-    await runFixtureMatrix({
-      ...options,
-      cwd: workspace.root,
-      projectRunner: async () => outputFor(workspace, "fixed"),
-    });
   await assert.rejects(
-    dependency(),
+    runFixtureMatrix({ cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) }),
     (error: unknown) =>
       error instanceof FixtureMatrixEnvironmentError &&
       error.issues.some((issue) => issue.includes("Cannot verify app fixture APK")),
   );
-  const capture = captureIO();
-  assert.equal(await runCli(["matrix"], capture.io, { runFixtureMatrix: dependency }), 3);
-  assert.match(capture.errors[0] ?? "", /Fixture matrix environment error/);
 });
 
-test("matrix detects a fixture APK mutation that happens during execution", async (context) => {
+test("matrix CLI returns sanitized six-run JSON evidence", async (context) => {
   const workspace = await createMatrixWorkspace(context);
-  let calls = 0;
-  await assert.rejects(
-    runFixtureMatrix({
-      cwd: workspace.root,
-      projectRunner: async () => {
-        calls += 1;
-        if (calls === 2) await writeFile(workspace.appArtifact, "mutated during execution");
-        return outputFor(workspace, calls === 1 ? "broken" : "fixed");
-      },
-    }),
-    (error: unknown) =>
-      error instanceof FixtureMatrixValidationError &&
-      error.issues.some((issue) => issue.includes("app fixture APK")),
-  );
-  assert.equal(calls, 2);
-});
-
-test("matrix setup errors retain environment exit code three", async (context) => {
-  const workspace = await createMatrixWorkspace(context);
-  const brokenOutput = outputFor(workspace, "broken");
-  brokenOutput.report.outcome = "setup-error";
-  brokenOutput.exitCode = 3;
-  delete brokenOutput.report.device;
-  delete brokenOutput.report.wallet;
-  brokenOutput.report.checks = [
-    {
-      id: "tool.adb",
-      name: "ADB available",
-      status: "fail",
-      required: true,
-      durationMs: 1,
-      summary: "ADB is unavailable",
-    },
-  ];
-  const fixedOutput = outputFor(workspace, "fixed");
-  const calls: Array<{ configPath: string; scenarioId: string | undefined }> = [];
-  const result = await runFixtureMatrix({
-    cwd: workspace.root,
-    projectRunner: fakeProjectRunner(workspace, brokenOutput, fixedOutput, calls),
-  });
-
-  assert.equal(calls.length, 2);
-  assert.equal(result.evaluation.accepted, false);
-  assert.ok(result.evaluation.issues.some((issue) => issue.code === "setup-error"));
-  assert.equal(result.exitCode, 3);
-  const capture = captureIO();
-  assert.equal(
-    await runCli(["matrix"], capture.io, {
-      runFixtureMatrix: async () => result,
-    }),
-    3,
-  );
-});
-
-test("matrix CLI exposes sanitized relative JSON evidence", async (context) => {
-  const workspace = await createMatrixWorkspace(context);
-  const brokenOutput = outputFor(workspace, "broken");
-  const fixedOutput = outputFor(workspace, "fixed");
-  const privateDetail = "/Users/alice/private/device.log";
-  const brokenCheck = brokenOutput.report.checks[0];
-  if (brokenCheck) brokenCheck.details = privateDetail;
   let received: RunFixtureMatrixOptions | undefined;
   const dependency = async (options: RunFixtureMatrixOptions = {}): Promise<RunFixtureMatrixOutput> => {
     received = options;
-    return await runFixtureMatrix({
-      ...options,
-      cwd: workspace.root,
-      projectRunner: fakeProjectRunner(workspace, brokenOutput, fixedOutput, []),
-    });
+    return await runFixtureMatrix({ ...options, cwd: workspace.root, projectRunner: fakeProjectRunner(workspace) });
   };
   const capture = captureIO();
-  const exitCode = await runCli(
-    [
-      "matrix",
-      "--device",
-      "TEST-DEVICE",
-      "--json",
-    ],
-    capture.io,
-    { runFixtureMatrix: dependency },
-  );
+  const exitCode = await runCli(["matrix", "--device", "TEST-DEVICE", "--json"], capture.io, {
+    runFixtureMatrix: dependency,
+  });
 
   assert.equal(exitCode, 0);
-  assert.deepEqual(received, {
-    deviceSerial: "TEST-DEVICE",
-  });
+  assert.deepEqual(received, { deviceSerial: "TEST-DEVICE" });
   assert.deepEqual(capture.errors, []);
-  assert.doesNotMatch(capture.output[0] ?? "", new RegExp(escapeRegex(workspace.root)));
-  assert.doesNotMatch(capture.output[0] ?? "", /\/Users\/alice/);
-  assert.equal(brokenOutput.report.checks[0]?.details, privateDetail);
   const rendered = JSON.parse(capture.output[0] ?? "") as RunFixtureMatrixOutput;
-  assert.equal(rendered.provenance.app.sha256, workspace.appSha256);
-  assert.equal(rendered.provenance.wallet.sha256, workspace.walletSha256);
-  assert.equal(rendered.executions[0]?.output.report.outcome, "failed");
-  assert.equal(rendered.executions[0]?.output.exitCode, 1);
-  assert.equal(rendered.executions[1]?.output.report.outcome, "passed");
-  assert.equal(rendered.executions[1]?.output.exitCode, 0);
-});
-
-test("matrix CLI cannot return zero for a rejected pair and help documents the command", async (context) => {
-  const workspace = await createMatrixWorkspace(context);
-  const brokenOutput = outputFor(workspace, "broken");
-  const fixedOutput = outputFor(workspace, "fixed");
-  fixedOutput.exitCode = 1;
-  const rejected = await runFixtureMatrix({
-    cwd: workspace.root,
-    projectRunner: fakeProjectRunner(workspace, brokenOutput, fixedOutput, []),
-  });
-  const capture = captureIO();
-  const exitCode = await runCli(["matrix"], capture.io, {
-    runFixtureMatrix: async () => rejected,
-  });
-  assert.equal(exitCode, 1);
-  assert.match(capture.output[0] ?? "", /LaunchRig fixture matrix: rejected/);
-  assert.match(capture.output[0] ?? "", /app SHA-256: [a-f0-9]{64}/);
+  assert.equal(rendered.executions.length, 6);
+  assert.equal(rendered.provenance.cases.length, 3);
+  assert.doesNotMatch(capture.output[0] ?? "", new RegExp(workspace.root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 
   const help = captureIO();
   assert.equal(await runCli(["--help"], help.io), 0);
   assert.match(help.output[0] ?? "", /launchrig matrix/);
-  assert.doesNotMatch(help.output[0] ?? "", /--broken-config/);
 });

@@ -122,6 +122,8 @@ function parseScenarios(value: unknown, issues: string[]): ScenarioConfig[] {
       kind !== "mwa-siws" &&
       kind !== "mwa-sign-message" &&
       kind !== "mwa-reject" &&
+      kind !== "mwa-stale-authorization" &&
+      kind !== "mwa-process-death" &&
       kind !== "custom"
     ) {
       issues.push(path + ".kind must be a supported versioned scenario kind");

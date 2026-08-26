@@ -19,28 +19,29 @@ const MATRIX_PATH = path.join(process.cwd(), "fixtures", "launchrig-matrix.v1.js
 const CASE_ID = "rejection-recovery";
 const SCENARIO_ID = "rejection-recovery";
 const TARGET_CHECK_ID = "scenario." + SCENARIO_ID;
+const CASE_IDS = ["rejection-recovery", "stale-authorization-recovery", "process-death-recovery"] as const;
 
 async function loadManifest(): Promise<FixtureMatrixManifestV1> {
   return parseFixtureMatrixManifest(JSON.parse(await readFile(MATRIX_PATH, "utf8")) as unknown);
 }
 
-function runFor(variant: FixtureMatrixVariant): FixtureMatrixRun {
+function runFor(variant: FixtureMatrixVariant, caseId: string = CASE_ID): FixtureMatrixRun {
   const broken = variant === "broken";
   return {
-    caseId: CASE_ID,
+    caseId,
     variant,
-    scenarioId: SCENARIO_ID,
+    scenarioId: caseId,
     outcome: broken ? "failed" : "passed",
     exitCode: broken ? 1 : 0,
     checks: [
       { id: "tool.adb", status: "pass", required: true },
-      { id: TARGET_CHECK_ID, status: broken ? "fail" : "pass", required: true },
+      { id: "scenario." + caseId, status: broken ? "fail" : "pass", required: true },
     ],
   };
 }
 
 function validRuns(): FixtureMatrixRun[] {
-  return [runFor("broken"), runFor("fixed")];
+  return CASE_IDS.flatMap((caseId) => [runFor("broken", caseId), runFor("fixed", caseId)]);
 }
 
 function cloneRuns(runs: readonly FixtureMatrixRun[]): FixtureMatrixRun[] {
@@ -61,33 +62,31 @@ function captureValidationIssues(callback: () => unknown): string[] {
   assert.fail("Expected FixtureMatrixValidationError");
 }
 
-test("v1 fixture manifest has one executable rejection recovery pair", async () => {
+test("v1 fixture manifest has three ordered lifecycle recovery pairs", async () => {
   const manifest = await loadManifest();
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.cases.length, 1);
-  assert.deepEqual(manifest.cases[0], {
-    id: CASE_ID,
-    name: "Wallet rejection recovery",
-    scenarioId: SCENARIO_ID,
-    expectations: {
-      broken: {
-        launchUri: "launchrig://fixture/rejection?variant=broken",
-        configSha256: "f0fa915ee548fde354956c1a4bf5b3dc49f54e68b203e0b806810f30253cdfd5",
-        flowSha256: "dc50c55a9646ab917fefb32c6cafb7d5e99b4acec4f82971d72a0db00e0990d9",
-        scenarioStatus: "fail",
-        outcome: "failed",
-        exitCode: 1,
+  assert.deepEqual(manifest.cases.map((entry) => entry.id), [...CASE_IDS]);
+  for (const matrixCase of manifest.cases) {
+    assert.equal(matrixCase.scenarioId, matrixCase.id);
+    assert.deepEqual(
+      {
+        broken: {
+          scenarioStatus: matrixCase.expectations.broken.scenarioStatus,
+          outcome: matrixCase.expectations.broken.outcome,
+          exitCode: matrixCase.expectations.broken.exitCode,
+        },
+        fixed: {
+          scenarioStatus: matrixCase.expectations.fixed.scenarioStatus,
+          outcome: matrixCase.expectations.fixed.outcome,
+          exitCode: matrixCase.expectations.fixed.exitCode,
+        },
       },
-      fixed: {
-        launchUri: "launchrig://fixture/rejection?variant=fixed",
-        configSha256: "d5db65006080f544dd7f7399e96411170b3b9d29576985a0f7c7f47133b66d42",
-        flowSha256: "e120f0866fa3e634a5c6798e0941bcfdeaa55b61adfc45d46f1cf8d38d9cd49f",
-        scenarioStatus: "pass",
-        outcome: "passed",
-        exitCode: 0,
+      {
+        broken: { scenarioStatus: "fail", outcome: "failed", exitCode: 1 },
+        fixed: { scenarioStatus: "pass", outcome: "passed", exitCode: 0 },
       },
-    },
-  });
+    );
+  }
 });
 
 test("accepts only the expected red and green pair without changing the broken outcome", async () => {
@@ -98,6 +97,7 @@ test("accepts only the expected red and green pair without changing the broken o
 
   assert.equal(evaluation.accepted, true);
   assert.deepEqual(evaluation.issues, []);
+  assert.equal(evaluation.cases.length, 3);
   assert.equal(evaluation.cases[0]?.accepted, true);
   assert.equal(evaluation.cases[0]?.broken.accepted, true);
   assert.equal(evaluation.cases[0]?.broken.outcome, "failed");

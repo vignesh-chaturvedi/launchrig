@@ -1,8 +1,23 @@
 appId: dev.launchrig.fixture
-name: Controlled wallet rejection recovery
+name: Controlled process-death recovery
 ---
 - openLink:
-    link: "launchrig://fixture/rejection?variant=fixed"
+    link: "launchrig://fixture/process-death?variant=broken"
+- extendedWaitUntil:
+    visible:
+      id: "fixture-ready"
+      text: "^(READY|REPAIR_REQUIRED)$"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "fixture-variant"
+      text: "^broken$"
+    timeout: 15000
+- assertVisible:
+    id: "fixture-scenario"
+    text: "^process-death$"
+- tapOn:
+    id: "reset-process-death-fixture"
 - extendedWaitUntil:
     visible:
       id: "fixture-ready"
@@ -10,12 +25,9 @@ name: Controlled wallet rejection recovery
     timeout: 15000
 - extendedWaitUntil:
     visible:
-      id: "fixture-variant"
-      text: "^fixed$"
+      id: "process-death-state"
+      text: "^IDLE$"
     timeout: 15000
-- assertVisible:
-    id: "fixture-scenario"
-    text: "^rejection-recovery$"
 - runFlow:
     when:
       visible: "^Connect wallet$"
@@ -40,7 +52,7 @@ name: Controlled wallet rejection recovery
       text: "^CONNECTED$"
     timeout: 30000
 - tapOn:
-    id: "request-rejection"
+    id: "request-process-death"
 - tapOn:
     text: "^Mock MWA Wallet$"
     optional: true
@@ -61,19 +73,36 @@ name: Controlled wallet rejection recovery
 - assertVisible:
     id: "com.solana.mwallet:id/text_subtitle"
     text: "^Sign message\\(s\\)$"
+- stopApp: dev.launchrig.fixture
 - tapOn:
     id: "com.solana.mwallet:id/btn_cancel"
+    optional: true
+- openLink:
+    link: "launchrig://fixture/process-death?variant=broken"
 - extendedWaitUntil:
     visible:
-      id: "request-pending"
-      text: "^false$"
+      id: "fixture-ready"
+      text: "^READY$"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "process-instance-changed"
+      text: "^true$"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "process-death-state"
+      text: "^RECOVERED_UNKNOWN$"
     timeout: 30000
 - assertVisible:
-    id: "rejection-recovered"
-    text: "^USER_REJECTED$"
+    id: "request-outcome"
+    text: "^UNKNOWN$"
+- assertVisible:
+    id: "request-pending"
+    text: "^false$"
 - assertVisible:
     id: "request-action-enabled"
     text: "^true$"
 - assertVisible:
-    id: "request-rejection"
+    id: "request-process-death"
     enabled: true

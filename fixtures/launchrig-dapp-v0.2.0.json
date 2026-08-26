@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "name": "LaunchRig lifecycle recovery fixture",
+  "source": {
+    "directory": "apps/fixture-dapp",
+    "templateRepository": "https://github.com/solana-mobile/templates.git",
+    "templatePath": "mobile/expo-kit-minimal",
+    "templateCommit": "b3352ede8194350bf8fdcfa87fb055f157fea395"
+  },
+  "packageName": "dev.launchrig.fixture",
+  "versionName": "0.2.0",
+  "versionCode": 2,
+  "network": "devnet",
+  "deepLinks": {
+    "rejection-recovery": {
+      "broken": "launchrig://fixture/rejection?variant=broken",
+      "fixed": "launchrig://fixture/rejection?variant=fixed"
+    },
+    "stale-authorization-recovery": {
+      "broken": "launchrig://fixture/stale-authorization?variant=broken",
+      "fixed": "launchrig://fixture/stale-authorization?variant=fixed"
+    },
+    "process-death-recovery": {
+      "broken": "launchrig://fixture/process-death?variant=broken",
+      "fixed": "launchrig://fixture/process-death?variant=fixed"
+    }
+  },
+  "build": {
+    "command": "pnpm fixtures:build-dapp",
+    "artifactName": "launchrig-fixture-v0.2.0-arm64-release.apk",
+    "profile": "local physical-device release test",
+    "promotionPolicy": "A new version is built as a content-addressed candidate, physically qualified, then promoted to the stable alias.",
+    "signing": "Android debug key; not a production or store-distribution signature",
+    "architectures": [
+      "arm64-v8a"
+    ],
+    "minimumSdk": 24,
+    "targetSdk": 36,
+    "compileSdk": 36,
+    "gradleWorkers": 1,
+    "gradleHeapMb": 1536,
+    "lockfile": "apps/fixture-dapp/pnpm-lock.yaml",
+    "lockfileSha256": "ea101ad0f1c1fa34bf18d512ab7102ca875951eb676768bb41efffe12bf68dc2"
+  },
+  "validatedArtifact": {
+    "size": 55576283,
+    "sha256": "509cf9bd890395eb7850104ec554fb106809a78fa6aa477019ec1fd7f63aa8bf",
+    "installedOnPhysicalAndroid": true,
+    "deepLinksVerified": true,
+    "automationIdsVerified": true,
+    "lifecyclePairsQualified": true,
+    "qualifiedAt": "2026-08-26"
+  },
+  "walletFixture": {
+    "manifest": "fixtures/mock-mwa-main.json",
+    "packageName": "com.solana.mwallet"
+  },
+  "privateKeyPolicy": "Use only the wallet's generated test key. Never inject, export, or commit a private key."
+}

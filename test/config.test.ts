@@ -28,6 +28,23 @@ test("strict config accepts the Phase 1 devnet contract", () => {
   assert.equal(config.wallet.packageName, "com.solana.mwallet");
 });
 
+test("strict config accepts versioned lifecycle scenario kinds", () => {
+  for (const kind of ["mwa-stale-authorization", "mwa-process-death"] as const) {
+    const raw = validRawConfig();
+    raw.scenarios = [
+      {
+        id: kind,
+        kind,
+        name: "Lifecycle recovery",
+        flow: "./flow.yaml",
+        required: true,
+        timeoutMs: 120000,
+      },
+    ];
+    assert.equal(validateConfig(raw).scenarios[0]?.kind, kind);
+  }
+});
+
 test("config rejects mainnet and unknown keys", () => {
   const raw = validRawConfig();
   raw.target = { network: "mainnet-beta" };

@@ -9,6 +9,7 @@ import type {
   ScenarioConfig,
 } from "../types.js";
 import { AdbClient, selectDevice } from "../device/adb.js";
+import { maskIdentifier } from "../device/privacy.js";
 import { createReport, createRunId } from "../report/model.js";
 import { writeReportArtifacts, type WrittenArtifacts } from "../report/write.js";
 import { redactText } from "../security/redact.js";
@@ -35,10 +36,28 @@ function result(input: Omit<CheckResult, "durationMs"> & { startedAt: number }):
   return { ...rest, durationMs: Date.now() - startedAt };
 }
 
-function safeDetails(stdout: Buffer, stderr: Buffer, patterns: string[]): string | undefined {
+function maskKnownIdentifiers(value: string, identifiers: string[]): string {
+  let masked = value;
+  for (const identifier of identifiers.filter(Boolean).sort((left, right) => right.length - left.length)) {
+    const escapedIdentifier = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    masked = masked.replace(new RegExp(escapedIdentifier, "gi"), () => maskIdentifier(identifier));
+  }
+  return masked;
+}
+
+function safeText(value: string, patterns: string[], identifiers: string[] = []): string {
+  return redactText(maskKnownIdentifiers(value, identifiers), patterns).value;
+}
+
+function safeDetails(
+  stdout: Buffer,
+  stderr: Buffer,
+  patterns: string[],
+  identifiers: string[] = [],
+): string | undefined {
   const combined = [stdout.toString("utf8").trim(), stderr.toString("utf8").trim()].filter(Boolean).join("\n");
   if (!combined) return undefined;
-  return redactText(combined, patterns).value.slice(0, 12000);
+  return safeText(combined, patterns, identifiers).slice(0, 12000);
 }
 
 async function finalize(input: {
@@ -173,8 +192,10 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
 
   const deviceStarted = Date.now();
   let serial: string;
+  const deviceIdentifiers = [options.deviceSerial ?? env.ANDROID_SERIAL ?? ""];
   try {
     const devices = await adb.listDevices();
+    deviceIdentifiers.push(...devices.map((device) => device.serial));
     const selected = selectDevice(
       devices,
       options.deviceSerial ?? env.ANDROID_SERIAL,
@@ -200,7 +221,11 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         status: "fail",
         required: true,
         startedAt: deviceStarted,
-        summary: error instanceof Error ? error.message : String(error),
+        summary: safeText(
+          error instanceof Error ? error.message : String(error),
+          config.privacy.redactPatterns,
+          deviceIdentifiers,
+        ),
       }),
     );
     return await finalize({ config, startedAt, runId, runDirectory, checks, setupError: true });
@@ -237,7 +262,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       );
     } else {
       const install = await adb.installApk(serial, config.resolvedApk);
-      const installDetails = safeDetails(install.stdout, install.stderr, config.privacy.redactPatterns);
+      const installDetails = safeDetails(install.stdout, install.stderr, config.privacy.redactPatterns, [serial]);
       checks.push(
         result({
           id: "app.install",
@@ -289,6 +314,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           walletInstall.stdout,
           walletInstall.stderr,
           config.privacy.redactPatterns,
+          [serial],
         );
         checks.push(
           result({
@@ -415,7 +441,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       if (config.wallet.mode === "reference-fakewallet" && config.wallet.packageName) {
         const reset = await adb.forceStopPackage(serial, config.wallet.packageName);
         if (reset.exitCode !== 0) {
-          const resetDetails = safeDetails(reset.stdout, reset.stderr, config.privacy.redactPatterns);
+          const resetDetails = safeDetails(reset.stdout, reset.stderr, config.privacy.redactPatterns, [serial]);
           checks.push(
             result({
               id: "scenario." + scenario.id,
@@ -465,7 +491,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         // The process output remains available in details when Maestro exits before writing JUnit.
       }
       const details = failed
-        ? safeDetails(execution.stdout, execution.stderr, config.privacy.redactPatterns)
+        ? safeDetails(execution.stdout, execution.stderr, config.privacy.redactPatterns, [serial])
         : undefined;
       checks.push(
         result({
