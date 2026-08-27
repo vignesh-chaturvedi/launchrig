@@ -17,8 +17,7 @@ const fixture = vi.hoisted(() => ({
   wallet: {
     current: {
       account: { address: 'GsbwXfJraMomNxBcjK9jJ3YuPBQTd7pTvbwEfJvvZoP1', label: 'Test Wallet' } as
-        | { address: string; label: string }
-        | undefined,
+        { address: string; label: string } | undefined,
       connect: vi.fn(),
       signMessages: vi.fn(),
     },

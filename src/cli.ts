@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ConfigError } from "./config/schema.js";
 import { doctor } from "./commands/doctor.js";
 import { initProject } from "./commands/init.js";
@@ -10,6 +12,13 @@ import {
   type RunFixtureMatrixOutput,
 } from "./commands/matrix.js";
 import { runProject } from "./commands/run.js";
+import {
+  exportPilotEvidence,
+  getPilotStatus,
+  PilotError,
+  runPilot,
+  startPilot,
+} from "./commands/pilot.js";
 import { validateProject } from "./commands/validate.js";
 import { FixtureMatrixValidationError } from "./fixtures/matrix.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
@@ -21,6 +30,10 @@ export interface CliIO {
 
 export interface CliDependencies {
   runFixtureMatrix?: typeof runFixtureMatrix;
+  startPilot?: typeof startPilot;
+  runPilot?: typeof runPilot;
+  getPilotStatus?: typeof getPilotStatus;
+  exportPilotEvidence?: typeof exportPilotEvidence;
 }
 
 const defaultIO: CliIO = {
@@ -36,7 +49,11 @@ const HELP = [
   "  launchrig validate [--config launchrig.yml] [--json]",
   "  launchrig doctor [--config launchrig.yml] [--device SERIAL] [--json]",
   "  launchrig run [--config launchrig.yml] [--device SERIAL] [--scenario ID]",
-  "  launchrig matrix [--device SERIAL] [--json]",
+  "  launchrig matrix [--device SERIAL] [--json]  (source checkout only)",
+  "  launchrig pilot start --pilot ID [--config launchrig.yml] [--force]",
+  "  launchrig pilot run --pilot ID [--config launchrig.yml] [--device SERIAL] [--repeat N]",
+  "  launchrig pilot status --pilot ID [--config launchrig.yml] [--json]",
+  "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -109,6 +126,9 @@ export async function runCli(
         force: { type: "boolean", default: false },
         name: { type: "string" },
         package: { type: "string" },
+        pilot: { type: "string" },
+        repeat: { type: "string" },
+        output: { type: "string" },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -135,6 +155,9 @@ export async function runCli(
   const maestro = typeof parsed.values.maestro === "string" ? parsed.values.maestro : undefined;
   const projectName = typeof parsed.values.name === "string" ? parsed.values.name : undefined;
   const packageName = typeof parsed.values.package === "string" ? parsed.values.package : undefined;
+  const pilotId = typeof parsed.values.pilot === "string" ? parsed.values.pilot : undefined;
+  const repeatValue = typeof parsed.values.repeat === "string" ? Number(parsed.values.repeat) : undefined;
+  const outputPath = typeof parsed.values.output === "string" ? parsed.values.output : undefined;
 
   try {
     if (command === "init") {
@@ -192,13 +215,107 @@ export async function runCli(
 
     if (command === "matrix") {
       const matrixRunner = dependencies.runFixtureMatrix ?? runFixtureMatrix;
+      const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+      if (
+        !dependencies.runFixtureMatrix &&
+        (!existsSync(path.join(sourceRoot, ".git")) ||
+          !existsSync(path.join(sourceRoot, "fixtures", "launchrig-matrix.v1.json")))
+      ) {
+        throw new FixtureMatrixEnvironmentError([
+          "launchrig matrix is available only from a LaunchRig source checkout with its controlled local fixtures",
+        ]);
+      }
       const output = await matrixRunner({
+        ...(!dependencies.runFixtureMatrix ? { cwd: sourceRoot } : {}),
         ...(device ? { deviceSerial: device } : {}),
         ...(adb ? { adbPath: adb } : {}),
         ...(maestro ? { maestroPath: maestro } : {}),
       });
       io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanMatrix(output));
       return output.exitCode;
+    }
+
+    if (command === "pilot") {
+      const subcommand = parsed.positionals[1];
+      if (!pilotId) throw new PilotError("pilot commands require --pilot ID");
+
+      if (subcommand === "start") {
+        const start = dependencies.startPilot ?? startPilot;
+        const output = await start({ pilotId, configPath, force: parsed.values.force === true });
+        const rendered = { ...output, statePath: path.relative(process.cwd(), output.statePath) };
+        io.out(
+          parsed.values.json
+            ? JSON.stringify(rendered, null, 2)
+            : "Pilot " + pilotId + " started. State: " + rendered.statePath,
+        );
+        return 0;
+      }
+
+      if (subcommand === "run") {
+        if (repeatValue !== undefined && !Number.isSafeInteger(repeatValue)) {
+          throw new PilotError("--repeat must be an integer from 1 to 10");
+        }
+        const run = dependencies.runPilot ?? runPilot;
+        const output = await run({
+          pilotId,
+          configPath,
+          ...(repeatValue !== undefined ? { repeat: repeatValue } : {}),
+          runOptions: {
+            ...(device ? { deviceSerial: device } : {}),
+            ...(adb ? { adbPath: adb } : {}),
+            ...(maestro ? { maestroPath: maestro } : {}),
+          },
+        });
+        const rendered = { ...output, statePath: path.relative(process.cwd(), output.statePath) };
+        io.out(
+          parsed.values.json
+            ? JSON.stringify(rendered, null, 2)
+            : [
+                "Pilot " + pilotId + ": " + output.runs.length + " run(s) recorded",
+                "qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                "consecutive passes: " + output.metrics.consecutivePasses,
+                "state: " + rendered.statePath,
+              ].join("\n"),
+        );
+        return output.exitCode;
+      }
+
+      if (subcommand === "status") {
+        const status = dependencies.getPilotStatus ?? getPilotStatus;
+        const output = await status({ pilotId, configPath });
+        const rendered = { ...output, statePath: path.relative(process.cwd(), output.statePath) };
+        io.out(
+          parsed.values.json
+            ? JSON.stringify(rendered, null, 2)
+            : [
+                "Pilot " + pilotId + " status",
+                "qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                "consecutive passes: " + output.metrics.consecutivePasses,
+                "setup target: " + (output.metrics.setupTargetMet ? "met" : "not met"),
+                "runtime target: " + (output.metrics.runtimeTargetMet ? "met" : "not met"),
+              ].join("\n"),
+        );
+        return 0;
+      }
+
+      if (subcommand === "export") {
+        const exportEvidence = dependencies.exportPilotEvidence ?? exportPilotEvidence;
+        const output = await exportEvidence({
+          pilotId,
+          configPath,
+          ...(outputPath ? { outputPath } : {}),
+          force: parsed.values.force === true,
+        });
+        const renderedPath = path.relative(process.cwd(), output.outputPath);
+        io.out(
+          parsed.values.json
+            ? JSON.stringify({ outputPath: renderedPath, evidence: output.evidence }, null, 2)
+            : "Self-recorded, unattested pilot evidence exported: " + renderedPath,
+        );
+        return 0;
+      }
+
+      throw new PilotError("pilot command must be start, run, status, or export");
     }
 
     io.error("Unknown command: " + command);
@@ -217,11 +334,25 @@ export async function runCli(
       io.error("Fixture matrix environment error:\n" + error.issues.map((issue) => "- " + issue).join("\n"));
       return 3;
     }
+    if (error instanceof PilotError) {
+      io.error("Pilot error: " + error.message);
+      return error.exitCode;
+    }
     io.error(error instanceof Error ? error.message : String(error));
     return 4;
   }
 }
 
-if (import.meta.url === new URL(process.argv[1] ?? "", "file:").href) {
+function isMainModule(): boolean {
+  const entrypoint = process.argv[1];
+  if (!entrypoint) return false;
+  try {
+    return realpathSync(entrypoint) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   process.exitCode = await runCli(process.argv.slice(2));
 }

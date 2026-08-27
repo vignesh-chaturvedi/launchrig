@@ -180,10 +180,28 @@ export class AdbClient {
     const output = result.stdout.toString("utf8");
     const versionName = /^\s*versionName=(.+)$/m.exec(output)?.[1]?.trim();
     const versionCode = /^\s*versionCode=(\d+)/m.exec(output)?.[1]?.trim();
+    const packagePath = await this.shell(serial, ["pm", "path", packageName]);
+    const installedApkPath = packagePath.stdout
+      .toString("utf8")
+      .split(/\r?\n/)
+      .map((line) => (line.startsWith("package:") ? line.slice("package:".length).trim() : ""))
+      .find((entry) => entry.endsWith("/base.apk"));
+    let apkSha256: string | undefined;
+    if (
+      packagePath.exitCode === 0 &&
+      installedApkPath &&
+      /^\/data\/app\/[A-Za-z0-9._~+=,@%:/-]+\.apk$/.test(installedApkPath)
+    ) {
+      let digest = await this.shell(serial, ["sha256sum", installedApkPath]);
+      if (digest.exitCode !== 0) digest = await this.shell(serial, ["toybox", "sha256sum", installedApkPath]);
+      const candidate = /^([a-fA-F0-9]{64})\s/.exec(digest.stdout.toString("utf8"))?.[1];
+      if (digest.exitCode === 0 && candidate) apkSha256 = candidate.toLowerCase();
+    }
     return {
       packageName,
       ...(versionName ? { versionName } : {}),
       ...(versionCode ? { versionCode } : {}),
+      ...(apkSha256 ? { apkSha256 } : {}),
     };
   }
 
@@ -206,7 +224,34 @@ export class AdbClient {
     const pid = await this.shell(serial, ["pidof", packageName]);
     const pidValue = pid.exitCode === 0 ? pid.stdout.toString("utf8").trim().split(/\s+/)[0] : undefined;
     const args = ["-s", serial, "logcat", "-d", "-t", String(lines)];
-    if (pidValue) args.push("--pid", pidValue);
-    return await this.execute(args, { timeoutMs: 30000, maxOutputBytes: 512 * 1024 });
+    if (!pidValue || !/^\d+$/.test(pidValue)) {
+      return {
+        command: this.binary,
+        args,
+        exitCode: 1,
+        signal: null,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.from("Target app PID is unavailable; package-filtered logcat was not captured."),
+        durationMs: pid.durationMs,
+      };
+    }
+    args.push("--pid", pidValue);
+    const capture = await this.execute(args, { timeoutMs: 30000, maxOutputBytes: 512 * 1024 });
+    if (capture.exitCode !== 0) return capture;
+    const pidAfterCapture = await this.shell(serial, ["pidof", packageName]);
+    const pidAfterValue =
+      pidAfterCapture.exitCode === 0 ? pidAfterCapture.stdout.toString("utf8").trim().split(/\s+/)[0] : undefined;
+    if (pidAfterValue !== pidValue) {
+      return {
+        command: this.binary,
+        args,
+        exitCode: 1,
+        signal: null,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.from("Target app PID changed during logcat capture; captured output was discarded."),
+        durationMs: capture.durationMs + pidAfterCapture.durationMs,
+      };
+    }
+    return capture;
   }
 }

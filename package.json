@@ -2,21 +2,26 @@
   "name": "launchrig",
   "version": "0.1.0",
   "description": "A physical-device release test rig for Solana Mobile apps",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "bin": {
     "launchrig": "dist/src/cli.js"
   },
   "files": [
-    "dist",
+    "dist/src",
+    "dist/node_modules/yaml",
     "schemas",
+    "docs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/vendor-runtime.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm run build && node --test --test-concurrency=1 dist/test/*.test.js",
+    "prepack": "pnpm run build",
+    "package:smoke": "node scripts/package-smoke.mjs",
     "fixtures:fetch": "node scripts/fetch-mwa-fixtures.mjs",
     "fixtures:build-dapp": "node scripts/build-fixture-dapp.mjs",
     "fixtures:build-mock-wallet": "node scripts/build-mock-mwa-fixture.mjs",
@@ -26,12 +31,10 @@
   "engines": {
     "node": ">=20.11"
   },
-  "packageManager": "pnpm@11.20.0",
-  "dependencies": {
-    "yaml": "^2.8.1"
-  },
+  "packageManager": "pnpm@10.34.0",
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "yaml": "2.9.0"
   }
 }

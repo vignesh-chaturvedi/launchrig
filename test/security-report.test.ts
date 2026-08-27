@@ -7,7 +7,7 @@ import { createReport } from "../src/report/model.js";
 import { escapeHtml, escapeXml } from "../src/report/render.js";
 import { writeReportArtifacts } from "../src/report/write.js";
 import { sanitizeMaestroJunit } from "../src/security/maestro.js";
-import { redactText } from "../src/security/redact.js";
+import { redactJsonValue, redactText } from "../src/security/redact.js";
 
 test("redactor removes local paths, headers, tokens, key material, and base58 identifiers", () => {
   const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abcdefghijklmnop";
@@ -22,6 +22,10 @@ test("redactor removes local paths, headers, tokens, key material, and base58 id
   assert.doesNotMatch(result.value, /alice|launchrig\.jar|secret123|4Nd1mY|eyJhbGci/);
   assert.match(result.value, /\[REDACTED:LOCAL_PATH\]/);
   assert.match(result.value, /Authorization: Bearer \[REDACTED\]/);
+  const digest = "a".repeat(64);
+  const structured = redactJsonValue({ apkSha256: digest, untypedValue: digest });
+  assert.equal(structured.value.apkSha256, digest);
+  assert.notEqual(structured.value.untypedValue, digest);
 });
 
 test("HTML and XML escape hostile dynamic content", () => {

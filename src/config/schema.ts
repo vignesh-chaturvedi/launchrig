@@ -104,6 +104,7 @@ function parseScenarios(value: unknown, issues: string[]): ScenarioConfig[] {
     issues.push("scenarios must be an array");
     return [];
   }
+  if (value.length > 50) issues.push("scenarios must contain at most 50 entries");
 
   const seen = new Set<string>();
   return value.map((entry, index) => {
@@ -188,6 +189,15 @@ export function validateConfig(value: unknown): LaunchRigConfig {
   const walletApk = optionalString(wallet, "apk", "wallet", issues);
   const walletInstall = booleanWithDefault(wallet, "install", false, "wallet", issues);
   const walletInstallPolicy = installPolicyWithDefault(wallet, "wallet", issues);
+  if (walletMode === "mock-mwa" && walletPackageName !== "com.solana.mwallet") {
+    issues.push("wallet.mode mock-mwa requires packageName com.solana.mwallet");
+  }
+  if (
+    walletMode === "reference-fakewallet" &&
+    walletPackageName !== "com.solana.mobilewalletadapter.fakewallet"
+  ) {
+    issues.push("wallet.mode reference-fakewallet requires packageName com.solana.mobilewalletadapter.fakewallet");
+  }
   if (walletInstall && !walletApk) issues.push("wallet.apk is required when wallet.install is true");
   if (walletInstall && walletMode === "real") issues.push("LaunchRig will not install or replace a real wallet package");
   if (
@@ -203,6 +213,9 @@ export function validateConfig(value: unknown): LaunchRigConfig {
   const screenshotMode = artifacts.screenshots ?? "failure";
   if (screenshotMode !== "failure" && screenshotMode !== "always" && screenshotMode !== "never") {
     issues.push("artifacts.screenshots must be failure, always, or never");
+  }
+  if (walletMode === "real" && screenshotMode !== "never") {
+    issues.push("artifacts.screenshots must be never when wallet.mode is real");
   }
 
   const privacy = readRecord(root.privacy, "privacy", issues);
@@ -229,6 +242,15 @@ export function validateConfig(value: unknown): LaunchRigConfig {
   const maestro = optionalString(tooling, "maestro", "tooling", issues);
 
   const scenarios = parseScenarios(root.scenarios, issues);
+  if (walletMode === "real" && scenarios.length > 0) {
+    issues.push("wallet.mode real supports package checks only; automated wallet scenarios are disabled");
+  }
+  if (walletMode === "real" && privacy.includeLogcat === true) {
+    issues.push("privacy.includeLogcat must be false when wallet.mode is real");
+  }
+  if (scenarios.some((scenario) => scenario.kind.startsWith("mwa-")) && !walletPackageName) {
+    issues.push("wallet.packageName is required when an MWA scenario is configured");
+  }
 
   if (issues.length > 0) throw new ConfigError(issues);
 

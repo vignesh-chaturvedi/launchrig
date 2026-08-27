@@ -16,15 +16,22 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Enable Corepack
+    - name: Verify Node.js
       shell: bash
-      run: corepack enable
+      working-directory: ${{ github.action_path }}
+      run: node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 20 || (major === 20 && minor < 11)) { console.error("LaunchRig requires Node.js 20.11 or newer"); process.exit(1); }'
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10.34.0
     - name: Install LaunchRig
       shell: bash
-      run: pnpm --dir "$GITHUB_ACTION_PATH" install --frozen-lockfile
+      working-directory: ${{ github.action_path }}
+      run: pnpm install --frozen-lockfile
     - name: Build LaunchRig
       shell: bash
-      run: pnpm --dir "$GITHUB_ACTION_PATH" build
+      working-directory: ${{ github.action_path }}
+      run: pnpm build
     - name: Execute LaunchRig
       shell: bash
       env:

@@ -1,6 +1,7 @@
 import { loadConfig, validateConfigPaths } from "../config/load.js";
 import { AdbClient, selectDevice } from "../device/adb.js";
-import { maskIdentifier } from "../device/privacy.js";
+import { maskIdentifier, maskKnownIdentifiers } from "../device/privacy.js";
+import { verifyManagedWalletArtifact } from "../security/wallet-artifact.js";
 import type { DeviceSnapshot } from "../types.js";
 import { adbCandidates, findExecutable, maestroCandidates } from "../utils/executable.js";
 
@@ -45,8 +46,10 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorOutput>
   const adb = new AdbClient(adbPath);
   const version = await adb.version();
   let snapshot: DeviceSnapshot | undefined;
+  const deviceIdentifiers = [options.deviceSerial ?? env.ANDROID_SERIAL ?? ""];
   try {
     const devices = await adb.listDevices();
+    deviceIdentifiers.push(...devices.map((device) => device.serial));
     const selected = selectDevice(
       devices,
       options.deviceSerial ?? env.ANDROID_SERIAL,
@@ -79,6 +82,18 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorOutput>
           role: "wallet",
         });
       }
+      const managedWallet = packages.find((entry) => entry.role === "wallet");
+      if (managedWallet?.willInstall && config.resolvedWalletApk && config.wallet.packageName) {
+        const verification = await verifyManagedWalletArtifact(config.wallet.packageName, config.resolvedWalletApk);
+        if (!verification.valid) {
+          managedWallet.willInstall = false;
+          if (verification.actualSha256) {
+            issues.push("Managed test-wallet APK does not match its pinned SHA-256 contract.");
+          } else {
+            issues.push("Managed test-wallet APK could not be verified against its pinned SHA-256 contract.");
+          }
+        }
+      }
       for (const entry of packages) {
         if (!entry.installed && !entry.willInstall) {
           issues.push(entry.role + " package is not installed: " + entry.packageName);
@@ -86,7 +101,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorOutput>
       }
     }
   } catch (error) {
-    issues.push(error instanceof Error ? error.message : String(error));
+    issues.push(maskKnownIdentifiers(error instanceof Error ? error.message : String(error), deviceIdentifiers));
   }
 
   const maestroRequired = (config?.scenarios.length ?? 0) > 0;

@@ -2,6 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
 import type { ResolvedLaunchRigConfig } from "../types.js";
+import { validateMaestroFlowSafety } from "../security/flow.js";
 import { ConfigError, validateConfig } from "./schema.js";
 
 export async function loadConfig(configPath: string): Promise<ResolvedLaunchRigConfig> {
@@ -56,7 +57,10 @@ export async function validateConfigPaths(config: ResolvedLaunchRigConfig): Prom
   }
   for (const scenario of config.scenarios) {
     try {
-      await access(scenario.resolvedFlow);
+      const source = await readFile(scenario.resolvedFlow, "utf8");
+      for (const issue of validateMaestroFlowSafety(source, config.project.packageName)) {
+        issues.push("Scenario " + scenario.id + " " + issue);
+      }
     } catch {
       issues.push("Scenario flow does not exist: " + scenario.resolvedFlow);
     }

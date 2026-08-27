@@ -67,13 +67,7 @@ export function FixtureButton({
   )
 }
 
-export function FixtureMessage({
-  children,
-  status,
-}: {
-  children: ReactNode
-  status: 'danger' | 'success'
-}) {
+export function FixtureMessage({ children, status }: { children: ReactNode; status: 'danger' | 'success' }) {
   return <Text style={status === 'danger' ? styles.danger : styles.success}>{children}</Text>
 }
 

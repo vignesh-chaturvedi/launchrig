@@ -30,7 +30,7 @@
       "additionalProperties": false,
       "properties": {
         "requirePhysical": { "type": "boolean", "default": true },
-        "minimumApiLevel": { "type": "integer", "minimum": 23, "default": 26 }
+        "minimumApiLevel": { "type": "integer", "minimum": 23, "maximum": 100, "default": 26 }
       }
     },
     "wallet": {
@@ -47,13 +47,14 @@
     },
     "scenarios": {
       "type": "array",
+      "maxItems": 50,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "kind", "name", "flow"],
         "properties": {
           "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-          "kind": { "enum": ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject", "custom"] },
+          "kind": { "enum": ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject", "mwa-stale-authorization", "mwa-process-death", "custom"] },
           "name": { "type": "string", "minLength": 1 },
           "flow": { "type": "string", "minLength": 1 },
           "required": { "type": "boolean", "default": true },
@@ -88,5 +89,83 @@
         "maestro": { "type": "string" }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "project": { "properties": { "install": { "const": true } }, "required": ["install"] } } },
+      "then": { "properties": { "project": { "required": ["apk"] } } }
+    },
+    {
+      "if": { "properties": { "wallet": { "properties": { "install": { "const": true } }, "required": ["install"] } } },
+      "then": {
+        "properties": {
+          "wallet": {
+            "required": ["apk", "packageName"],
+            "properties": {
+              "packageName": {
+                "enum": ["com.solana.mwallet", "com.solana.mobilewalletadapter.fakewallet"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "wallet": { "properties": { "mode": { "const": "real" } }, "required": ["mode"] } } },
+      "then": {
+        "properties": {
+          "wallet": { "properties": { "install": { "const": false } } },
+          "artifacts": { "properties": { "screenshots": { "const": "never" } }, "required": ["screenshots"] },
+          "privacy": { "properties": { "includeLogcat": { "const": false } }, "required": ["includeLogcat"] },
+          "scenarios": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "project": {
+            "properties": { "packageName": { "const": "com.solana.mobilewalletadapter.fakedapp" } },
+            "required": ["packageName"]
+          }
+        }
+      },
+      "then": { "properties": { "target": { "properties": { "network": { "const": "testnet" } } } } }
+    },
+    {
+      "if": { "properties": { "wallet": { "properties": { "mode": { "const": "mock-mwa" } }, "required": ["mode"] } } },
+      "then": {
+        "properties": {
+          "wallet": {
+            "properties": { "packageName": { "const": "com.solana.mwallet" } },
+            "required": ["packageName"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "wallet": { "properties": { "mode": { "const": "reference-fakewallet" } }, "required": ["mode"] } } },
+      "then": {
+        "properties": {
+          "wallet": {
+            "properties": { "packageName": { "const": "com.solana.mobilewalletadapter.fakewallet" } },
+            "required": ["packageName"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scenarios": {
+            "contains": {
+              "properties": { "kind": { "enum": ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject", "mwa-stale-authorization", "mwa-process-death"] } },
+              "required": ["kind"]
+            }
+          }
+        }
+      },
+      "then": { "properties": { "wallet": { "required": ["packageName"] } } }
+    }
+  ]
 }

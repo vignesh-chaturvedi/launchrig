@@ -17,8 +17,7 @@ const fixture = vi.hoisted(() => {
   const wallet = {
     current: {
       account: { address: 'GsbwXfJraMomNxBcjK9jJ3YuPBQTd7pTvbwEfJvvZoP1', label: 'Test Wallet' } as
-        | { address: string; label: string }
-        | undefined,
+        { address: string; label: string } | undefined,
       chain: 'solana:devnet',
       connect: vi.fn(),
       identity: { name: 'LaunchRig Fixture' },
@@ -144,7 +143,9 @@ describe('StaleAuthorizationFixture', () => {
   })
 
   it('reports unrelated protocol failures without clearing authorization', async () => {
-    fixture.remoteWallet.authorize.mockRejectedValueOnce(Object.assign(new Error('Transport unavailable'), { code: -99 }))
+    fixture.remoteWallet.authorize.mockRejectedValueOnce(
+      Object.assign(new Error('Transport unavailable'), { code: -99 }),
+    )
     const screen = await render(<StaleAuthorizationFixture variant="fixed" />)
 
     await fireEvent.press(screen.getByTestId('seed-stale-authorization'))

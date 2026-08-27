@@ -165,7 +165,13 @@ export function StaleAuthorizationFixture({ variant }: { variant: FixtureVariant
         disabled={!reconnectEnabled}
         onPress={() => void connectWallet()}
         testID="connect-wallet"
-        title={connectPending ? 'Connecting wallet' : recoveryState === 'AUTHORIZATION_CLEARED' ? 'Reconnect wallet' : 'Connect wallet'}
+        title={
+          connectPending
+            ? 'Connecting wallet'
+            : recoveryState === 'AUTHORIZATION_CLEARED'
+              ? 'Reconnect wallet'
+              : 'Connect wallet'
+        }
       />
       <FixtureButton
         disabled={!seedActionEnabled}

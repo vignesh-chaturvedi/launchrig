@@ -1,4 +1,5 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type {
   CheckResult,
@@ -9,19 +10,26 @@ import type {
   ScenarioConfig,
 } from "../types.js";
 import { AdbClient, selectDevice } from "../device/adb.js";
-import { maskIdentifier } from "../device/privacy.js";
+import { maskKnownIdentifiers } from "../device/privacy.js";
 import { createReport, createRunId } from "../report/model.js";
+import { pruneReportDirectories } from "../report/retention.js";
 import { writeReportArtifacts, type WrittenArtifacts } from "../report/write.js";
 import { redactText } from "../security/redact.js";
-import { sanitizeMaestroJunit } from "../security/maestro.js";
+import { validateMaestroFlowSafety } from "../security/flow.js";
+import {
+  managedWalletExpectedSha256,
+  sha256File,
+  stageManagedWalletArtifact,
+} from "../security/wallet-artifact.js";
 import { adbCandidates, findExecutable, maestroCandidates } from "../utils/executable.js";
-import { MaestroClient } from "./maestro.js";
+import { MaestroClient, minimalMaestroEnvironment } from "./maestro.js";
 
 export interface RunOptions {
   deviceSerial?: string;
   adbPath?: string;
   maestroPath?: string;
   scenarioId?: string;
+  requireInstalledArtifactHashes?: boolean;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -34,15 +42,6 @@ export interface RunOutput {
 function result(input: Omit<CheckResult, "durationMs"> & { startedAt: number }): CheckResult {
   const { startedAt, ...rest } = input;
   return { ...rest, durationMs: Date.now() - startedAt };
-}
-
-function maskKnownIdentifiers(value: string, identifiers: string[]): string {
-  let masked = value;
-  for (const identifier of identifiers.filter(Boolean).sort((left, right) => right.length - left.length)) {
-    const escapedIdentifier = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    masked = masked.replace(new RegExp(escapedIdentifier, "gi"), () => maskIdentifier(identifier));
-  }
-  return masked;
 }
 
 function safeText(value: string, patterns: string[], identifiers: string[] = []): string {
@@ -88,6 +87,7 @@ async function finalize(input: {
     ...(input.mwaCoverageComplete ? { mwaCoverageComplete: true } : {}),
   });
   const artifacts = await writeReportArtifacts(report, input.runDirectory, input.config.privacy.redactPatterns);
+  await pruneReportDirectories(input.config.resolvedArtifactDirectory, input.config.artifacts.retention);
   return {
     report,
     artifacts,
@@ -111,7 +111,7 @@ async function captureFailureEvidence(input: {
     const screenshot = await input.adb.screenshot(input.serial);
     if (screenshot.exitCode === 0 && screenshot.stdout.length > 0) {
       const screenshotPath = path.join(input.scenarioDirectory, "failure.png");
-      await writeFile(screenshotPath, screenshot.stdout);
+      await writeFile(screenshotPath, screenshot.stdout, { mode: 0o600 });
       artifacts.push(path.relative(input.config.resolvedArtifactDirectory, screenshotPath));
     }
   }
@@ -123,8 +123,8 @@ async function captureFailureEvidence(input: {
     );
     if (logcat.exitCode === 0) {
       const logPath = path.join(input.scenarioDirectory, "logcat.txt");
-      const sanitized = redactText(logcat.stdout.toString("utf8"), input.config.privacy.redactPatterns).value;
-      await writeFile(logPath, sanitized.slice(0, 512 * 1024), "utf8");
+      const sanitized = safeText(logcat.stdout.toString("utf8"), input.config.privacy.redactPatterns, [input.serial]);
+      await writeFile(logPath, sanitized.slice(0, 512 * 1024), { encoding: "utf8", mode: 0o600 });
       artifacts.push(path.relative(input.config.resolvedArtifactDirectory, logPath));
     }
   }
@@ -135,7 +135,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   const startedAt = new Date();
   const runId = createRunId(startedAt);
   const runDirectory = path.join(config.resolvedArtifactDirectory, runId);
-  await mkdir(runDirectory, { recursive: true });
+  await mkdir(runDirectory, { recursive: true, mode: 0o700 });
   const checks: CheckResult[] = [];
   const env = options.env ?? process.env;
   let deviceSnapshot: DeviceSnapshot | undefined;
@@ -292,6 +292,37 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         : config.project.packageName + " is not installed on the selected phone",
     }),
   );
+  if (options.requireInstalledArtifactHashes) {
+    const appBinaryStarted = Date.now();
+    let expectedAppSha256: string | undefined;
+    if (config.resolvedApk) {
+      try {
+        expectedAppSha256 = await sha256File(config.resolvedApk);
+      } catch {
+        expectedAppSha256 = undefined;
+      }
+    }
+    const appBinaryMatches = Boolean(
+      appSnapshot?.apkSha256 &&
+        (config.resolvedApk ? expectedAppSha256 && appSnapshot.apkSha256 === expectedAppSha256 : true),
+    );
+    checks.push(
+      result({
+        id: "app.binary",
+        name: "Installed app binary identity",
+        status: appBinaryMatches ? "pass" : "fail",
+        required: true,
+        startedAt: appBinaryStarted,
+        summary: appBinaryMatches
+          ? expectedAppSha256
+            ? "Installed app APK matches the configured artifact"
+            : "Installed app APK hash captured"
+          : config.resolvedApk
+            ? "Installed app APK does not match the configured artifact"
+            : "Installed app APK hash could not be captured",
+      }),
+    );
+  }
 
   if (config.wallet.packageName) {
     const walletPresentBeforeInstall = await adb.isPackageInstalled(serial, config.wallet.packageName);
@@ -309,27 +340,52 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           }),
         );
       } else {
-        const walletInstall = await adb.installApk(serial, config.resolvedWalletApk);
-        const walletInstallDetails = safeDetails(
-          walletInstall.stdout,
-          walletInstall.stderr,
-          config.privacy.redactPatterns,
-          [serial],
+        const stagedWallet = await stageManagedWalletArtifact(
+          config.wallet.packageName,
+          config.resolvedWalletApk,
         );
-        checks.push(
-          result({
-            id: "wallet.install",
-            name: "Install allowlisted test wallet APK",
-            status: walletInstall.exitCode === 0 ? "pass" : "fail",
-            required: true,
-            startedAt: walletInstallStarted,
-            summary:
-              walletInstall.exitCode === 0
-                ? "Test wallet installed without clearing its data"
-                : "ADB could not install the test wallet APK",
-            ...(walletInstallDetails ? { details: walletInstallDetails } : {}),
-          }),
-        );
+        if (!stagedWallet.valid || !stagedWallet.apkPath) {
+          checks.push(
+            result({
+              id: "wallet.install",
+              name: "Install allowlisted test wallet APK",
+              status: "fail",
+              required: true,
+              startedAt: walletInstallStarted,
+              summary: "Managed test-wallet APK does not match its pinned SHA-256 contract",
+              ...(stagedWallet.actualSha256
+                ? { details: "Observed SHA-256: " + stagedWallet.actualSha256 }
+                : {}),
+            }),
+          );
+          await stagedWallet.dispose();
+        } else {
+          try {
+            const walletInstall = await adb.installApk(serial, stagedWallet.apkPath);
+            const walletInstallDetails = safeDetails(
+              walletInstall.stdout,
+              walletInstall.stderr,
+              config.privacy.redactPatterns,
+              [serial],
+            );
+            checks.push(
+              result({
+                id: "wallet.install",
+                name: "Install allowlisted test wallet APK",
+                status: walletInstall.exitCode === 0 ? "pass" : "fail",
+                required: true,
+                startedAt: walletInstallStarted,
+                summary:
+                  walletInstall.exitCode === 0
+                    ? "Pinned test wallet installed without clearing its data"
+                    : "ADB could not install the test wallet APK",
+                ...(walletInstallDetails ? { details: walletInstallDetails } : {}),
+              }),
+            );
+          } finally {
+            await stagedWallet.dispose();
+          }
+        }
       }
     }
     const walletStarted = Date.now();
@@ -352,6 +408,25 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           : config.wallet.packageName + " is not installed on the selected phone",
       }),
     );
+    if (options.requireInstalledArtifactHashes) {
+      const walletBinaryStarted = Date.now();
+      const expectedWalletSha256 = managedWalletExpectedSha256(config.wallet.packageName);
+      const walletBinaryMatches = Boolean(
+        expectedWalletSha256 && walletSnapshot?.apkSha256 === expectedWalletSha256,
+      );
+      checks.push(
+        result({
+          id: "wallet.binary",
+          name: "Installed test-wallet binary identity",
+          status: walletBinaryMatches ? "pass" : "fail",
+          required: true,
+          startedAt: walletBinaryStarted,
+          summary: walletBinaryMatches
+            ? "Installed test-wallet APK matches the managed artifact contract"
+            : "Installed test-wallet APK does not match the managed artifact contract",
+        }),
+      );
+    }
   }
 
   let scenarios = config.scenarios;
@@ -416,10 +491,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       });
     }
     const maestro = new MaestroClient(maestroPath);
-    const maestroEnv = {
-      ...env,
-      PATH: path.dirname(adbPath) + path.delimiter + (env.PATH ?? ""),
-    };
+    const maestroEnv = minimalMaestroEnvironment(env, path.dirname(adbPath));
     const maestroVersion = await maestro.version(maestroEnv);
     checks.push(
       result({
@@ -461,13 +533,53 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           continue;
         }
       }
-      const execution = await maestro.runFlow({
-        serial,
-        flowPath: scenario.resolvedFlow,
-        outputDirectory: scenarioDirectory,
-        timeoutMs: scenario.timeoutMs,
-        env: maestroEnv,
-      });
+      let flowSource: string;
+      try {
+        flowSource = await readFile(scenario.resolvedFlow, "utf8");
+      } catch {
+        checks.push(
+          result({
+            id: "scenario." + scenario.id,
+            name: scenario.name,
+            status: "fail",
+            required: scenario.required,
+            startedAt: scenarioStarted,
+            summary: "Scenario flow could not be read safely",
+          }),
+        );
+        continue;
+      }
+      const flowSafetyIssues = validateMaestroFlowSafety(flowSource, config.project.packageName);
+      if (flowSafetyIssues.length > 0) {
+        checks.push(
+          result({
+            id: "scenario." + scenario.id,
+            name: scenario.name,
+            status: "fail",
+            required: scenario.required,
+            startedAt: scenarioStarted,
+            summary: "Scenario flow failed the LaunchRig policy contract",
+            details: flowSafetyIssues.join("\n"),
+          }),
+        );
+        continue;
+      }
+      const stagedFlowDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrig-flow-"));
+      const stagedFlowPath = path.join(stagedFlowDirectory, "flow.yaml");
+      let execution;
+      try {
+        await writeFile(stagedFlowPath, flowSource, { encoding: "utf8", flag: "wx", mode: 0o400 });
+        execution = await maestro.runFlow({
+          serial,
+          flowPath: stagedFlowPath,
+          outputDirectory: scenarioDirectory,
+          timeoutMs: scenario.timeoutMs,
+          redactPatterns: config.privacy.redactPatterns,
+          env: maestroEnv,
+        });
+      } finally {
+        await rm(stagedFlowDirectory, { recursive: true, force: true });
+      }
       const failed = execution.exitCode !== 0;
       const evidence = await captureFailureEvidence({
         adb,
@@ -480,12 +592,6 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       const maestroJunitPath = path.join(scenarioDirectory, "maestro-junit.xml");
       try {
         await access(maestroJunitPath);
-        const rawMaestroJunit = await readFile(maestroJunitPath, "utf8");
-        await writeFile(
-          maestroJunitPath,
-          sanitizeMaestroJunit(rawMaestroJunit, serial, config.privacy.redactPatterns),
-          "utf8",
-        );
         evidence.unshift(path.relative(config.resolvedArtifactDirectory, maestroJunitPath));
       } catch {
         // The process output remains available in details when Maestro exits before writing JUnit.
@@ -525,6 +631,10 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     ...(appSnapshot ? { app: appSnapshot } : {}),
     ...(walletSnapshot ? { wallet: walletSnapshot } : {}),
     mwaCoverageComplete:
+      Boolean(
+        walletSnapshot &&
+          checks.some((check) => check.id === "wallet.installed" && check.required && check.status === "pass"),
+      ) &&
       ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"].every((kind) =>
         scenarios.some((scenario) => scenario.kind === kind),
       ) &&

@@ -94,6 +94,7 @@ export interface PackageSnapshot {
   packageName: string;
   versionName?: string;
   versionCode?: string;
+  apkSha256?: string;
 }
 
 export interface CheckResult {

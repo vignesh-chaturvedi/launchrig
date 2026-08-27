@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import { loadConfig } from "../src/config/load.js";
 import { runLaunchRig } from "../src/runner/orchestrator.js";
 
 const FAKE_ADB = `#!/usr/bin/env node
+const fs = require("node:fs");
 const args = process.argv.slice(2);
 if (args[0] === "version") {
   console.log("Android Debug Bridge version 1.0.41");
@@ -22,9 +23,16 @@ if (args[0] === "version") {
   console.log("Filesystem 1K-blocks Used Available Use% Mounted on\\n/dev/data 1000000 1000 999000 1% /data");
 } else if (args[0] === "-s" && args[2] === "shell" && args[3] === "pm") {
   console.log("package:/data/app/base.apk");
+} else if (args[0] === "-s" && args[2] === "shell" && args[3] === "pidof") {
+  console.log("4242");
+} else if (args[0] === "-s" && args[2] === "logcat") {
+  console.log("Device A1F0 Authorization: Bearer publisher-secret-token");
 } else if (args[0] === "-s" && args[2] === "exec-out") {
   process.stdout.write(Buffer.from([137,80,78,71,13,10,26,10]));
 } else if (args[0] === "-s" && args[2] === "install") {
+  if (process.env.LAUNCHRIG_TEST_INSTALL_MARKER) {
+    fs.writeFileSync(process.env.LAUNCHRIG_TEST_INSTALL_MARKER, args.join(" "));
+  }
   if (process.env.LAUNCHRIG_TEST_ADB_INSTALL_FAIL === "1") {
     console.error("device '" + args[1] + "' not found");
     process.exitCode = 1;
@@ -44,8 +52,14 @@ const args = process.argv.slice(2);
 if (args[0] === "--version") {
   console.log("2.0.0-fixture");
 } else {
+  const flowPath = args.at(-1) ?? "";
+  if (!flowPath.includes("launchrig-flow-")) {
+    console.error("LaunchRig did not execute a private validated flow copy");
+    process.exitCode = 1;
+    return;
+  }
   const device = args.find((arg) => arg.startsWith("--device="))?.slice("--device=".length) ?? "unknown";
-  if (process.env.LAUNCHRIG_TEST_MAESTRO_FAIL === "1") {
+  if (fs.existsSync(path.join(path.dirname(process.argv[1]), "fail-maestro"))) {
     console.log("Flow failed on device " + device.toLowerCase());
     console.error("Transport disconnected for " + device);
     process.exitCode = 1;
@@ -154,34 +168,67 @@ test("physical-device run produces an Android/MWA Ready evidence set", async () 
       access(path.join(path.dirname(output.artifacts.json), "scenarios", "authorize", "maestro-artifacts")),
     );
 
-    const failedOutput = await runLaunchRig(config, {
-      adbPath: adb,
-      maestroPath: maestro,
-      env: { ...process.env, LAUNCHRIG_TEST_MAESTRO_FAIL: "1" },
-    });
-    assert.equal(failedOutput.exitCode, 1);
-    const failedAuthorize = failedOutput.report.checks.find((check) => check.id === "scenario.authorize");
-    assert.equal(failedAuthorize?.status, "fail");
-    assert.match(failedAuthorize?.details ?? "", /\*\*\*/);
-    assert.doesNotMatch(failedAuthorize?.details ?? "", /A1F0/i);
-    assert.doesNotMatch(JSON.stringify(failedOutput.report), /A1F0/i);
+    const maestroFailureMarker = path.join(bin, "fail-maestro");
+    await writeFile(maestroFailureMarker, "fail", "utf8");
+    config.privacy.includeLogcat = true;
+    try {
+      const failedOutput = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
+      assert.equal(failedOutput.exitCode, 1);
+      const failedAuthorize = failedOutput.report.checks.find((check) => check.id === "scenario.authorize");
+      assert.equal(failedAuthorize?.status, "fail");
+      assert.match(failedAuthorize?.details ?? "", /\*\*\*/);
+      assert.doesNotMatch(failedAuthorize?.details ?? "", /A1F0/i);
+      assert.doesNotMatch(JSON.stringify(failedOutput.report), /A1F0/i);
+      const logcatArtifact = failedAuthorize?.artifacts?.find((artifact) => artifact.endsWith("logcat.txt"));
+      assert.ok(logcatArtifact);
+      const logcat = await readFile(path.join(config.resolvedArtifactDirectory, logcatArtifact), "utf8");
+      assert.doesNotMatch(logcat, /A1F0/i);
+      assert.doesNotMatch(logcat, /publisher-secret-token/i);
+    } finally {
+      config.privacy.includeLogcat = false;
+      await rm(maestroFailureMarker, { force: true });
+    }
 
     config.project.installPolicy = "always";
-    config.wallet.installPolicy = "always";
     process.env.LAUNCHRIG_TEST_ADB_INSTALL_FAIL = "1";
     try {
       const failedInstallOutput = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
       assert.equal(failedInstallOutput.exitCode, 1);
-      for (const checkId of ["app.install", "wallet.install"]) {
-        const installCheck = failedInstallOutput.report.checks.find((check) => check.id === checkId);
-        assert.equal(installCheck?.status, "fail");
-        assert.match(installCheck?.details ?? "", /\*\*\*/);
-        assert.doesNotMatch(installCheck?.details ?? "", /A1F0/i);
-      }
+      const installCheck = failedInstallOutput.report.checks.find((check) => check.id === "app.install");
+      assert.equal(installCheck?.status, "fail");
+      assert.match(installCheck?.details ?? "", /\*\*\*/);
+      assert.doesNotMatch(installCheck?.details ?? "", /A1F0/i);
       assert.doesNotMatch(JSON.stringify(failedInstallOutput.report), /A1F0/i);
     } finally {
       delete process.env.LAUNCHRIG_TEST_ADB_INSTALL_FAIL;
     }
+
+    config.project.installPolicy = "if-missing";
+    config.wallet.installPolicy = "always";
+    const installMarker = path.join(directory, "wallet-install-called");
+    process.env.LAUNCHRIG_TEST_INSTALL_MARKER = installMarker;
+    try {
+      const unpinnedWalletOutput = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
+      assert.equal(unpinnedWalletOutput.exitCode, 1);
+      const walletInstall = unpinnedWalletOutput.report.checks.find((check) => check.id === "wallet.install");
+      assert.equal(walletInstall?.status, "fail");
+      assert.match(walletInstall?.summary ?? "", /pinned SHA-256/);
+      assert.match(walletInstall?.details ?? "", /^Observed SHA-256: [a-f0-9]{64}$/);
+      assert.doesNotMatch(walletInstall?.details ?? "", /wallet\.apk/);
+      await assert.rejects(() => access(installMarker));
+    } finally {
+      delete process.env.LAUNCHRIG_TEST_INSTALL_MARKER;
+    }
+
+    await writeFile(path.join(directory, "authorize.yaml"), "appId: dev.launchrig.fixture\n---\n- takeScreenshot: private\n", "utf8");
+    const unsafeFlowOutput = await runLaunchRig(config, {
+      adbPath: adb,
+      maestroPath: maestro,
+      scenarioId: "authorize",
+    });
+    const unsafeFlowCheck = unsafeFlowOutput.report.checks.find((check) => check.id === "scenario.authorize");
+    assert.equal(unsafeFlowCheck?.status, "fail");
+    assert.match(unsafeFlowCheck?.summary ?? "", /policy contract/);
 
     const missingDeviceOutput = await runLaunchRig(config, {
       adbPath: adb,

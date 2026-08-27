@@ -14,9 +14,7 @@ export interface ProcessDeathJournal {
 }
 
 export type ProcessDeathJournalReadResult =
-  | { status: 'ABSENT' }
-  | { status: 'CORRUPT' }
-  | { status: 'VALID'; journal: ProcessDeathJournal }
+  { status: 'ABSENT' } | { status: 'CORRUPT' } | { status: 'VALID'; journal: ProcessDeathJournal }
 
 export function createProcessInstance(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`

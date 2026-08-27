@@ -74,15 +74,16 @@ export function redactText(input: string, customPatterns: string[] = []): Redact
 
 export function redactJsonValue<T>(value: T, customPatterns: string[] = []): { value: T; count: number } {
   let count = 0;
-  const visit = (entry: unknown): unknown => {
+  const visit = (entry: unknown, key?: string): unknown => {
     if (typeof entry === "string") {
+      if (key === "apkSha256" && /^[a-f0-9]{64}$/.test(entry)) return entry;
       const result = redactText(entry, customPatterns);
       count += result.count;
       return result.value;
     }
-    if (Array.isArray(entry)) return entry.map(visit);
+    if (Array.isArray(entry)) return entry.map((nested) => visit(nested));
     if (typeof entry === "object" && entry !== null) {
-      return Object.fromEntries(Object.entries(entry).map(([key, nested]) => [key, visit(nested)]));
+      return Object.fromEntries(Object.entries(entry).map(([nestedKey, nested]) => [nestedKey, visit(nested, nestedKey)]));
     }
     return entry;
   };

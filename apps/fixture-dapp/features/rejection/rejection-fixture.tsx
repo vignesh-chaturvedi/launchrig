@@ -81,11 +81,7 @@ export function RejectionFixture({ variant }: { variant: FixtureVariant }) {
         <FixtureStatusRow label="Wallet" testID="wallet-state" value={account ? 'CONNECTED' : 'DISCONNECTED'} />
         <FixtureStatusRow label="Request pending" testID="request-pending" value={String(requestPending)} />
         <FixtureStatusRow label="Recovery" testID="rejection-recovered" value={recoveryState} />
-        <FixtureStatusRow
-          label="Retry enabled"
-          testID="request-action-enabled"
-          value={String(requestActionEnabled)}
-        />
+        <FixtureStatusRow label="Retry enabled" testID="request-action-enabled" value={String(requestActionEnabled)} />
       </FixtureStatusCard>
 
       <FixtureButton

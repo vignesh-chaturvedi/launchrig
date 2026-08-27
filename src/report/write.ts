@@ -18,14 +18,14 @@ export async function writeReportArtifacts(
   customPatterns: string[] = [],
 ): Promise<WrittenArtifacts> {
   const redacted = redactJsonValue(report, customPatterns);
-  await mkdir(directory, { recursive: true });
+  await mkdir(directory, { recursive: true, mode: 0o700 });
   const jsonPath = path.join(directory, "launchrig-report.json");
   const htmlPath = path.join(directory, "launchrig-report.html");
   const junitPath = path.join(directory, "launchrig-junit.xml");
   await Promise.all([
-    writeFile(jsonPath, JSON.stringify(redacted.value, null, 2) + "\n", "utf8"),
-    writeFile(htmlPath, renderHtml(redacted.value), "utf8"),
-    writeFile(junitPath, renderJunit(redacted.value), "utf8"),
+    writeFile(jsonPath, JSON.stringify(redacted.value, null, 2) + "\n", { encoding: "utf8", mode: 0o600 }),
+    writeFile(htmlPath, renderHtml(redacted.value), { encoding: "utf8", mode: 0o600 }),
+    writeFile(junitPath, renderJunit(redacted.value), { encoding: "utf8", mode: 0o600 }),
   ]);
   return {
     directory,
