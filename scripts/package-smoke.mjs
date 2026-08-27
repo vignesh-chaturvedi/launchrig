@@ -4,12 +4,14 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inspectLaunchRigArchive } from "./verify-pilot-bundle.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrig-package-smoke-"));
 const packageDirectory = path.join(temporaryDirectory, "package");
 const installDirectory = path.join(temporaryDirectory, "install");
 const publisherDirectory = path.join(temporaryDirectory, "publisher");
+const emptyStoreDirectory = path.join(temporaryDirectory, "empty-store");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 async function run(command, args, options = {}) {
@@ -40,8 +42,10 @@ async function collectFiles(directory, prefix = "") {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const relative = path.posix.join(prefix, entry.name);
+    if (entry.isSymbolicLink()) throw new Error("Installed package must not contain symlinks: " + relative);
     if (entry.isDirectory()) files.push(...(await collectFiles(path.join(directory, entry.name), relative)));
     else if (entry.isFile()) files.push(relative);
+    else throw new Error("Installed package contains an unsupported entry: " + relative);
   }
   return files.sort();
 }
@@ -66,8 +70,6 @@ function sha256Value(value) {
 }
 
 try {
-  const storePath = (await run(pnpm, ["store", "path", "--silent"])).stdout;
-  if (!storePath) throw new Error("Could not resolve the pnpm content-addressed store.");
   await mkdir(packageDirectory, { recursive: true });
   await run(pnpm, ["pack", "--pack-destination", packageDirectory]);
   const archives = (await readdir(packageDirectory)).filter((entry) => entry.endsWith(".tgz"));
@@ -75,9 +77,14 @@ try {
   const archive = path.join(packageDirectory, archives[0]);
 
   await mkdir(installDirectory, { recursive: true });
-  await run(pnpm, ["add", "--dir", installDirectory, "--offline", "--store-dir", storePath, archive]);
+  await mkdir(emptyStoreDirectory, { recursive: true });
+  await run(pnpm, ["add", "--dir", installDirectory, "--offline", "--store-dir", emptyStoreDirectory, archive]);
   const installedDirectory = path.join(installDirectory, "node_modules", "launchrig");
   const installedPackage = JSON.parse(await readFile(path.join(installedDirectory, "package.json"), "utf8"));
+  inspectLaunchRigArchive(await readFile(archive), {
+    launchRigVersion: installedPackage.version,
+    package: { nodeEngine: installedPackage.engines?.node },
+  });
   const installedFiles = await collectFiles(installedDirectory);
 
   if (!installedFiles.includes("dist/src/cli.js")) throw new Error("Packed CLI entrypoint is missing.");
@@ -91,17 +98,98 @@ try {
   if (!installedFiles.includes("schemas/launchrig-pilot-evidence-v2.schema.json")) {
     throw new Error("Packed pilot evidence v2 schema is missing.");
   }
-  for (const document of [
+  if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
+    throw new Error("Packed publisher bundle schema is missing.");
+  }
+  const publisherBundleSchema = JSON.parse(
+    await readFile(path.join(installedDirectory, "schemas", "launchrig-publisher-bundle.schema.json"), "utf8"),
+  );
+  if (
+    publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
+    publisherBundleSchema.additionalProperties !== false ||
+    publisherBundleSchema.properties?.kind?.const !== "launchrig-publisher-bundle" ||
+    publisherBundleSchema.properties?.grantReady?.const !== false ||
+    publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
+    JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
+      JSON.stringify([
+        "package-manager-version",
+        "frozen-offline-dependency-restore",
+        "typecheck",
+        "test-suite",
+        "package-smoke",
+      ])
+  ) {
+    throw new Error("Packed publisher bundle schema does not preserve the claim-limited contract.");
+  }
+  const expectedDocuments = [
     "docs/phase-1.md",
     "docs/phase-2.md",
     "docs/physical-device.md",
+    "docs/publisher-bundle-readme.md",
     "docs/publisher-pilot-quickstart.md",
-  ]) {
+    "docs/supported-environment.md",
+    "docs/flows/mwa-authorize.md",
+    "docs/flows/mwa-reject.md",
+    "docs/flows/mwa-sign-message.md",
+    "docs/flows/mwa-siws.md",
+  ];
+  for (const document of expectedDocuments) {
     if (!installedFiles.includes(document)) throw new Error("Packed documentation is missing " + document + ".");
   }
-  for (const template of ["templates/pilot-consent.md", "templates/pilot-notes.md", "templates/defect-evidence.md"]) {
+  const expectedTemplates = [
+    "templates/pilot-consent.md",
+    "templates/pilot-notes.md",
+    "templates/defect-evidence.md",
+    "templates/publisher-intake.md",
+    "templates/sharing-review.md",
+  ];
+  for (const template of expectedTemplates) {
     if (!installedFiles.includes(template)) throw new Error("Packed template is missing " + template + ".");
   }
+  const expectedSchemas = [
+    "schemas/launchrig-pilot-evidence-v1.schema.json",
+    "schemas/launchrig-pilot-evidence-v2.schema.json",
+    "schemas/launchrig-pilot-evidence.schema.json",
+    "schemas/launchrig-publisher-bundle.schema.json",
+    "schemas/launchrig.schema.json",
+  ];
+  for (const [label, expected, prefix] of [
+    ["documentation", expectedDocuments, "docs/"],
+    ["schema", expectedSchemas, "schemas/"],
+    ["template", expectedTemplates, "templates/"],
+  ]) {
+    const actual = installedFiles.filter((file) => file.startsWith(prefix)).sort();
+    if (JSON.stringify(actual) !== JSON.stringify([...expected].sort())) {
+      throw new Error("Packed " + label + " inventory does not match the release allowlist.");
+    }
+  }
+  const allowedPackageFile = (file) =>
+    file === "LICENSE" ||
+    file === "README.md" ||
+    file === "package.json" ||
+    file === "node_modules/.bin/launchrig" ||
+    file === "node_modules/.bin/launchrig.CMD" ||
+    file === "node_modules/.bin/launchrig.ps1" ||
+    file.startsWith("dist/src/") ||
+    file.startsWith("dist/node_modules/yaml/") ||
+    file.startsWith("docs/") ||
+    file.startsWith("schemas/") ||
+    file.startsWith("templates/");
+  const unexpectedPackageFile = installedFiles.find((file) => !allowedPackageFile(file));
+  if (unexpectedPackageFile) throw new Error("Packed archive contains an unexpected file: " + unexpectedPackageFile);
+  const forbiddenPackageFile = installedFiles.find(
+    (file) =>
+      file.startsWith(".launchrig/") ||
+      file.startsWith(".git/") ||
+      file.startsWith("apps/") ||
+      file.startsWith("fixtures/") ||
+      file.startsWith("scripts/") ||
+      file.startsWith("test/") ||
+      file.endsWith(".apk") ||
+      file.endsWith(".log") ||
+      path.posix.basename(file).startsWith(".env"),
+  );
+  if (forbiddenPackageFile) throw new Error("Packed archive contains forbidden private material: " + forbiddenPackageFile);
   if (installedFiles.some((file) => file.startsWith("dist/test/"))) {
     throw new Error("Packed archive must not contain the test suite.");
   }
@@ -110,6 +198,14 @@ try {
   }
   if (!installedFiles.includes("dist/node_modules/yaml/LICENSE")) {
     throw new Error("Packed archive is missing the YAML runtime license.");
+  }
+  for (const file of installedFiles.filter(
+    (entry) => entry.startsWith("dist/src/") && /\.(?:js|d\.ts|map|json)$/.test(entry),
+  )) {
+    const source = await readFile(path.join(installedDirectory, ...file.split("/")), "utf8");
+    if (source.includes(root) || source.includes(os.homedir())) {
+      throw new Error("Packed source output exposes an absolute local path: " + file);
+    }
   }
   if (installedPackage.private !== true) throw new Error("Packed package must remain private.");
 

@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json",
+  "title": "LaunchRig Phase 2A publisher bundle manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "bundleId",
+    "launchRigVersion",
+    "source",
+    "package",
+    "consumerRehearsal",
+    "sourceVerification",
+    "claims",
+    "scope",
+    "grantReady",
+    "files",
+    "payloadSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-publisher-bundle" },
+    "profile": { "const": "phase-2a-publisher-rc-v1" },
+    "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "launchRigVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gitCommit", "lockfileSha256", "worktree"],
+      "properties": {
+        "gitCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "lockfileSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "worktree": { "const": "clean" }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "sizeBytes", "sha256", "private", "nodeEngine", "packageManager"],
+      "properties": {
+        "name": { "const": "launchrig" },
+        "path": { "$ref": "#/$defs/safePath" },
+        "sizeBytes": { "$ref": "#/$defs/sizeBytes" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "private": { "const": true },
+        "nodeEngine": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "packageManager": { "type": "string", "pattern": "^pnpm@[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "consumerRehearsal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "mode", "checks", "deviceOrWalletTested"],
+      "properties": {
+        "status": { "const": "passed" },
+        "mode": { "const": "clean-offline-pnpm-install" },
+        "checks": {
+          "const": [
+            "offline-package-install",
+            "installed-version-match",
+            "installed-help-contract",
+            "pilot-timer-start",
+            "starter-generation",
+            "starter-validation",
+            "device-free-preflight-refusal"
+          ]
+        },
+        "deviceOrWalletTested": { "const": false }
+      }
+    },
+    "sourceVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks"],
+      "properties": {
+        "status": { "const": "passed" },
+        "checks": {
+          "const": [
+            "package-manager-version",
+            "frozen-offline-dependency-restore",
+            "typecheck",
+            "test-suite",
+            "package-smoke"
+          ]
+        }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "externalPublisher",
+        "seekerHardware",
+        "productionWallet",
+        "seedVault",
+        "confirmedDefect"
+      ],
+      "properties": {
+        "externalPublisher": { "const": "not-established" },
+        "seekerHardware": { "const": "not-established" },
+        "productionWallet": { "const": "not-established" },
+        "seedVault": { "const": "not-established" },
+        "confirmedDefect": { "const": "not-established" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["includesApks", "includesPrivatePilotState", "includesPublisherEvidence"],
+      "properties": {
+        "includesApks": { "const": false },
+        "includesPrivatePilotState": { "const": false },
+        "includesPublisherEvidence": { "const": false }
+      }
+    },
+    "grantReady": { "const": false },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sizeBytes", "sha256"],
+        "properties": {
+          "path": { "$ref": "#/$defs/safePath" },
+          "sizeBytes": { "$ref": "#/$defs/sizeBytes" },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "payloadSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "safePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*[\\r\\n])[A-Za-z0-9._/-]+$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 104857600 }
+  }
+}
