@@ -58,6 +58,11 @@ if (args[0] === "--version") {
     process.exitCode = 1;
     return;
   }
+  if (fs.readFileSync(flowPath, "utf8").includes("OPTIONAL_FAILURE")) {
+    console.error("Optional fixture flow failed");
+    process.exitCode = 1;
+    return;
+  }
   const device = args.find((arg) => arg.startsWith("--device="))?.slice("--device=".length) ?? "unknown";
   if (fs.existsSync(path.join(path.dirname(process.argv[1]), "fail-maestro"))) {
     console.log("Flow failed on device " + device.toLowerCase());
@@ -164,6 +169,46 @@ test("physical-device run produces an Android/MWA Ready evidence set", async () 
         (check) => check.id === "wallet.install" && check.summary.includes("skipped by if-missing"),
       ),
     );
+
+    const subset = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro, scenarioId: "authorize" });
+    assert.equal(subset.report.outcome, "passed");
+    assert.equal(subset.report.readiness, "Android Device Ready");
+
+    const optionalFlow = path.join(directory, "optional-reject.yaml");
+    await writeFile(
+      optionalFlow,
+      "appId: dev.launchrig.fixture\n---\n- assertVisible: OPTIONAL_FAILURE\n",
+      "utf8",
+    );
+    const rejectScenario = config.scenarios.find((scenario) => scenario.kind === "mwa-reject");
+    assert.ok(rejectScenario);
+    const originalRejectFlow = rejectScenario.resolvedFlow;
+    rejectScenario.required = false;
+    const optionalPass = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
+    assert.equal(optionalPass.report.outcome, "passed");
+    assert.equal(optionalPass.report.readiness, "Android Device Ready");
+    assert.equal(optionalPass.report.checks.find((check) => check.id === "scenario.reject")?.status, "pass");
+    rejectScenario.resolvedFlow = optionalFlow;
+    const optionalFailure = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
+    assert.equal(optionalFailure.report.outcome, "passed");
+    assert.equal(optionalFailure.report.readiness, "Android Device Ready");
+    assert.equal(optionalFailure.report.checks.find((check) => check.id === "scenario.reject")?.status, "fail");
+    rejectScenario.required = true;
+    rejectScenario.resolvedFlow = originalRejectFlow;
+
+    config.scenarios.push({
+      ...rejectScenario,
+      id: "stale-authorization",
+      kind: "mwa-stale-authorization",
+      name: "Optional stale authorization",
+      required: false,
+      resolvedFlow: optionalFlow,
+    });
+    const optionalLifecycleFailure = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
+    assert.equal(optionalLifecycleFailure.report.outcome, "passed");
+    assert.equal(optionalLifecycleFailure.report.readiness, "Android Device Ready");
+    config.scenarios.pop();
+
     await assert.rejects(() =>
       access(path.join(path.dirname(output.artifacts.json), "scenarios", "authorize", "maestro-artifacts")),
     );
@@ -174,6 +219,7 @@ test("physical-device run produces an Android/MWA Ready evidence set", async () 
     try {
       const failedOutput = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
       assert.equal(failedOutput.exitCode, 1);
+      assert.equal(failedOutput.report.readiness, "Not Ready");
       const failedAuthorize = failedOutput.report.checks.find((check) => check.id === "scenario.authorize");
       assert.equal(failedAuthorize?.status, "fail");
       assert.match(failedAuthorize?.details ?? "", /\*\*\*/);

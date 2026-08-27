@@ -13,6 +13,7 @@ import {
 } from "../src/commands/pilot.js";
 import { runCli } from "../src/cli.js";
 import { loadConfig } from "../src/config/load.js";
+import { verifyPublicPilotEvidence } from "../src/pilot/public-evidence.js";
 import { readPilotState, sha256Value } from "../src/pilot/store.js";
 import type { PilotProjectRunner, PilotRunEvidenceV1, PilotStateCoreV1 } from "../src/pilot/types.js";
 import type { LaunchRigReport } from "../src/types.js";
@@ -212,6 +213,10 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
     assert.equal("reportSha256" in (exported.evidence.runs[0] ?? {}), false);
     const { evidenceSha256, ...core } = exported.evidence;
     assert.equal(evidenceSha256, sha256Value(core));
+    const verifiedExport = await verifyPublicPilotEvidence(exported.outputPath);
+    assert.equal(verifiedExport.integrityValid, true);
+    assert.equal(verifiedExport.internalConsistencyValid, true);
+    assert.equal(verifiedExport.grantReady, false);
 
     await assert.rejects(
       () => exportPilotEvidence({ pilotId, configPath, outputPath: status.statePath, force: true }),

@@ -21,6 +21,7 @@ import {
 } from "./commands/pilot.js";
 import { validateProject } from "./commands/validate.js";
 import { FixtureMatrixValidationError } from "./fixtures/matrix.js";
+import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
 
 export interface CliIO {
@@ -34,6 +35,7 @@ export interface CliDependencies {
   runPilot?: typeof runPilot;
   getPilotStatus?: typeof getPilotStatus;
   exportPilotEvidence?: typeof exportPilotEvidence;
+  verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
 }
 
 const defaultIO: CliIO = {
@@ -54,6 +56,7 @@ const HELP = [
   "  launchrig pilot run --pilot ID [--config launchrig.yml] [--device SERIAL] [--repeat N]",
   "  launchrig pilot status --pilot ID [--config launchrig.yml] [--json]",
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
+  "  launchrig pilot verify FILE [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -103,6 +106,12 @@ function humanDoctor(value: Awaited<ReturnType<typeof doctor>>): string {
   }
   for (const issue of value.issues) lines.push("- " + issue);
   return lines.join("\n");
+}
+
+function humanDuration(milliseconds: number | null): string {
+  if (milliseconds === null) return "not available";
+  if (milliseconds < 60_000) return (milliseconds / 1000).toFixed(1) + " seconds";
+  return (milliseconds / 60_000).toFixed(1) + " minutes";
 }
 
 export async function runCli(
@@ -237,6 +246,37 @@ export async function runCli(
 
     if (command === "pilot") {
       const subcommand = parsed.positionals[1];
+
+      if (subcommand === "verify") {
+        const unsupportedOption = argv.find(
+          (argument) =>
+            argument.startsWith("-") &&
+            !["--json", "--help", "-h", "--version", "-v"].includes(argument),
+        );
+        if (unsupportedOption) {
+          throw new PilotError("pilot verify does not accept " + unsupportedOption);
+        }
+        const evidencePath = parsed.positionals[2];
+        if (!evidencePath || parsed.positionals.length !== 3) {
+          throw new PilotError("pilot verify requires exactly one evidence file");
+        }
+        const verifyEvidence = dependencies.verifyPublicPilotEvidence ?? verifyPublicPilotEvidence;
+        const output = await verifyEvidence(evidencePath);
+        io.out(
+          parsed.values.json
+            ? JSON.stringify(output, null, 2)
+            : [
+                "Public pilot evidence: internally consistent",
+                "Integrity valid. Evidence remains self-recorded and unattested.",
+                "reported qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                "reported technical targets: " + (output.reportedTechnicalTargetsMet ? "met" : "not met"),
+                "grant ready: no",
+                ...output.limitations.map((limitation) => "- " + limitation),
+              ].join("\n"),
+        );
+        return 0;
+      }
+
       if (!pilotId) throw new PilotError("pilot commands require --pilot ID");
 
       if (subcommand === "start") {
@@ -246,7 +286,10 @@ export async function runCli(
         io.out(
           parsed.values.json
             ? JSON.stringify(rendered, null, 2)
-            : "Pilot " + pilotId + " started. State: " + rendered.statePath,
+            : [
+                "Pilot " + pilotId + " started. State: " + rendered.statePath,
+                "Next: create or edit launchrig.yml, then run launchrig validate and launchrig doctor.",
+              ].join("\n"),
         );
         return 0;
       }
@@ -290,7 +333,10 @@ export async function runCli(
             : [
                 "Pilot " + pilotId + " status",
                 "qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                "pass rate: " + (output.metrics.passRate * 100).toFixed(1) + "%",
                 "consecutive passes: " + output.metrics.consecutivePasses,
+                "setup duration: " + humanDuration(output.metrics.setupDurationMs),
+                "median current-fingerprint runtime: " + humanDuration(output.metrics.medianRunDurationMs),
                 "setup target: " + (output.metrics.setupTargetMet ? "met" : "not met"),
                 "runtime target: " + (output.metrics.runtimeTargetMet ? "met" : "not met"),
               ].join("\n"),
@@ -310,12 +356,15 @@ export async function runCli(
         io.out(
           parsed.values.json
             ? JSON.stringify({ outputPath: renderedPath, evidence: output.evidence }, null, 2)
-            : "Self-recorded, unattested pilot evidence exported: " + renderedPath,
+            : [
+                "Self-recorded, unattested pilot evidence exported: " + renderedPath,
+                "Next: run launchrig pilot verify on that file before sharing it.",
+              ].join("\n"),
         );
         return 0;
       }
 
-      throw new PilotError("pilot command must be start, run, status, or export");
+      throw new PilotError("pilot command must be start, run, status, export, or verify");
     }
 
     io.error("Unknown command: " + command);

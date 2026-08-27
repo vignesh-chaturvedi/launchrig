@@ -635,11 +635,18 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         walletSnapshot &&
           checks.some((check) => check.id === "wallet.installed" && check.required && check.status === "pass"),
       ) &&
+      scenarios
+        .filter((scenario) => scenario.kind.startsWith("mwa-"))
+        .every((scenario) => checks.some((check) => check.id === "scenario." + scenario.id && check.status === "pass")) &&
       ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"].every((kind) =>
-        scenarios.some((scenario) => scenario.kind === kind),
-      ) &&
-      scenarios.every((scenario) =>
-        !scenario.required || checks.some((check) => check.id === "scenario." + scenario.id && check.status === "pass"),
+        scenarios.some(
+          (scenario) =>
+            scenario.kind === kind &&
+            scenario.required &&
+            checks.some(
+              (check) => check.id === "scenario." + scenario.id && check.required && check.status === "pass",
+            ),
+        ),
       ),
   });
 }

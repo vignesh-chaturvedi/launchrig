@@ -62,6 +62,10 @@
                 "qualifying": { "const": false }
               }
             }
+          },
+          {
+            "if": { "not": { "required": ["failureKind"] } },
+            "then": { "required": ["launchRigVersion"] }
           }
         ]
       }
