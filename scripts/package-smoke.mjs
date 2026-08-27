@@ -83,7 +83,13 @@ try {
   if (!installedFiles.includes("dist/src/cli.js")) throw new Error("Packed CLI entrypoint is missing.");
   if (!installedFiles.includes("schemas/launchrig.schema.json")) throw new Error("Packed config schema is missing.");
   if (!installedFiles.includes("schemas/launchrig-pilot-evidence.schema.json")) {
-    throw new Error("Packed pilot evidence schema is missing.");
+    throw new Error("Packed legacy pilot evidence v1 schema alias is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-pilot-evidence-v1.schema.json")) {
+    throw new Error("Packed pilot evidence v1 schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-pilot-evidence-v2.schema.json")) {
+    throw new Error("Packed pilot evidence v2 schema is missing.");
   }
   for (const document of [
     "docs/phase-1.md",
@@ -166,44 +172,185 @@ try {
     await readFile(path.join(publisherDirectory, "launchrig-flows", flow + ".example.yaml"), "utf8");
   }
 
-  const evidenceCore = {
+  const claims = {
+    externalPublisher: "not-established",
+    seekerHardware: "not-established",
+    productionWallet: "not-established",
+    seedVault: "not-established",
+    confirmedDefect: "not-established",
+  };
+  const emptyMetrics = {
+    runAttempts: 0,
+    qualifyingRuns: 0,
+    passRate: 0,
+    consecutivePasses: 0,
+    medianRunDurationMs: null,
+    setupDurationMs: null,
+    executionFingerprintSha256: null,
+    setupTargetMet: false,
+    runtimeTargetMet: false,
+    repeatabilityTargetMet: false,
+  };
+  const evidenceV1Core = {
     schemaVersion: 1,
     kind: "launchrig-pilot-evidence",
     evidenceId: "123e4567-e89b-42d3-a456-426614174000",
     claimStatus: "self-recorded-unattested",
-    metrics: {
-      runAttempts: 0,
-      qualifyingRuns: 0,
-      passRate: 0,
-      consecutivePasses: 0,
-      medianRunDurationMs: null,
+    metrics: emptyMetrics,
+    runs: [],
+    claims,
+  };
+  const evidenceV1Path = path.join(publisherDirectory, "pilot-evidence-v1.json");
+  await writeFile(
+    evidenceV1Path,
+    JSON.stringify({ ...evidenceV1Core, evidenceSha256: sha256Value(evidenceV1Core) }, null, 2) + "\n",
+    "utf8",
+  );
+  const verificationV1 = JSON.parse(
+    (await run(executable, ["pilot", "verify", evidenceV1Path, "--json"], { cwd: publisherDirectory })).stdout,
+  );
+  if (
+    verificationV1.schemaVersion !== 1 ||
+    verificationV1.technicalPilot !== null ||
+    verificationV1.reportedTechnicalTargetsMet !== false ||
+    verificationV1.grantReady !== false
+  ) {
+    throw new Error("Installed verifier did not retain evidence v1 compatibility.");
+  }
+
+  const evidenceV2NotMetCore = {
+    schemaVersion: 2,
+    kind: "launchrig-pilot-evidence",
+    evidenceId: "223e4567-e89b-42d3-a456-426614174000",
+    claimStatus: "self-recorded-unattested",
+    metrics: emptyMetrics,
+    technicalPilot: {
+      profile: "external-mwa-pilot-v1",
+      qualified: false,
+      latestReadiness: null,
+      trailingMwaPasses: 0,
+      requiredTrailingMwaPasses: 3,
       setupDurationMs: null,
-      executionFingerprintSha256: null,
+      medianRunDurationMs: null,
       setupTargetMet: false,
       runtimeTargetMet: false,
       repeatabilityTargetMet: false,
     },
     runs: [],
-    claims: {
-      externalPublisher: "not-established",
-      seekerHardware: "not-established",
-      productionWallet: "not-established",
-      seedVault: "not-established",
-      confirmedDefect: "not-established",
-    },
+    claims,
   };
-  const evidencePath = path.join(publisherDirectory, "pilot-evidence.json");
+  const evidenceV2NotMetPath = path.join(publisherDirectory, "pilot-evidence-v2-not-met.json");
   await writeFile(
-    evidencePath,
-    JSON.stringify({ ...evidenceCore, evidenceSha256: sha256Value(evidenceCore) }, null, 2) + "\n",
+    evidenceV2NotMetPath,
+    JSON.stringify(
+      {
+        ...evidenceV2NotMetCore,
+        evidenceSha256: sha256Value(evidenceV2NotMetCore),
+      },
+      null,
+      2,
+    ) + "\n",
     "utf8",
   );
-  const verification = await run(executable, ["pilot", "verify", evidencePath], { cwd: publisherDirectory });
+  const verification = await run(executable, ["pilot", "verify", evidenceV2NotMetPath], {
+    cwd: publisherDirectory,
+  });
   if (
     !verification.stdout.includes("Public pilot evidence: internally consistent") ||
+    !verification.stdout.includes("evidence schema: v2") ||
+    !verification.stdout.includes("technical pilot gate (recomputed from self-recorded fields): not met") ||
+    !verification.stdout.includes("external grant gate: not established") ||
     !verification.stdout.includes("grant ready: no")
   ) {
     throw new Error("Installed public evidence verifier did not preserve claim limitations.");
+  }
+  const verificationV2NotMet = JSON.parse(
+    (
+      await run(executable, ["pilot", "verify", evidenceV2NotMetPath, "--json"], {
+        cwd: publisherDirectory,
+      })
+    ).stdout,
+  );
+  if (
+    verificationV2NotMet.schemaVersion !== 2 ||
+    verificationV2NotMet.technicalPilot?.qualified !== false ||
+    verificationV2NotMet.reportedTechnicalTargetsMet !== false ||
+    verificationV2NotMet.grantReady !== false
+  ) {
+    throw new Error("Installed verifier returned an invalid evidence v2 not-met result.");
+  }
+
+  const fingerprint = "a".repeat(64);
+  const evidenceV2MetCore = {
+    schemaVersion: 2,
+    kind: "launchrig-pilot-evidence",
+    evidenceId: "323e4567-e89b-42d3-a456-426614174000",
+    claimStatus: "self-recorded-unattested",
+    metrics: {
+      runAttempts: 3,
+      qualifyingRuns: 3,
+      passRate: 1,
+      consecutivePasses: 3,
+      medianRunDurationMs: 5 * 60_000,
+      setupDurationMs: 20 * 60_000,
+      executionFingerprintSha256: fingerprint,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    },
+    technicalPilot: {
+      profile: "external-mwa-pilot-v1",
+      qualified: true,
+      latestReadiness: "Android/MWA Ready",
+      trailingMwaPasses: 3,
+      requiredTrailingMwaPasses: 3,
+      setupDurationMs: 20 * 60_000,
+      medianRunDurationMs: 5 * 60_000,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    },
+    runs: [20, 25, 30].map((elapsedMinutes, index) => ({
+      runId: "run-" + String(index + 1).padStart(3, "0"),
+      outcome: "passed",
+      readiness: "Android/MWA Ready",
+      durationMs: 5 * 60_000,
+      elapsedSinceStartMs: elapsedMinutes * 60_000,
+      executionFingerprintSha256: fingerprint,
+      launchRigVersion: installedPackage.version,
+      physicalDevice: true,
+      requiredChecksPassed: true,
+      qualifying: true,
+    })),
+    claims,
+  };
+  const evidenceV2MetPath = path.join(publisherDirectory, "pilot-evidence-v2-met.json");
+  await writeFile(
+    evidenceV2MetPath,
+    JSON.stringify(
+      {
+        ...evidenceV2MetCore,
+        evidenceSha256: sha256Value(evidenceV2MetCore),
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+  const verificationV2Met = JSON.parse(
+    (
+      await run(executable, ["pilot", "verify", evidenceV2MetPath, "--json"], {
+        cwd: publisherDirectory,
+      })
+    ).stdout,
+  );
+  if (
+    verificationV2Met.schemaVersion !== 2 ||
+    verificationV2Met.technicalPilot?.qualified !== true ||
+    verificationV2Met.reportedTechnicalTargetsMet !== true ||
+    verificationV2Met.grantReady !== false
+  ) {
+    throw new Error("Installed verifier did not recompute a valid evidence v2 technical gate.");
   }
 
   let matrixFailure;

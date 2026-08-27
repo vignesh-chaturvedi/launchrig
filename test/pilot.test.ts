@@ -324,8 +324,8 @@ test("pilot preflight is read-only and separates policy, technical, and external
 
     const timestamps = [
       "2026-08-26T10:20:00.000Z",
-      "2026-08-26T10:21:00.000Z",
-      "2026-08-26T10:22:00.000Z",
+      "2026-08-26T10:26:00.000Z",
+      "2026-08-26T10:32:00.000Z",
     ];
     const scenarioIds = ["authorize", "siws", "sign-message", "reject"];
     const run = await runPilot({
@@ -490,8 +490,8 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
     });
     const timestamps = [
       "2026-08-26T10:20:00.000Z",
-      "2026-08-26T10:21:00.000Z",
-      "2026-08-26T10:22:00.000Z",
+      "2026-08-26T10:26:00.000Z",
+      "2026-08-26T10:32:00.000Z",
     ];
     const output = await runPilot({
       pilotId,
@@ -682,6 +682,104 @@ test("pilot repeatability resets when the execution fingerprint changes", () => 
   assert.equal(completedTechnical.medianRunDurationMs, 360_000);
 });
 
+test("pilot evidence v2 exposes a recomputable technical gate with per-export keyed fingerprints", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-v2-export-"));
+  try {
+    const configPath = await writeFullPublisherProject(directory);
+    const scenarioIds = ["authorize", "siws", "sign-message", "reject"];
+    const runOnePilot = async (pilotId: string, outputPath: string) => {
+      await startPilot({
+        pilotId,
+        configPath,
+        now: () => new Date("2026-08-26T10:00:00.000Z"),
+      });
+      const timestamps = [
+        "2026-08-26T10:20:00.000Z",
+        "2026-08-26T10:26:00.000Z",
+        "2026-08-26T10:32:00.000Z",
+      ];
+      const runOutput = await runPilot({
+        pilotId,
+        configPath,
+        repeat: 3,
+        projectRunner: passingRunner(directory, undefined, "Android/MWA Ready", scenarioIds),
+        now: () => new Date(timestamps.shift() ?? "invalid"),
+      });
+      assert.equal(runOutput.technicalPilot.qualified, true);
+      return {
+        runOutput,
+        exported: await exportPilotEvidence({ pilotId, configPath, outputPath }),
+      };
+    };
+
+    const first = await runOnePilot("publisher-v2-first", "./exports/first-v2.json");
+    assert.equal(first.exported.evidence.schemaVersion, 2);
+    assert.equal(first.exported.evidence.technicalPilot.qualified, true);
+    assert.deepEqual(
+      first.exported.evidence.runs.map((run) => run.elapsedSinceStartMs),
+      [20 * 60_000, 26 * 60_000, 32 * 60_000],
+    );
+    const firstFingerprints = new Set(
+      first.exported.evidence.runs.map((run) => run.executionFingerprintSha256),
+    );
+    assert.equal(firstFingerprints.size, 1);
+    assert.equal(
+      first.exported.evidence.metrics.executionFingerprintSha256,
+      first.exported.evidence.runs.at(-1)?.executionFingerprintSha256,
+    );
+    assert.notEqual(
+      first.exported.evidence.metrics.executionFingerprintSha256,
+      first.runOutput.metrics.executionFingerprintSha256,
+    );
+    const verified = await verifyPublicPilotEvidence(first.exported.outputPath);
+    assert.equal(verified.reportedTechnicalTargetsMet, true);
+    assert.equal(verified.grantReady, false);
+
+    const reexported = await exportPilotEvidence({
+      pilotId: "publisher-v2-first",
+      configPath,
+      outputPath: "./exports/first-v2-reexport.json",
+    });
+    assert.equal(reexported.evidence.evidenceId, first.exported.evidence.evidenceId);
+    assert.notEqual(
+      reexported.evidence.runs[0]?.executionFingerprintSha256,
+      first.exported.evidence.runs[0]?.executionFingerprintSha256,
+    );
+    assert.equal((await verifyPublicPilotEvidence(reexported.outputPath)).reportedTechnicalTargetsMet, true);
+
+    const second = await runOnePilot("publisher-v2-second", "./exports/second-v2.json");
+    assert.notEqual(first.exported.evidence.evidenceId, second.exported.evidence.evidenceId);
+    assert.notEqual(
+      first.exported.evidence.runs[0]?.executionFingerprintSha256,
+      second.exported.evidence.runs[0]?.executionFingerprintSha256,
+    );
+    assert.notEqual(
+      first.exported.evidence.metrics.executionFingerprintSha256,
+      second.exported.evidence.metrics.executionFingerprintSha256,
+    );
+
+    const impossibleState = JSON.parse(await readFile(first.runOutput.statePath, "utf8")) as Record<string, any>;
+    impossibleState.runs[1].recordedAt = "2026-08-26T10:21:00.000Z";
+    const { integritySha256: _integrity, ...impossibleCore } = impossibleState;
+    impossibleState.integritySha256 = sha256Value(impossibleCore);
+    await writeFile(first.runOutput.statePath, JSON.stringify(impossibleState, null, 2) + "\n", "utf8");
+    await assert.rejects(
+      () =>
+        exportPilotEvidence({
+          pilotId: "publisher-v2-first",
+          configPath,
+          outputPath: "./exports/impossible-v2.json",
+        }),
+      (error: unknown) => error instanceof PilotError && error.message.includes("sequential run durations"),
+    );
+
+    const publicSource = await readFile(first.exported.outputPath, "utf8");
+    assert.doesNotMatch(publicSource, /recordedAt|startedAt|publisher-v2-first|com\.publisher|authorize/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("optional MWA failure downgrades readiness without invalidating a passed pilot report", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-optional-mwa-"));
   try {
@@ -742,7 +840,11 @@ test("pilot records runner and report failures without inflating success metrics
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-failures-"));
   try {
     const configPath = await writePublisherProject(directory);
-    await startPilot({ pilotId: "publisher-delta", configPath });
+    await startPilot({
+      pilotId: "publisher-delta",
+      configPath,
+      now: () => new Date("2026-08-26T10:00:00.000Z"),
+    });
     const passing = passingRunner(directory);
     let call = 0;
     const runnerFailure: PilotProjectRunner = async (...args) => {
@@ -755,6 +857,10 @@ test("pilot records runner and report failures without inflating success metrics
       configPath,
       repeat: 2,
       projectRunner: runnerFailure,
+      now: (() => {
+        const timestamps = ["2026-08-26T10:06:00.000Z", "2026-08-26T10:07:00.000Z"];
+        return () => new Date(timestamps.shift() ?? "invalid");
+      })(),
     });
     assert.equal(output.exitCode, 3);
     assert.equal(output.metrics.runAttempts, 2);

@@ -299,8 +299,13 @@ export async function runCli(
             : [
                 "Public pilot evidence: internally consistent",
                 "Integrity valid. Evidence remains self-recorded and unattested.",
-                "reported qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
-                "strict technical gate established by evidence v1: no",
+                "evidence schema: v" + output.schemaVersion,
+                "evidence-qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                output.schemaVersion === 2
+                  ? "technical pilot gate (recomputed from self-recorded fields): " +
+                    (output.reportedTechnicalTargetsMet ? "met" : "not met")
+                  : "technical pilot gate: not independently recomputable from evidence v1",
+                "external grant gate: not established",
                 "grant ready: no",
                 ...output.limitations.map((limitation) => "- " + limitation),
               ].join("\n"),
@@ -431,7 +436,7 @@ export async function runCli(
           parsed.values.json
             ? JSON.stringify({ outputPath: renderedPath, evidence: output.evidence }, null, 2)
             : [
-                "Self-recorded, unattested pilot evidence exported: " + renderedPath,
+                "Self-recorded, unattested pilot evidence v2 exported: " + renderedPath,
                 "Next: run launchrig pilot verify on that file before sharing it.",
               ].join("\n"),
         );

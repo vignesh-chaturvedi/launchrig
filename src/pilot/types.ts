@@ -47,7 +47,7 @@ export interface PilotMetricsV1 {
 }
 
 export interface PilotTechnicalGate {
-  profile: "external-mwa-pilot";
+  profile: "external-mwa-pilot-v1";
   qualified: boolean;
   latestReadiness: PilotRunEvidenceV1["readiness"] | null;
   trailingMwaPasses: number;
@@ -69,31 +69,54 @@ export interface ExternalGrantGateStatus {
   publicRelease: "not-established";
 }
 
+export interface PublicPilotClaims {
+  externalPublisher: "not-established";
+  seekerHardware: "not-established";
+  productionWallet: "not-established";
+  seedVault: "not-established";
+  confirmedDefect: "not-established";
+}
+
+export interface PublicPilotRunV1 {
+  runId: string;
+  outcome: PilotRunEvidenceV1["outcome"];
+  readiness: PilotRunEvidenceV1["readiness"];
+  durationMs: number;
+  failureKind?: PilotRunEvidenceV1["failureKind"];
+  launchRigVersion?: string;
+  physicalDevice: boolean;
+  requiredChecksPassed: boolean;
+  qualifying: boolean;
+}
+
 export interface PublicPilotEvidenceV1 {
   schemaVersion: 1;
   kind: "launchrig-pilot-evidence";
   evidenceId: string;
   claimStatus: "self-recorded-unattested";
   metrics: PilotMetricsV1;
-  runs: Array<{
-    runId: string;
-    outcome: PilotRunEvidenceV1["outcome"];
-    readiness: PilotRunEvidenceV1["readiness"];
-    durationMs: number;
-    failureKind?: PilotRunEvidenceV1["failureKind"];
-    launchRigVersion?: string;
-    physicalDevice: boolean;
-    requiredChecksPassed: boolean;
-    qualifying: boolean;
-  }>;
-  claims: {
-    externalPublisher: "not-established";
-    seekerHardware: "not-established";
-    productionWallet: "not-established";
-    seedVault: "not-established";
-    confirmedDefect: "not-established";
-  };
+  runs: PublicPilotRunV1[];
+  claims: PublicPilotClaims;
   evidenceSha256: string;
 }
+
+export interface PublicPilotRunV2 extends PublicPilotRunV1 {
+  elapsedSinceStartMs: number;
+  executionFingerprintSha256: string | null;
+}
+
+export interface PublicPilotEvidenceV2 {
+  schemaVersion: 2;
+  kind: "launchrig-pilot-evidence";
+  evidenceId: string;
+  claimStatus: "self-recorded-unattested";
+  metrics: PilotMetricsV1;
+  technicalPilot: PilotTechnicalGate;
+  runs: PublicPilotRunV2[];
+  claims: PublicPilotClaims;
+  evidenceSha256: string;
+}
+
+export type PublicPilotEvidence = PublicPilotEvidenceV1 | PublicPilotEvidenceV2;
 
 export type PilotProjectRunner = (configPath: string, options?: RunOptions) => Promise<RunOutput>;

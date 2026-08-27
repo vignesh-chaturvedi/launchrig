@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import {
   chmod,
@@ -36,7 +36,7 @@ import type {
   PilotStateCoreV1,
   PilotStateV1,
   PilotTechnicalGate,
-  PublicPilotEvidenceV1,
+  PublicPilotEvidenceV2,
 } from "../pilot/types.js";
 import type { LaunchRigReport, ResolvedLaunchRigConfig } from "../types.js";
 import type { RunOptions, RunOutput } from "../runner/orchestrator.js";
@@ -316,6 +316,13 @@ function executionFingerprint(run: PilotRunEvidenceV1): string {
   });
 }
 
+function publicExecutionFingerprint(exportKey: Buffer, fingerprint: string): string {
+  return createHmac("sha256", exportKey)
+    .update("launchrig-public-execution-fingerprint-v2\0")
+    .update(fingerprint)
+    .digest("hex");
+}
+
 function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((left, right) => left - right);
@@ -367,7 +374,7 @@ export function pilotTechnicalGate(state: PilotStateCoreV1): PilotTechnicalGate 
   const runtimeTargetMet = medianRunDurationMs !== null && medianRunDurationMs <= RUNTIME_TARGET_MS;
   const repeatabilityTargetMet = trailingMwaPasses >= 3;
   return {
-    profile: "external-mwa-pilot",
+    profile: "external-mwa-pilot-v1",
     qualified: setupTargetMet && runtimeTargetMet && repeatabilityTargetMet,
     latestReadiness: latestRun?.readiness ?? null,
     trailingMwaPasses,
@@ -1078,36 +1085,55 @@ async function assertSafePublicExportDestination(configDirectory: string, output
 
 export async function exportPilotEvidence(
   options: ExportPilotOptions,
-): Promise<{ outputPath: string; evidence: PublicPilotEvidenceV1 }> {
+): Promise<{ outputPath: string; evidence: PublicPilotEvidenceV2 }> {
   assertPilotId(options.pilotId);
   const config = await loadEligibleConfig(options.configPath ?? "launchrig.yml");
   const statePath = await pilotStatePath(config.configDirectory, options.pilotId);
   const state = await readPilotState(statePath);
   if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
   const privateMetrics = pilotMetrics(state);
+  const publicFingerprintKey = randomBytes(32);
   const metrics: PilotMetricsV1 = {
     ...privateMetrics,
     executionFingerprintSha256: privateMetrics.executionFingerprintSha256
-      ? sha256Value({ evidenceId: state.evidenceId, fingerprint: privateMetrics.executionFingerprintSha256 })
+      ? publicExecutionFingerprint(publicFingerprintKey, privateMetrics.executionFingerprintSha256)
       : null,
   };
-  const core = {
-    schemaVersion: 1 as const,
-    kind: "launchrig-pilot-evidence" as const,
-    evidenceId: state.evidenceId,
-    claimStatus: "self-recorded-unattested" as const,
-    metrics,
-    runs: state.runs.map((run, index) => ({
+  const technicalPilot = pilotTechnicalGate(state);
+  let previousElapsedSinceStartMs = 0;
+  const publicRuns = state.runs.map((run, index) => {
+    const elapsedSinceStartMs = Date.parse(run.recordedAt) - Date.parse(state.startedAt);
+    if (
+      elapsedSinceStartMs < previousElapsedSinceStartMs ||
+      elapsedSinceStartMs - previousElapsedSinceStartMs < run.durationMs
+    ) {
+      throw new PilotError("Pilot run timestamps do not cover sequential run durations", 3);
+    }
+    previousElapsedSinceStartMs = elapsedSinceStartMs;
+    return {
       runId: "run-" + String(index + 1).padStart(3, "0"),
       outcome: run.outcome,
       readiness: run.readiness,
       durationMs: run.durationMs,
+      elapsedSinceStartMs,
+      executionFingerprintSha256: run.failureKind
+        ? null
+        : publicExecutionFingerprint(publicFingerprintKey, executionFingerprint(run)),
       ...(run.failureKind ? { failureKind: run.failureKind } : {}),
       ...(run.launchRigVersion ? { launchRigVersion: run.launchRigVersion } : {}),
       physicalDevice: run.physicalDevice,
       requiredChecksPassed: run.requiredChecksPassed,
       qualifying: run.qualifying,
-    })),
+    };
+  });
+  const core = {
+    schemaVersion: 2 as const,
+    kind: "launchrig-pilot-evidence" as const,
+    evidenceId: state.evidenceId,
+    claimStatus: "self-recorded-unattested" as const,
+    metrics,
+    technicalPilot,
+    runs: publicRuns,
     claims: {
       externalPublisher: "not-established" as const,
       seekerHardware: "not-established" as const,
@@ -1116,7 +1142,8 @@ export async function exportPilotEvidence(
       confirmedDefect: "not-established" as const,
     },
   };
-  const evidence: PublicPilotEvidenceV1 = { ...core, evidenceSha256: sha256Value(core) };
+  publicFingerprintKey.fill(0);
+  const evidence: PublicPilotEvidenceV2 = { ...core, evidenceSha256: sha256Value(core) };
   const outputPath = path.resolve(
     config.configDirectory,
     options.outputPath ?? path.join(path.dirname(statePath), "public-evidence.json"),

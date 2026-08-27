@@ -6,7 +6,7 @@ import test from "node:test";
 import { runCli } from "../src/cli.js";
 import { verifyPublicPilotEvidence } from "../src/pilot/public-evidence.js";
 import { sha256Value } from "../src/pilot/store.js";
-import type { PublicPilotEvidenceV1 } from "../src/pilot/types.js";
+import type { PublicPilotEvidenceV1, PublicPilotEvidenceV2 } from "../src/pilot/types.js";
 
 function validEvidence(): PublicPilotEvidenceV1 {
   const core: Omit<PublicPilotEvidenceV1, "evidenceSha256"> = {
@@ -47,7 +47,92 @@ function validEvidence(): PublicPilotEvidenceV1 {
   return { ...core, evidenceSha256: sha256Value(core) };
 }
 
-function refreshDigest(evidence: PublicPilotEvidenceV1): void {
+function validV2Evidence(): PublicPilotEvidenceV2 {
+  const fingerprints = {
+    device: "c".repeat(64),
+    firstMwa: "a".repeat(64),
+    currentMwa: "b".repeat(64),
+  };
+  const runs: PublicPilotEvidenceV2["runs"] = [
+    {
+      runId: "run-001",
+      outcome: "passed",
+      readiness: "Android Device Ready",
+      durationMs: 60_000,
+      elapsedSinceStartMs: 5 * 60_000,
+      executionFingerprintSha256: fingerprints.device,
+      launchRigVersion: "0.1.0",
+      physicalDevice: true,
+      requiredChecksPassed: true,
+      qualifying: true,
+    },
+    {
+      runId: "run-002",
+      outcome: "passed",
+      readiness: "Android/MWA Ready",
+      durationMs: 8 * 60_000,
+      elapsedSinceStartMs: 20 * 60_000,
+      executionFingerprintSha256: fingerprints.firstMwa,
+      launchRigVersion: "0.1.0",
+      physicalDevice: true,
+      requiredChecksPassed: true,
+      qualifying: true,
+    },
+    ...[9, 7, 8].map((minutes, index) => ({
+      runId: "run-" + String(index + 3).padStart(3, "0"),
+      outcome: "passed" as const,
+      readiness: "Android/MWA Ready" as const,
+      durationMs: minutes * 60_000,
+      elapsedSinceStartMs: ([31, 38, 46][index] ?? 0) * 60_000,
+      executionFingerprintSha256: fingerprints.currentMwa,
+      launchRigVersion: "0.1.0",
+      physicalDevice: true,
+      requiredChecksPassed: true,
+      qualifying: true,
+    })),
+  ];
+  const core: Omit<PublicPilotEvidenceV2, "evidenceSha256"> = {
+    schemaVersion: 2,
+    kind: "launchrig-pilot-evidence",
+    evidenceId: "123e4567-e89b-42d3-a456-426614174000",
+    claimStatus: "self-recorded-unattested",
+    metrics: {
+      runAttempts: 5,
+      qualifyingRuns: 5,
+      passRate: 1,
+      consecutivePasses: 3,
+      medianRunDurationMs: 8 * 60_000,
+      setupDurationMs: 5 * 60_000,
+      executionFingerprintSha256: fingerprints.currentMwa,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    },
+    technicalPilot: {
+      profile: "external-mwa-pilot-v1",
+      qualified: true,
+      latestReadiness: "Android/MWA Ready",
+      trailingMwaPasses: 3,
+      requiredTrailingMwaPasses: 3,
+      setupDurationMs: 20 * 60_000,
+      medianRunDurationMs: 8 * 60_000,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    },
+    runs,
+    claims: {
+      externalPublisher: "not-established",
+      seekerHardware: "not-established",
+      productionWallet: "not-established",
+      seedVault: "not-established",
+      confirmedDefect: "not-established",
+    },
+  };
+  return { ...core, evidenceSha256: sha256Value(core) };
+}
+
+function refreshDigest(evidence: PublicPilotEvidenceV1 | PublicPilotEvidenceV2): void {
   const { evidenceSha256: _digest, ...core } = evidence;
   evidence.evidenceSha256 = sha256Value(core);
 }
@@ -63,6 +148,7 @@ test("public evidence verifier is strict, offline, and explicit about its limita
     assert.equal(verified.integrityValid, true);
     assert.equal(verified.internalConsistencyValid, true);
     assert.equal(verified.reportedTechnicalTargetsMet, false);
+    assert.equal(verified.technicalPilot, null);
     assert.equal(verified.grantReady, false);
     assert.equal(verified.claimStatus, "self-recorded-unattested");
     assert.ok(verified.limitations.some((entry) => entry.includes("not a signature")));
@@ -222,6 +308,177 @@ test("public evidence verifier is strict, offline, and explicit about its limita
       () => verifyPublicPilotEvidence(evidencePath),
       (error: unknown) => error instanceof Error && error.message.includes("cannot be read safely"),
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("public evidence v2 recomputes the self-recorded technical gate without elevating external claims", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-public-evidence-v2-"));
+  try {
+    const evidencePath = path.join(directory, "pilot-evidence-v2.json");
+    const evidence = validV2Evidence();
+    await writeFile(evidencePath, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+
+    const verified = await verifyPublicPilotEvidence(evidencePath);
+    assert.equal(verified.schemaVersion, 2);
+    assert.equal(verified.reportedTechnicalTargetsMet, true);
+    assert.equal(verified.technicalPilot?.qualified, true);
+    assert.equal(verified.technicalPilot?.trailingMwaPasses, 3);
+    assert.equal(verified.technicalPilot?.setupDurationMs, 20 * 60_000);
+    assert.equal(verified.technicalPilot?.medianRunDurationMs, 8 * 60_000);
+    assert.equal(verified.grantReady, false);
+    assert.ok(verified.limitations.some((entry) => entry.includes("self-recorded fields")));
+    assert.ok(verified.limitations.some((entry) => entry.includes("not established")));
+
+    const humanOutput: string[] = [];
+    assert.equal(
+      await runCli(["pilot", "verify", evidencePath], {
+        out: (message) => humanOutput.push(message),
+        error: () => undefined,
+      }),
+      0,
+    );
+    assert.match(humanOutput.join("\n"), /evidence schema: v2/);
+    assert.match(humanOutput.join("\n"), /technical pilot gate \(recomputed from self-recorded fields\): met/);
+    assert.match(humanOutput.join("\n"), /external grant gate: not established/);
+    assert.match(humanOutput.join("\n"), /grant ready: no/);
+
+    const exactThresholds = structuredClone(evidence);
+    exactThresholds.runs[1]!.elapsedSinceStartMs = 30 * 60_000;
+    exactThresholds.runs[2]!.elapsedSinceStartMs = 40 * 60_000;
+    exactThresholds.runs[3]!.elapsedSinceStartMs = 50 * 60_000;
+    exactThresholds.runs[4]!.elapsedSinceStartMs = 60 * 60_000;
+    for (const run of exactThresholds.runs.slice(2)) run.durationMs = 10 * 60_000;
+    exactThresholds.metrics.medianRunDurationMs = 10 * 60_000;
+    exactThresholds.technicalPilot.setupDurationMs = 30 * 60_000;
+    exactThresholds.technicalPilot.medianRunDurationMs = 10 * 60_000;
+    refreshDigest(exactThresholds);
+    await writeFile(evidencePath, JSON.stringify(exactThresholds), "utf8");
+    assert.equal((await verifyPublicPilotEvidence(evidencePath)).reportedTechnicalTargetsMet, true);
+
+    const mismatchedTechnical = structuredClone(evidence);
+    mismatchedTechnical.technicalPilot.qualified = false;
+    refreshDigest(mismatchedTechnical);
+    await writeFile(evidencePath, JSON.stringify(mismatchedTechnical), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("technical pilot does not match"),
+    );
+
+    const changedFingerprint = structuredClone(evidence);
+    const finalRun = changedFingerprint.runs.at(-1);
+    assert.ok(finalRun);
+    finalRun.executionFingerprintSha256 = "d".repeat(64);
+    refreshDigest(changedFingerprint);
+    await writeFile(evidencePath, JSON.stringify(changedFingerprint), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("metrics do not match"),
+    );
+
+    const reversedOffset = structuredClone(evidence);
+    const fourthRun = reversedOffset.runs[3];
+    assert.ok(fourthRun);
+    fourthRun.elapsedSinceStartMs = 1;
+    refreshDigest(reversedOffset);
+    await writeFile(evidencePath, JSON.stringify(reversedOffset), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("must be nondecreasing"),
+    );
+
+    const overlappingTimeline = structuredClone(evidence);
+    const overlappingRun = overlappingTimeline.runs[2];
+    assert.ok(overlappingRun);
+    overlappingRun.elapsedSinceStartMs = 21 * 60_000;
+    refreshDigest(overlappingTimeline);
+    await writeFile(evidencePath, JSON.stringify(overlappingTimeline), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("cannot overlap sequential"),
+    );
+
+    const missingFingerprint = structuredClone(evidence);
+    const firstRun = missingFingerprint.runs[0];
+    assert.ok(firstRun);
+    firstRun.executionFingerprintSha256 = null;
+    refreshDigest(missingFingerprint);
+    await writeFile(evidencePath, JSON.stringify(missingFingerprint), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("fingerprint is inconsistent"),
+    );
+
+    const elevatedClaim = structuredClone(evidence);
+    (elevatedClaim.claims as unknown as Record<string, string>).externalPublisher = "established";
+    refreshDigest(elevatedClaim);
+    await writeFile(evidencePath, JSON.stringify(elevatedClaim), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("must remain not-established"),
+    );
+
+    const androidLatest = structuredClone(evidence);
+    const androidRun = androidLatest.runs.at(-1);
+    assert.ok(androidRun);
+    androidRun.readiness = "Android Device Ready";
+    androidLatest.technicalPilot = {
+      profile: "external-mwa-pilot-v1",
+      qualified: false,
+      latestReadiness: "Android Device Ready",
+      trailingMwaPasses: 0,
+      requiredTrailingMwaPasses: 3,
+      setupDurationMs: 20 * 60_000,
+      medianRunDurationMs: null,
+      setupTargetMet: true,
+      runtimeTargetMet: false,
+      repeatabilityTargetMet: false,
+    };
+    refreshDigest(androidLatest);
+    await writeFile(evidencePath, JSON.stringify(androidLatest), "utf8");
+    assert.equal((await verifyPublicPilotEvidence(evidencePath)).reportedTechnicalTargetsMet, false);
+
+    const latestFailure = structuredClone(evidence);
+    latestFailure.runs.push({
+      runId: "run-006",
+      outcome: "setup-error",
+      readiness: "Not Ready",
+      durationMs: 1_000,
+      elapsedSinceStartMs: 47 * 60_000,
+      executionFingerprintSha256: null,
+      failureKind: "runner-error",
+      physicalDevice: false,
+      requiredChecksPassed: false,
+      qualifying: false,
+    });
+    latestFailure.metrics = {
+      runAttempts: 6,
+      qualifyingRuns: 5,
+      passRate: 5 / 6,
+      consecutivePasses: 0,
+      medianRunDurationMs: null,
+      setupDurationMs: 5 * 60_000,
+      executionFingerprintSha256: null,
+      setupTargetMet: true,
+      runtimeTargetMet: false,
+      repeatabilityTargetMet: false,
+    };
+    latestFailure.technicalPilot = {
+      profile: "external-mwa-pilot-v1",
+      qualified: false,
+      latestReadiness: "Not Ready",
+      trailingMwaPasses: 0,
+      requiredTrailingMwaPasses: 3,
+      setupDurationMs: 20 * 60_000,
+      medianRunDurationMs: null,
+      setupTargetMet: true,
+      runtimeTargetMet: false,
+      repeatabilityTargetMet: false,
+    };
+    refreshDigest(latestFailure);
+    await writeFile(evidencePath, JSON.stringify(latestFailure), "utf8");
+    assert.equal((await verifyPublicPilotEvidence(evidencePath)).reportedTechnicalTargetsMet, false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-pilot-evidence-v2.schema.json",
+  "title": "LaunchRig self-recorded pilot evidence v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "evidenceId",
+    "claimStatus",
+    "metrics",
+    "technicalPilot",
+    "runs",
+    "claims",
+    "evidenceSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "kind": { "const": "launchrig-pilot-evidence" },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "claimStatus": { "const": "self-recorded-unattested" },
+    "metrics": { "$ref": "#/$defs/metrics" },
+    "technicalPilot": { "$ref": "#/$defs/technicalPilot" },
+    "runs": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/run" }
+    },
+    "claims": { "$ref": "#/$defs/claims" },
+    "evidenceSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "readiness": {
+      "enum": ["Android Device Ready", "Android/MWA Ready", "Not Ready"]
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runAttempts",
+        "qualifyingRuns",
+        "passRate",
+        "consecutivePasses",
+        "medianRunDurationMs",
+        "setupDurationMs",
+        "executionFingerprintSha256",
+        "setupTargetMet",
+        "runtimeTargetMet",
+        "repeatabilityTargetMet"
+      ],
+      "properties": {
+        "runAttempts": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "qualifyingRuns": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "passRate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "consecutivePasses": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "medianRunDurationMs": { "type": ["number", "null"], "minimum": 0 },
+        "setupDurationMs": { "type": ["integer", "null"], "minimum": 0 },
+        "executionFingerprintSha256": {
+          "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "setupTargetMet": { "type": "boolean" },
+        "runtimeTargetMet": { "type": "boolean" },
+        "repeatabilityTargetMet": { "type": "boolean" }
+      }
+    },
+    "technicalPilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "qualified",
+        "latestReadiness",
+        "trailingMwaPasses",
+        "requiredTrailingMwaPasses",
+        "setupDurationMs",
+        "medianRunDurationMs",
+        "setupTargetMet",
+        "runtimeTargetMet",
+        "repeatabilityTargetMet"
+      ],
+      "properties": {
+        "profile": { "const": "external-mwa-pilot-v1" },
+        "qualified": { "type": "boolean" },
+        "latestReadiness": {
+          "anyOf": [{ "$ref": "#/$defs/readiness" }, { "type": "null" }]
+        },
+        "trailingMwaPasses": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "requiredTrailingMwaPasses": { "const": 3 },
+        "setupDurationMs": { "type": ["integer", "null"], "minimum": 0 },
+        "medianRunDurationMs": { "type": ["number", "null"], "minimum": 0 },
+        "setupTargetMet": { "type": "boolean" },
+        "runtimeTargetMet": { "type": "boolean" },
+        "repeatabilityTargetMet": { "type": "boolean" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "outcome",
+        "readiness",
+        "durationMs",
+        "elapsedSinceStartMs",
+        "executionFingerprintSha256",
+        "physicalDevice",
+        "requiredChecksPassed",
+        "qualifying"
+      ],
+      "properties": {
+        "runId": { "type": "string", "pattern": "^run-[0-9]{3}$" },
+        "outcome": { "enum": ["passed", "failed", "setup-error"] },
+        "readiness": { "$ref": "#/$defs/readiness" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "elapsedSinceStartMs": { "type": "integer", "minimum": 0 },
+        "executionFingerprintSha256": {
+          "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "failureKind": { "enum": ["runner-error", "input-mutation", "report-invalid"] },
+        "launchRigVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "physicalDevice": { "type": "boolean" },
+        "requiredChecksPassed": { "type": "boolean" },
+        "qualifying": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["failureKind"] },
+          "then": {
+            "properties": {
+              "outcome": { "const": "setup-error" },
+              "readiness": { "const": "Not Ready" },
+              "executionFingerprintSha256": { "type": "null" },
+              "physicalDevice": { "const": false },
+              "requiredChecksPassed": { "const": false },
+              "qualifying": { "const": false }
+            }
+          }
+        },
+        {
+          "if": { "not": { "required": ["failureKind"] } },
+          "then": {
+            "required": ["launchRigVersion"],
+            "properties": {
+              "executionFingerprintSha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      ]
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["externalPublisher", "seekerHardware", "productionWallet", "seedVault", "confirmedDefect"],
+      "properties": {
+        "externalPublisher": { "const": "not-established" },
+        "seekerHardware": { "const": "not-established" },
+        "productionWallet": { "const": "not-established" },
+        "seedVault": { "const": "not-established" },
+        "confirmedDefect": { "const": "not-established" }
+      }
+    }
+  }
+}

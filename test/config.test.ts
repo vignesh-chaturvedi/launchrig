@@ -325,8 +325,25 @@ test("published schemas stay synchronized with lifecycle and privacy rules", asy
   const pilotSchema = JSON.parse(
     await readFile(path.join(process.cwd(), "schemas", "launchrig-pilot-evidence.schema.json"), "utf8"),
   ) as Record<string, any>;
+  const pilotV1Schema = JSON.parse(
+    await readFile(path.join(process.cwd(), "schemas", "launchrig-pilot-evidence-v1.schema.json"), "utf8"),
+  ) as Record<string, any>;
+  const pilotV2Schema = JSON.parse(
+    await readFile(path.join(process.cwd(), "schemas", "launchrig-pilot-evidence-v2.schema.json"), "utf8"),
+  ) as Record<string, any>;
+  assert.equal(pilotSchema.properties.schemaVersion.const, 1);
   assert.equal(pilotSchema.properties.claimStatus.const, "self-recorded-unattested");
   assert.equal(pilotSchema.properties.claims.properties.seekerHardware.const, "not-established");
+  assert.equal(pilotV1Schema.properties.schemaVersion.const, 1);
+  assert.equal(pilotV2Schema.properties.schemaVersion.const, 2);
+  assert.equal(pilotV2Schema.properties.claimStatus.const, "self-recorded-unattested");
+  assert.equal(pilotV2Schema.$defs.technicalPilot.properties.profile.const, "external-mwa-pilot-v1");
+  assert.equal(pilotV2Schema.$defs.technicalPilot.properties.requiredTrailingMwaPasses.const, 3);
+  assert.ok(pilotV2Schema.$defs.run.required.includes("elapsedSinceStartMs"));
+  assert.ok(pilotV2Schema.$defs.run.required.includes("executionFingerprintSha256"));
+  for (const claim of Object.values(pilotV2Schema.$defs.claims.properties) as Array<Record<string, unknown>>) {
+    assert.equal(claim.const, "not-established");
+  }
 });
 
 test("config caps scenario count at the pilot evidence limit", () => {
