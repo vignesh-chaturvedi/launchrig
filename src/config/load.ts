@@ -1,7 +1,8 @@
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
 import type { ResolvedLaunchRigConfig } from "../types.js";
+import { isRegularFileNoFollow, readBoundedUtf8File } from "../security/file.js";
 import { validateMaestroFlowSafety } from "../security/flow.js";
 import { ConfigError, validateConfig } from "./schema.js";
 
@@ -41,28 +42,24 @@ export async function loadConfig(configPath: string): Promise<ResolvedLaunchRigC
 
 export async function validateConfigPaths(config: ResolvedLaunchRigConfig): Promise<string[]> {
   const issues: string[] = [];
-  if (config.project.install && config.resolvedApk) {
-    try {
-      await access(config.resolvedApk);
-    } catch {
-      issues.push("APK does not exist: " + config.resolvedApk);
+  if (config.resolvedApk) {
+    if (!(await isRegularFileNoFollow(config.resolvedApk))) {
+      issues.push("APK is missing or is not a regular file: " + config.resolvedApk);
     }
   }
-  if (config.wallet.install && config.resolvedWalletApk) {
-    try {
-      await access(config.resolvedWalletApk);
-    } catch {
-      issues.push("Wallet fixture APK does not exist: " + config.resolvedWalletApk);
+  if (config.resolvedWalletApk) {
+    if (!(await isRegularFileNoFollow(config.resolvedWalletApk))) {
+      issues.push("Wallet fixture APK is missing or is not a regular file: " + config.resolvedWalletApk);
     }
   }
   for (const scenario of config.scenarios) {
     try {
-      const source = await readFile(scenario.resolvedFlow, "utf8");
+      const source = await readBoundedUtf8File(scenario.resolvedFlow, 512 * 1024);
       for (const issue of validateMaestroFlowSafety(source, config.project.packageName)) {
         issues.push("Scenario " + scenario.id + " " + issue);
       }
     } catch {
-      issues.push("Scenario flow does not exist: " + scenario.resolvedFlow);
+      issues.push("Scenario flow cannot be read safely: " + scenario.resolvedFlow);
     }
   }
   return issues;

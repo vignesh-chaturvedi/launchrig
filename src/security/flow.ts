@@ -31,6 +31,14 @@ const STRING_COMMANDS = new Set([
   "waitForAnimationToEnd",
 ]);
 
+const PILOT_SELECTOR_COMMANDS = new Set([
+  "assertNotVisible",
+  "assertVisible",
+  "doubleTapOn",
+  "longPressOn",
+  "tapOn",
+]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -39,6 +47,48 @@ function containsInterpolation(value: unknown): boolean {
   if (typeof value === "string") return value.includes("${");
   if (Array.isArray(value)) return value.some(containsInterpolation);
   return isRecord(value) && Object.values(value).some(containsInterpolation);
+}
+
+function containsReservedPilotSelector(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().startsWith("TODO:");
+  if (Array.isArray(value)) return value.some(containsReservedPilotSelector);
+  return isRecord(value) && Object.values(value).some(containsReservedPilotSelector);
+}
+
+function inspectPilotCondition(value: unknown, issues: Set<string>): void {
+  if (!isRecord(value)) return;
+  if (containsReservedPilotSelector(value.visible) || containsReservedPilotSelector(value.notVisible)) {
+    issues.add("flow contains a reserved TODO: selector");
+  }
+}
+
+function inspectPilotCommands(commands: unknown[], issues: Set<string>): void {
+  for (const entry of commands) {
+    if (!isRecord(entry)) continue;
+    const command = Object.keys(entry)[0];
+    if (!command) continue;
+    const value = entry[command];
+    if (PILOT_SELECTOR_COMMANDS.has(command) && containsReservedPilotSelector(value)) {
+      issues.add("flow contains a reserved TODO: selector");
+    }
+    if (
+      command === "scrollUntilVisible" &&
+      isRecord(value) &&
+      containsReservedPilotSelector(value.element)
+    ) {
+      issues.add("flow contains a reserved TODO: selector");
+    }
+    if (command === "extendedWaitUntil" && isRecord(value)) {
+      if (containsReservedPilotSelector(value.visible) || containsReservedPilotSelector(value.notVisible)) {
+        issues.add("flow contains a reserved TODO: selector");
+      }
+    }
+    if ((command === "runFlow" || command === "repeat" || command === "retry") && isRecord(value)) {
+      inspectPilotCondition(value.when, issues);
+      if (command === "repeat") inspectPilotCondition(value.while, issues);
+      if (Array.isArray(value.commands)) inspectPilotCommands(value.commands, issues);
+    }
+  }
 }
 
 function inspectNestedCommands(value: unknown, command: string, expectedAppId: string, issues: Set<string>): void {
@@ -186,5 +236,25 @@ export function validateMaestroFlowSafety(source: string, expectedAppId: string)
   if (containsInterpolation(metadata) || containsInterpolation(commands)) {
     issues.add("flow must not interpolate environment variables or script output");
   }
+  return [...issues].sort();
+}
+
+export function validatePilotFlowReadiness(source: string): string[] {
+  if (Buffer.byteLength(source, "utf8") > 512 * 1024) return ["flow exceeds the 512 KiB safety limit"];
+  const documents = parseAllDocuments(source, { prettyErrors: false, uniqueKeys: true });
+  if (documents.length !== 2 || documents.some((document) => document.errors.length > 0)) {
+    return ["flow must be strict YAML before pilot readiness can be checked"];
+  }
+  let commands: unknown;
+  try {
+    commands = documents[1]?.toJS({ maxAliasCount: 0 });
+  } catch {
+    return ["flow must not use YAML aliases"];
+  }
+  if (!Array.isArray(commands) || commands.length === 0) {
+    return ["flow command document must be a non-empty array"];
+  }
+  const issues = new Set<string>();
+  inspectPilotCommands(commands, issues);
   return [...issues].sort();
 }

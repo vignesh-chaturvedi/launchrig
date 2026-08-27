@@ -124,6 +124,9 @@ try {
   if (!help.stdout.includes("launchrig pilot verify FILE")) {
     throw new Error("Installed CLI help is missing the public evidence verifier.");
   }
+  if (!help.stdout.includes("launchrig pilot check --pilot ID")) {
+    throw new Error("Installed CLI help is missing the publisher pilot preflight.");
+  }
 
   await mkdir(publisherDirectory, { recursive: true });
   await run(executable, ["pilot", "start", "--pilot", "package-smoke", "--config", "launchrig.yml"], {
@@ -137,6 +140,23 @@ try {
   });
   if (!validation.stdout.includes("Configuration valid")) {
     throw new Error("Installed publisher starter configuration did not validate.");
+  }
+  let preflightFailure;
+  try {
+    await run(
+      executable,
+      ["pilot", "check", "--pilot", "package-smoke", "--config", "launchrig.yml", "--json"],
+      { cwd: publisherDirectory },
+    );
+  } catch (error) {
+    preflightFailure = error;
+  }
+  if (
+    !(preflightFailure instanceof Error) ||
+    !preflightFailure.message.includes("Required MWA coverage is missing") ||
+    !preflightFailure.message.includes('"status": "skip"')
+  ) {
+    throw new Error("Installed pilot preflight did not reject the incomplete starter without device access.");
   }
   const ignoreSource = await readFile(path.join(publisherDirectory, ".gitignore"), "utf8");
   if (!ignoreSource.split(/\r?\n/).includes(".launchrig/")) {

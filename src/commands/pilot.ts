@@ -23,27 +23,35 @@ import {
   PilotError,
   pilotStatePath,
   readPilotState,
+  readOnlyPilotStatePath,
   sha256Value,
   withPilotLock,
   writePilotState,
 } from "../pilot/store.js";
 import type {
+  ExternalGrantGateStatus,
   PilotMetricsV1,
   PilotProjectRunner,
   PilotRunEvidenceV1,
   PilotStateCoreV1,
   PilotStateV1,
+  PilotTechnicalGate,
   PublicPilotEvidenceV1,
 } from "../pilot/types.js";
 import type { LaunchRigReport, ResolvedLaunchRigConfig } from "../types.js";
 import type { RunOptions, RunOutput } from "../runner/orchestrator.js";
+import { readBoundedRegularFile, readBoundedUtf8File } from "../security/file.js";
+import { validatePilotFlowReadiness } from "../security/flow.js";
 import { redactJsonValue } from "../security/redact.js";
 import { managedWalletExpectedSha256 } from "../security/wallet-artifact.js";
+import { doctor, type DoctorOptions, type DoctorOutput } from "./doctor.js";
 import { runProject } from "./run.js";
 
 const SETUP_TARGET_MS = 30 * 60 * 1000;
 const RUNTIME_TARGET_MS = 10 * 60 * 1000;
 const MAX_REPORT_BYTES = 2 * 1024 * 1024;
+const CORE_MWA_KINDS = ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"] as const;
+const GENERATED_FLOW_TEMPLATES = new Set(CORE_MWA_KINDS.map((kind) => kind + ".example.yaml"));
 
 type InputHashes = Awaited<ReturnType<typeof inputHashes>>;
 type AttemptFailure = NonNullable<PilotRunEvidenceV1["failureKind"]>;
@@ -69,35 +77,130 @@ function sha256Bytes(value: Buffer | string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function assertEligibleProject(config: ResolvedLaunchRigConfig): void {
+function pilotProjectIssues(config: ResolvedLaunchRigConfig): string[] {
+  const issues: string[] = [];
   if (
     config.project.packageName.startsWith("dev.launchrig.") ||
     config.project.packageName === "com.solana.mobilewalletadapter.fakedapp"
   ) {
-    throw new PilotError("Controlled LaunchRig fixtures cannot be recorded as external pilot evidence");
+    issues.push("Controlled LaunchRig fixtures cannot be recorded as external pilot evidence");
   }
-  if (!config.device.requirePhysical) throw new PilotError("Pilot evidence requires a physical Android device");
-  if (config.wallet.mode === "real") {
-    throw new PilotError("Phase 2 pilot automation supports only allowlisted test wallets");
+  if (
+    config.project.packageName === "com.example.app" ||
+    config.project.name === "My Solana Mobile App"
+  ) {
+    issues.push("Replace the generated project name and application ID before a publisher pilot");
   }
-  if (!config.scenarios.some((scenario) => scenario.required)) {
-    throw new PilotError("Pilot evidence requires at least one required scenario");
-  }
+  return issues;
 }
 
-async function loadEligibleConfig(configPath: string): Promise<ResolvedLaunchRigConfig> {
+function pilotWalletIssues(config: ResolvedLaunchRigConfig): string[] {
+  if (config.wallet.mode === "real") {
+    return ["Phase 2 pilot automation supports only allowlisted test wallets"];
+  }
+  return [];
+}
+
+function assertEligibleProject(config: ResolvedLaunchRigConfig): void {
+  const issues = [
+    ...pilotProjectIssues(config),
+    ...pilotWalletIssues(config),
+    ...(!config.device.requirePhysical ? ["Pilot evidence requires a physical Android device"] : []),
+  ];
+  if (!config.scenarios.some((scenario) => scenario.required)) {
+    issues.push("Pilot evidence requires at least one required scenario");
+  }
+  if (issues.length > 0) throw new PilotError(issues.join("; "));
+}
+
+async function loadCheckedConfig(configPath: string): Promise<ResolvedLaunchRigConfig> {
   const config = await loadConfig(configPath);
   const issues = await validateConfigPaths(config);
   if (issues.length > 0) throw new ConfigError(issues);
+  return config;
+}
+
+async function loadEligibleConfig(configPath: string): Promise<ResolvedLaunchRigConfig> {
+  const config = await loadCheckedConfig(configPath);
   assertEligibleProject(config);
   return config;
+}
+
+async function pilotFlowPromotionIssues(config: ResolvedLaunchRigConfig): Promise<string[]> {
+  const issues: string[] = [];
+  for (const scenario of config.scenarios) {
+    if (GENERATED_FLOW_TEMPLATES.has(path.basename(scenario.flow).toLowerCase())) {
+      issues.push(
+        "Scenario " +
+          scenario.id +
+          " uses the reserved init template " +
+          path.basename(scenario.flow) +
+          ". Copy it to a publisher-owned filename and update scenarios[].flow",
+      );
+    }
+    let source: string;
+    try {
+      source = await readBoundedUtf8File(scenario.resolvedFlow, 512 * 1024);
+    } catch {
+      issues.push("Scenario " + scenario.id + " flow cannot be read");
+      continue;
+    }
+    for (const issue of validatePilotFlowReadiness(source)) {
+      issues.push("Scenario " + scenario.id + " " + issue);
+    }
+  }
+  return issues;
+}
+
+async function pilotMwaCoverageIssues(config: ResolvedLaunchRigConfig): Promise<string[]> {
+  const missingKinds = CORE_MWA_KINDS.filter(
+    (kind) => !config.scenarios.some((scenario) => scenario.kind === kind && scenario.required),
+  );
+  if (missingKinds.length > 0) {
+    return ["Required MWA coverage is missing: " + missingKinds.join(", ")];
+  }
+  const coreScenarios = CORE_MWA_KINDS.map((kind) =>
+    config.scenarios.find((scenario) => scenario.kind === kind && scenario.required),
+  );
+  const resolvedFlows = coreScenarios.flatMap((scenario) =>
+    scenario ? [scenario.resolvedFlow] : [],
+  );
+  if (new Set(resolvedFlows).size !== CORE_MWA_KINDS.length) {
+    return ["Required MWA coverage must use four distinct promoted flow files"];
+  }
+  const flowHashes = await Promise.all(
+    resolvedFlows.map(async (flowPath) =>
+      sha256Bytes(await readBoundedRegularFile(flowPath, 512 * 1024)),
+    ),
+  );
+  if (new Set(flowHashes).size !== CORE_MWA_KINDS.length) {
+    return ["Required MWA coverage must use four distinct publisher flow definitions"];
+  }
+  return [];
+}
+
+async function assertPilotFlowsPromoted(config: ResolvedLaunchRigConfig): Promise<void> {
+  const issues = await pilotFlowPromotionIssues(config);
+  if (issues.length > 0) throw new PilotError("Pilot flows are not ready: " + issues.join("; "));
+}
+
+async function assertFullMwaCoverageIntegrity(config: ResolvedLaunchRigConfig): Promise<void> {
+  const hasAllCoreKinds = CORE_MWA_KINDS.every((kind) =>
+    config.scenarios.some((scenario) => scenario.kind === kind && scenario.required),
+  );
+  if (!hasAllCoreKinds) return;
+  const issues = await pilotMwaCoverageIssues(config);
+  if (issues.length > 0) throw new PilotError("Pilot MWA coverage is not ready: " + issues.join("; "));
 }
 
 async function inputHashes(config: ResolvedLaunchRigConfig) {
   const flowEntries = await Promise.all(
     [...config.scenarios]
       .sort((left, right) => left.id.localeCompare(right.id))
-      .map(async (scenario) => [scenario.id, await sha256File(scenario.resolvedFlow)] as const),
+      .map(async (scenario) => [
+        scenario.id,
+        sha256Bytes(await readBoundedRegularFile(scenario.resolvedFlow, 512 * 1024)),
+      ] as const),
   );
   return {
     configSha256: await sha256File(config.configPath),
@@ -121,7 +224,7 @@ async function stagePilotInputs(config: ResolvedLaunchRigConfig): Promise<Staged
     const flowSha256: Record<string, string> = {};
     const stagedScenarios = [];
     for (const scenario of config.scenarios) {
-      const source = await readFile(scenario.resolvedFlow);
+      const source = await readBoundedRegularFile(scenario.resolvedFlow, 512 * 1024);
       const stagedPath = path.join(directory, "flow-" + scenario.id + ".yaml");
       await writeFile(stagedPath, source, { flag: "wx", mode: 0o400 });
       flowSha256[scenario.id] = sha256Bytes(source);
@@ -219,6 +322,74 @@ function median(values: readonly number[]): number | null {
   const middle = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 1) return sorted[middle] ?? null;
   return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+export function pilotTechnicalGate(state: PilotStateCoreV1): PilotTechnicalGate {
+  const latestRun = state.runs.at(-1);
+  const currentFingerprint =
+    latestRun?.qualifying === true && latestRun.readiness === "Android/MWA Ready"
+      ? executionFingerprint(latestRun)
+      : null;
+  let trailingMwaPasses = 0;
+  if (currentFingerprint) {
+    for (const run of [...state.runs].reverse()) {
+      if (
+        !run.qualifying ||
+        run.readiness !== "Android/MWA Ready" ||
+        executionFingerprint(run) !== currentFingerprint
+      ) {
+        break;
+      }
+      trailingMwaPasses += 1;
+    }
+  }
+  const currentMwaDurations = currentFingerprint
+    ? state.runs
+        .filter(
+          (run) =>
+            run.qualifying &&
+            run.readiness === "Android/MWA Ready" &&
+            executionFingerprint(run) === currentFingerprint,
+        )
+        .map((run) => run.durationMs)
+    : [];
+  const medianRunDurationMs = median(currentMwaDurations);
+  const firstMwaRun = state.runs.find(
+    (run) => run.qualifying && run.readiness === "Android/MWA Ready",
+  );
+  const setupDurationMs = firstMwaRun
+    ? Date.parse(firstMwaRun.recordedAt) - Date.parse(state.startedAt)
+    : null;
+  if (setupDurationMs !== null && setupDurationMs < 0) {
+    throw new PilotError("Pilot MWA setup timestamps are inverted");
+  }
+  const setupTargetMet = setupDurationMs !== null && setupDurationMs <= SETUP_TARGET_MS;
+  const runtimeTargetMet = medianRunDurationMs !== null && medianRunDurationMs <= RUNTIME_TARGET_MS;
+  const repeatabilityTargetMet = trailingMwaPasses >= 3;
+  return {
+    profile: "external-mwa-pilot",
+    qualified: setupTargetMet && runtimeTargetMet && repeatabilityTargetMet,
+    latestReadiness: latestRun?.readiness ?? null,
+    trailingMwaPasses,
+    requiredTrailingMwaPasses: 3,
+    setupDurationMs,
+    medianRunDurationMs,
+    setupTargetMet,
+    runtimeTargetMet,
+    repeatabilityTargetMet,
+  };
+}
+
+export function externalGrantGateStatus(): ExternalGrantGateStatus {
+  return {
+    status: "not-established",
+    grantReady: false,
+    publisherAttestation: "not-established",
+    threeIndependentPublishers: "not-established",
+    confirmedDefect: "not-established",
+    seekerAttestation: "not-established",
+    publicRelease: "not-established",
+  };
 }
 
 export function pilotMetrics(state: PilotStateCoreV1): PilotMetricsV1 {
@@ -350,6 +521,20 @@ function parseReportValue(
   });
   if (new Set(checks.map((check) => check.id)).size !== checks.length) {
     throw new PilotReportError("Report contains duplicate check IDs");
+  }
+  if (outcome === "passed" && readiness === "Android/MWA Ready") {
+    const configuredMwaCoverageComplete = CORE_MWA_KINDS.every((kind) =>
+      config.scenarios.some((scenario) => scenario.kind === kind && scenario.required),
+    );
+    const everyConfiguredMwaCheckPassed = config.scenarios
+      .filter((scenario) => scenario.kind.startsWith("mwa-"))
+      .every((scenario) => {
+        const check = checks.find((entry) => entry.id === "scenario." + scenario.id);
+        return check?.required === scenario.required && check.status === "pass";
+      });
+    if (!configuredMwaCoverageComplete || !everyConfiguredMwaCheckPassed) {
+      throw new PilotReportError("Report MWA readiness does not match the configured scenario results");
+    }
   }
   const expectedRequiredChecks = [
     "tool.adb",
@@ -525,6 +710,128 @@ export async function startPilot(options: StartPilotOptions): Promise<{ statePat
   });
 }
 
+export interface PilotPreflightCheck {
+  id:
+    | "pilot.state"
+    | "pilot.project"
+    | "pilot.wallet"
+    | "pilot.device-policy"
+    | "pilot.flows"
+    | "pilot.mwa-coverage"
+    | "pilot.environment";
+  status: "pass" | "fail" | "skip";
+  summary: string;
+}
+
+export interface CheckPilotOptions extends PilotBaseOptions {
+  deviceSerial?: string;
+  adbPath?: string;
+  maestroPath?: string;
+  doctorRunner?: (options: DoctorOptions) => Promise<DoctorOutput>;
+}
+
+export interface PilotCheckOutput {
+  readyToRecord: boolean;
+  exitCode: 0 | 2 | 3;
+  statePath: string;
+  checks: PilotPreflightCheck[];
+  doctor?: DoctorOutput;
+  technicalPilot: PilotTechnicalGate;
+  externalGrantGate: ExternalGrantGateStatus;
+}
+
+export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheckOutput> {
+  assertPilotId(options.pilotId);
+  const config = await loadCheckedConfig(options.configPath ?? "launchrig.yml");
+  const statePath = await readOnlyPilotStatePath(config.configDirectory, options.pilotId);
+  const state = await readPilotState(statePath);
+  if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
+
+  const projectIssues = pilotProjectIssues(config);
+  const walletIssues = pilotWalletIssues(config);
+  const checks: PilotPreflightCheck[] = [
+    {
+      id: "pilot.state",
+      status: "pass",
+      summary: "Private pilot state exists and its integrity check passed",
+    },
+    {
+      id: "pilot.project",
+      status: projectIssues.length === 0 ? "pass" : "fail",
+      summary: projectIssues.length === 0
+        ? "Publisher project identity is not a generated or controlled fixture identity"
+        : projectIssues.join("; "),
+    },
+    {
+      id: "pilot.wallet",
+      status: walletIssues.length === 0 ? "pass" : "fail",
+      summary: walletIssues.length === 0
+        ? "Pilot automation uses the allowlisted " + config.wallet.mode + " development-wallet profile"
+        : walletIssues.join("; "),
+    },
+    {
+      id: "pilot.device-policy",
+      status: config.device.requirePhysical ? "pass" : "fail",
+      summary: config.device.requirePhysical
+        ? "Pilot configuration requires a physical Android device"
+        : "Pilot evidence requires device.requirePhysical: true",
+    },
+  ];
+
+  const flowIssues = await pilotFlowPromotionIssues(config);
+  checks.push({
+    id: "pilot.flows",
+    status: flowIssues.length === 0 ? "pass" : "fail",
+    summary: flowIssues.length === 0 ? "Every configured flow is promoted and has no reserved selector" : flowIssues.join("; "),
+  });
+  const coverageIssues = await pilotMwaCoverageIssues(config);
+  checks.push({
+    id: "pilot.mwa-coverage",
+    status: coverageIssues.length === 0 ? "pass" : "fail",
+    summary:
+      coverageIssues.length === 0
+        ? "Required authorize, SIWS, message-signing, and rejection scenarios are configured"
+        : coverageIssues.join("; "),
+  });
+
+  const policyReady = checks.every((check) => check.status === "pass");
+  let doctorOutput: DoctorOutput | undefined;
+  if (policyReady) {
+    const runDoctor = options.doctorRunner ?? doctor;
+    doctorOutput = await runDoctor({
+      configPath: config.configPath,
+      ...(options.deviceSerial ? { deviceSerial: options.deviceSerial } : {}),
+      ...(options.adbPath ? { adbPath: options.adbPath } : {}),
+      ...(options.maestroPath ? { maestroPath: options.maestroPath } : {}),
+      verifyInstalledArtifactHashes: true,
+    });
+    checks.push({
+      id: "pilot.environment",
+      status: doctorOutput.ok ? "pass" : "fail",
+      summary: doctorOutput.ok
+        ? "Physical Android device, invoked tools, and exact package binaries are ready"
+        : doctorOutput.issues.join("; "),
+    });
+  } else {
+    checks.push({
+      id: "pilot.environment",
+      status: "skip",
+      summary: "Environment checks were skipped until the pilot policy issues are fixed",
+    });
+  }
+
+  const exitCode: 0 | 2 | 3 = !policyReady ? 2 : doctorOutput?.ok ? 0 : 3;
+  return {
+    readyToRecord: exitCode === 0,
+    exitCode,
+    statePath,
+    checks,
+    ...(doctorOutput ? { doctor: doctorOutput } : {}),
+    technicalPilot: pilotTechnicalGate(state),
+    externalGrantGate: externalGrantGateStatus(),
+  };
+}
+
 export interface RunPilotOptions extends PilotBaseOptions {
   repeat?: number;
   runOptions?: RunOptions;
@@ -534,7 +841,14 @@ export interface RunPilotOptions extends PilotBaseOptions {
 
 export async function runPilot(
   options: RunPilotOptions,
-): Promise<{ statePath: string; runs: PilotRunEvidenceV1[]; metrics: PilotMetricsV1; exitCode: 0 | 1 | 3 }> {
+): Promise<{
+  statePath: string;
+  runs: PilotRunEvidenceV1[];
+  metrics: PilotMetricsV1;
+  technicalPilot: PilotTechnicalGate;
+  externalGrantGate: ExternalGrantGateStatus;
+  exitCode: 0 | 1 | 3;
+}> {
   assertPilotId(options.pilotId);
   const repeat = options.repeat ?? 1;
   if (!Number.isSafeInteger(repeat) || repeat < 1 || repeat > 10) {
@@ -544,6 +858,8 @@ export async function runPilot(
     throw new PilotError("Pilot runs must execute every configured scenario");
   }
   const config = await loadEligibleConfig(options.configPath ?? "launchrig.yml");
+  await assertPilotFlowsPromoted(config);
+  await assertFullMwaCoverageIntegrity(config);
   let lastKnownHashes = await inputHashes(config);
   const statePath = await pilotStatePath(config.configDirectory, options.pilotId);
   const runner = options.projectRunner ?? runProject;
@@ -563,6 +879,8 @@ export async function runPilot(
       try {
         const configSha256BeforeLoad = await sha256File(config.configPath);
         attemptConfig = await loadEligibleConfig(config.configPath);
+        await assertPilotFlowsPromoted(attemptConfig);
+        await assertFullMwaCoverageIntegrity(attemptConfig);
         staged = await stagePilotInputs(attemptConfig);
         if (configSha256BeforeLoad !== staged.hashes.configSha256) {
           await staged.dispose();
@@ -661,17 +979,34 @@ export async function runPilot(
       : recorded.every((run) => run.qualifying)
         ? 0
         : 1;
-    return { statePath, runs: recorded, metrics: pilotMetrics(state), exitCode };
+    return {
+      statePath,
+      runs: recorded,
+      metrics: pilotMetrics(state),
+      technicalPilot: pilotTechnicalGate(state),
+      externalGrantGate: externalGrantGateStatus(),
+      exitCode,
+    };
   });
 }
 
-export async function getPilotStatus(options: PilotBaseOptions): Promise<{ statePath: string; metrics: PilotMetricsV1 }> {
+export async function getPilotStatus(options: PilotBaseOptions): Promise<{
+  statePath: string;
+  metrics: PilotMetricsV1;
+  technicalPilot: PilotTechnicalGate;
+  externalGrantGate: ExternalGrantGateStatus;
+}> {
   assertPilotId(options.pilotId);
   const config = await loadEligibleConfig(options.configPath ?? "launchrig.yml");
   const statePath = await pilotStatePath(config.configDirectory, options.pilotId);
   const state = await readPilotState(statePath);
   if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
-  return { statePath, metrics: pilotMetrics(state) };
+  return {
+    statePath,
+    metrics: pilotMetrics(state),
+    technicalPilot: pilotTechnicalGate(state),
+    externalGrantGate: externalGrantGateStatus(),
+  };
 }
 
 export interface ExportPilotOptions extends PilotBaseOptions {

@@ -15,6 +15,7 @@ export const PUBLIC_EVIDENCE_LIMITATIONS = [
   "The integrity digest is not a signature or proof of publisher identity.",
   "Evidence v1 omits per-run fingerprints, so fingerprint-specific consecutive passes and median runtime cannot be independently recomputed.",
   "Evidence v1 omits timestamps, so setup duration cannot be independently recomputed.",
+  "Evidence v1 cannot establish the strict external-MWA technical gate from its public fields.",
   "Physical-device and required-check flags are self-recorded values, not device attestations.",
   "Publisher independence, Seeker hardware, production wallets, Seed Vault, and confirmed defects remain not established.",
 ] as const;
@@ -402,10 +403,7 @@ export async function verifyPublicPilotEvidence(inputPath: string): Promise<Veri
     internalConsistencyValid: true,
     claimStatus: "self-recorded-unattested",
     metrics: evidence.metrics,
-    reportedTechnicalTargetsMet:
-      evidence.metrics.setupTargetMet &&
-      evidence.metrics.runtimeTargetMet &&
-      evidence.metrics.repeatabilityTargetMet,
+    reportedTechnicalTargetsMet: false,
     grantReady: false,
     limitations: [...PUBLIC_EVIDENCE_LIMITATIONS],
   };

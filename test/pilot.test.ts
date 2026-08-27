@@ -4,13 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  checkPilot,
   exportPilotEvidence,
   getPilotStatus,
   pilotMetrics,
+  pilotTechnicalGate,
   PilotError,
   runPilot,
   startPilot,
 } from "../src/commands/pilot.js";
+import type { DoctorOutput } from "../src/commands/doctor.js";
 import { runCli } from "../src/cli.js";
 import { loadConfig } from "../src/config/load.js";
 import { verifyPublicPilotEvidence } from "../src/pilot/public-evidence.js";
@@ -70,7 +73,45 @@ async function writePublisherProject(directory: string, packageName = "com.publi
   return configPath;
 }
 
-function passingRunner(directory: string, fixedRunId?: string): PilotProjectRunner {
+async function writeFullPublisherProject(directory: string): Promise<string> {
+  const configPath = await writePublisherProject(directory);
+  const scenarios = [
+    ["authorize", "mwa-authorize", "Authorize"],
+    ["siws", "mwa-siws", "Sign in with Solana"],
+    ["sign-message", "mwa-sign-message", "Sign message"],
+    ["reject", "mwa-reject", "Reject and recover"],
+  ] as const;
+  for (const [id] of scenarios) {
+    await writeFile(
+      path.join(directory, id + ".yaml"),
+      "appId: com.publisher.mobile\n---\n- launchApp:\n    clearState: false\n- assertVisible:\n    id: publisher-" +
+        id +
+        "-ready\n",
+      "utf8",
+    );
+  }
+  const source = await readFile(configPath, "utf8");
+  const scenarioSource = [
+    "scenarios:",
+    ...scenarios.flatMap(([id, kind, name]) => [
+      "  - id: " + id,
+      "    kind: " + kind,
+      "    name: " + name,
+      "    flow: ./" + id + ".yaml",
+      "    required: true",
+    ]),
+    "artifacts:",
+  ].join("\n");
+  await writeFile(configPath, source.replace(/scenarios:\n[\s\S]*?artifacts:/, scenarioSource), "utf8");
+  return configPath;
+}
+
+function passingRunner(
+  directory: string,
+  fixedRunId?: string,
+  readiness: LaunchRigReport["readiness"] = "Android Device Ready",
+  scenarioIds: readonly string[] = ["authorize"],
+): PilotProjectRunner {
   let index = 0;
   return async () => {
     index += 1;
@@ -86,7 +127,7 @@ function passingRunner(directory: string, fixedRunId?: string): PilotProjectRunn
       completedAt: "2026-08-26T10:05:00.000Z",
       durationMs: 5 * 60 * 1000,
       outcome: "passed",
-      readiness: "Android Device Ready",
+      readiness,
       app: { packageName: "com.publisher.mobile", versionName: "1.0.0", apkSha256: "a".repeat(64) },
       wallet: {
         packageName: "com.solana.mwallet",
@@ -120,14 +161,14 @@ function passingRunner(directory: string, fixedRunId?: string): PilotProjectRunn
           durationMs: 1,
           summary: "passed",
         })),
-        {
-          id: "scenario.authorize",
-          name: "Authorize",
-          status: "pass",
+        ...scenarioIds.map((scenarioId) => ({
+          id: "scenario." + scenarioId,
+          name: scenarioId,
+          status: "pass" as const,
           required: true,
           durationMs: 100,
           summary: "passed",
-        },
+        })),
       ],
     };
     const resultDirectory = path.join(directory, "runner-results", runId);
@@ -147,6 +188,295 @@ function passingRunner(directory: string, fixedRunId?: string): PilotProjectRunn
     };
   };
 }
+
+function readyDoctorOutput(): DoctorOutput {
+  return {
+    ok: true,
+    adb: { path: "/test/adb", version: "Android Debug Bridge 1.0.41" },
+    maestro: { required: true, path: "/test/maestro", installed: true, version: "2.8.0" },
+    device: {
+      serial: "***1234",
+      manufacturer: "Publisher",
+      model: "Phone",
+      androidVersion: "16",
+      apiLevel: 36,
+      abi: "arm64-v8a",
+      securityPatch: "2026-08-01",
+      isEmulator: false,
+    },
+    packages: [
+      {
+        packageName: "com.publisher.mobile",
+        installed: true,
+        willInstall: false,
+        role: "app",
+        installedSha256: "a".repeat(64),
+        binaryReady: true,
+      },
+      {
+        packageName: "com.solana.mwallet",
+        installed: true,
+        willInstall: false,
+        role: "wallet",
+        installedSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
+        expectedSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
+        binaryReady: true,
+      },
+    ],
+    issues: [],
+  };
+}
+
+test("pilot preflight is read-only and separates policy, technical, and external gates", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-check-"));
+  try {
+    const configPath = await writeFullPublisherProject(directory);
+    const pilotId = "publisher-preflight";
+    const started = await startPilot({
+      pilotId,
+      configPath,
+      now: () => new Date("2026-08-26T10:00:00.000Z"),
+    });
+    const stateBefore = await readFile(started.statePath, "utf8");
+    const stateDirectories = [
+      path.join(directory, ".launchrig"),
+      path.join(directory, ".launchrig", "pilots"),
+      path.dirname(started.statePath),
+    ];
+    const modesBefore = await Promise.all(
+      stateDirectories.map(async (directoryPath) => (await lstat(directoryPath)).mode & 0o777),
+    );
+    let doctorCalls = 0;
+    const runDoctor = async (options: Parameters<NonNullable<Parameters<typeof checkPilot>[0]["doctorRunner"]>>[0]) => {
+      doctorCalls += 1;
+      assert.equal(options.verifyInstalledArtifactHashes, true);
+      return readyDoctorOutput();
+    };
+    const checked = await checkPilot({ pilotId, configPath, doctorRunner: runDoctor });
+    assert.equal(checked.exitCode, 0);
+    assert.equal(checked.readyToRecord, true);
+    assert.equal(doctorCalls, 1);
+    assert.ok(checked.checks.every((check) => check.status === "pass"));
+    assert.equal(checked.technicalPilot.qualified, false);
+    assert.equal(checked.externalGrantGate.grantReady, false);
+    assert.deepEqual(checked.externalGrantGate, {
+      status: "not-established",
+      grantReady: false,
+      publisherAttestation: "not-established",
+      threeIndependentPublishers: "not-established",
+      confirmedDefect: "not-established",
+      seekerAttestation: "not-established",
+      publicRelease: "not-established",
+    });
+    assert.equal(await readFile(started.statePath, "utf8"), stateBefore);
+    assert.deepEqual(
+      await Promise.all(
+        stateDirectories.map(async (directoryPath) => (await lstat(directoryPath)).mode & 0o777),
+      ),
+      modesBefore,
+    );
+
+    const cliOutput: string[] = [];
+    const cliErrors: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "check", "--pilot", pilotId, "--config", configPath, "--json"],
+        { out: (message) => cliOutput.push(message), error: (message) => cliErrors.push(message) },
+        {
+          checkPilot: async (options) =>
+            await checkPilot({ ...options, doctorRunner: async () => readyDoctorOutput() }),
+        },
+      ),
+      0,
+    );
+    assert.equal(cliErrors.length, 0);
+    assert.equal(JSON.parse(cliOutput.join("\n")).readyToRecord, true);
+    assert.equal(await readFile(started.statePath, "utf8"), stateBefore);
+
+    const rejectedArguments = [
+      ["--scenario", "authorize"],
+      ["--repeat", "3"],
+      ["--force"],
+      ["--output", "evidence.json"],
+      ["--name", "Other"],
+      ["--package", "com.publisher.other"],
+      ["extra-position"],
+    ];
+    for (const rejected of rejectedArguments) {
+      let checkCalls = 0;
+      const errors: string[] = [];
+      assert.equal(
+        await runCli(
+          ["pilot", "check", "--pilot", pilotId, ...rejected],
+          { out: () => undefined, error: (message) => errors.push(message) },
+          {
+            checkPilot: async (options) => {
+              checkCalls += 1;
+              return await checkPilot({ ...options, doctorRunner: async () => readyDoctorOutput() });
+            },
+          },
+        ),
+        2,
+      );
+      assert.equal(checkCalls, 0);
+      assert.ok(errors.some((message) => message.includes("pilot check does not accept")));
+    }
+
+    const timestamps = [
+      "2026-08-26T10:20:00.000Z",
+      "2026-08-26T10:21:00.000Z",
+      "2026-08-26T10:22:00.000Z",
+    ];
+    const scenarioIds = ["authorize", "siws", "sign-message", "reject"];
+    const run = await runPilot({
+      pilotId,
+      configPath,
+      repeat: 3,
+      projectRunner: passingRunner(directory, undefined, "Android/MWA Ready", scenarioIds),
+      now: () => new Date(timestamps.shift() ?? "invalid"),
+    });
+    assert.equal(run.exitCode, 0);
+    assert.equal(run.technicalPilot.qualified, true);
+    assert.equal(run.technicalPilot.trailingMwaPasses, 3);
+    assert.equal(run.technicalPilot.setupDurationMs, 20 * 60 * 1000);
+    assert.equal(run.technicalPilot.medianRunDurationMs, 5 * 60 * 1000);
+    assert.equal(run.externalGrantGate.grantReady, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("pilot preflight reports policy gaps without calling device tools", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-policy-"));
+  try {
+    const configPath = await writePublisherProject(directory);
+    const pilotId = "publisher-policy";
+    const started = await startPilot({ pilotId, configPath });
+    const stateBefore = await readFile(started.statePath, "utf8");
+    let doctorCalled = false;
+    const checked = await checkPilot({
+      pilotId,
+      configPath,
+      doctorRunner: async () => {
+        doctorCalled = true;
+        return readyDoctorOutput();
+      },
+    });
+    assert.equal(checked.exitCode, 2);
+    assert.equal(checked.readyToRecord, false);
+    assert.equal(doctorCalled, false);
+    assert.equal(checked.doctor, undefined);
+    assert.ok(
+      checked.checks.some(
+        (check) => check.id === "pilot.mwa-coverage" && check.status === "fail",
+      ),
+    );
+    assert.ok(
+      checked.checks.some(
+        (check) => check.id === "pilot.environment" && check.status === "skip",
+      ),
+    );
+    assert.equal(await readFile(started.statePath, "utf8"), stateBefore);
+
+    await writeFullPublisherProject(directory);
+    const fullSource = await readFile(configPath, "utf8");
+    await writeFile(
+      configPath,
+      fullSource
+        .replace("./siws.yaml", "./authorize.yaml")
+        .replace("./sign-message.yaml", "./authorize.yaml")
+        .replace("./reject.yaml", "./authorize.yaml"),
+      "utf8",
+    );
+    const duplicateCoverage = await checkPilot({
+      pilotId,
+      configPath,
+      doctorRunner: async () => {
+        doctorCalled = true;
+        return readyDoctorOutput();
+      },
+    });
+    assert.equal(duplicateCoverage.exitCode, 2);
+    assert.equal(doctorCalled, false);
+    assert.ok(
+      duplicateCoverage.checks.some(
+        (check) =>
+          check.id === "pilot.mwa-coverage" &&
+          check.status === "fail" &&
+          check.summary.includes("four distinct promoted flow files"),
+      ),
+    );
+    await assert.rejects(
+      () => runPilot({ pilotId, configPath, projectRunner: passingRunner(directory) }),
+      (error: unknown) => error instanceof PilotError && error.message.includes("four distinct promoted flow files"),
+    );
+    assert.equal((await getPilotStatus({ pilotId, configPath })).metrics.runAttempts, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("pilot run refuses init templates and reserved selectors before recording an attempt", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-template-"));
+  try {
+    const configPath = await writePublisherProject(directory);
+    const templatePath = path.join(directory, "mwa-authorize.example.yaml");
+    await writeFile(
+      templatePath,
+      "appId: com.publisher.mobile\n---\n- assertVisible:\n    id: publisher-ready\n",
+      "utf8",
+    );
+    await writeFile(
+      configPath,
+      (await readFile(configPath, "utf8")).replace("./authorize.yaml", "./mwa-authorize.example.yaml"),
+      "utf8",
+    );
+    const pilotId = "publisher-template";
+    await startPilot({ pilotId, configPath });
+    let runnerCalls = 0;
+    await assert.rejects(
+      () =>
+        runPilot({
+          pilotId,
+          configPath,
+          projectRunner: async (...args) => {
+            runnerCalls += 1;
+            return await passingRunner(directory)(...args);
+          },
+        }),
+      (error: unknown) => error instanceof PilotError && error.message.includes("reserved init template"),
+    );
+    assert.equal(runnerCalls, 0);
+    assert.equal((await getPilotStatus({ pilotId, configPath })).metrics.runAttempts, 0);
+
+    await writeFile(
+      configPath,
+      (await readFile(configPath, "utf8")).replace("./mwa-authorize.example.yaml", "./authorize.yaml"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(directory, "authorize.yaml"),
+      [
+        "appId: com.publisher.mobile",
+        "---",
+        "- runFlow:",
+        "    when:",
+        "      visible: \"TODO: publisher-condition\"",
+        "    commands:",
+        "      - tapOn: publisher-ready",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await assert.rejects(
+      () => runPilot({ pilotId, configPath, projectRunner: passingRunner(directory) }),
+      (error: unknown) => error instanceof PilotError && error.message.includes("reserved TODO: selector"),
+    );
+    assert.equal((await getPilotStatus({ pilotId, configPath })).metrics.runAttempts, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("pilot workflow records repeatability metrics and exports privacy-limited evidence", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-"));
@@ -184,9 +514,14 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
       runtimeTargetMet: true,
       repeatabilityTargetMet: true,
     });
+    assert.equal(output.technicalPilot.qualified, false);
+    assert.equal(output.technicalPilot.trailingMwaPasses, 0);
+    assert.equal(output.technicalPilot.latestReadiness, "Android Device Ready");
 
     const status = await getPilotStatus({ pilotId, configPath });
     assert.deepEqual(status.metrics, output.metrics);
+    assert.deepEqual(status.technicalPilot, output.technicalPilot);
+    assert.equal(status.externalGrantGate.grantReady, false);
     const cliOutput: string[] = [];
     const cliErrors: string[] = [];
     assert.equal(
@@ -216,6 +551,7 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
     const verifiedExport = await verifyPublicPilotEvidence(exported.outputPath);
     assert.equal(verifiedExport.integrityValid, true);
     assert.equal(verifiedExport.internalConsistencyValid, true);
+    assert.equal(verifiedExport.reportedTechnicalTargetsMet, false);
     assert.equal(verifiedExport.grantReady, false);
 
     await assert.rejects(
@@ -313,6 +649,93 @@ test("pilot repeatability resets when the execution fingerprint changes", () => 
   assert.equal(metrics.consecutivePasses, 1);
   assert.equal(metrics.medianRunDurationMs, 420_000);
   assert.equal(metrics.repeatabilityTargetMet, false);
+
+  const technical = pilotTechnicalGate(state);
+  assert.equal(technical.qualified, false);
+  assert.equal(technical.trailingMwaPasses, 1);
+  assert.equal(technical.setupDurationMs, 5 * 60 * 1000);
+  assert.equal(technical.medianRunDurationMs, 420_000);
+
+  const completedState: PilotStateCoreV1 = {
+    ...state,
+    runs: [
+      ...state.runs,
+      {
+        ...baseRun,
+        runId: "publisher-run-4",
+        recordedAt: "2026-08-26T10:20:00.000Z",
+        durationMs: 360_000,
+        configSha256: "6".repeat(64),
+      },
+      {
+        ...baseRun,
+        runId: "publisher-run-5",
+        recordedAt: "2026-08-26T10:25:00.000Z",
+        durationMs: 300_000,
+        configSha256: "6".repeat(64),
+      },
+    ],
+  };
+  const completedTechnical = pilotTechnicalGate(completedState);
+  assert.equal(completedTechnical.qualified, true);
+  assert.equal(completedTechnical.trailingMwaPasses, 3);
+  assert.equal(completedTechnical.medianRunDurationMs, 360_000);
+});
+
+test("optional MWA failure downgrades readiness without invalidating a passed pilot report", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-optional-mwa-"));
+  try {
+    const configPath = await writeFullPublisherProject(directory);
+    await writeFile(
+      path.join(directory, "stale-authorization.yaml"),
+      "appId: com.publisher.mobile\n---\n- assertVisible:\n    id: publisher-stale-recovery\n",
+      "utf8",
+    );
+    await writeFile(
+      configPath,
+      (await readFile(configPath, "utf8")).replace(
+        "artifacts:",
+        [
+          "  - id: stale-authorization",
+          "    kind: mwa-stale-authorization",
+          "    name: Optional stale authorization",
+          "    flow: ./stale-authorization.yaml",
+          "    required: false",
+          "artifacts:",
+        ].join("\n"),
+      ),
+      "utf8",
+    );
+    const pilotId = "publisher-optional-mwa";
+    await startPilot({ pilotId, configPath });
+    const coreScenarioIds = ["authorize", "siws", "sign-message", "reject"];
+    const optionalFailureRunner: PilotProjectRunner = async (...args) => {
+      const output = await passingRunner(
+        directory,
+        undefined,
+        "Android/MWA Ready",
+        coreScenarioIds,
+      )(...args);
+      output.report.readiness = "Android Device Ready";
+      output.report.checks.push({
+        id: "scenario.stale-authorization",
+        name: "Optional stale authorization",
+        status: "fail",
+        required: false,
+        durationMs: 100,
+        summary: "optional coverage failed",
+      });
+      await writeFile(output.artifacts.json, JSON.stringify(output.report, null, 2) + "\n", "utf8");
+      return output;
+    };
+    const output = await runPilot({ pilotId, configPath, projectRunner: optionalFailureRunner });
+    assert.equal(output.exitCode, 0);
+    assert.equal(output.runs[0]?.qualifying, true);
+    assert.equal(output.runs[0]?.readiness, "Android Device Ready");
+    assert.equal(output.technicalPilot.qualified, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("pilot records runner and report failures without inflating success metrics", async () => {
@@ -372,6 +795,15 @@ test("pilot records runner and report failures without inflating success metrics
     });
     assert.equal(mismatched.exitCode, 3);
     assert.equal(mismatched.runs[0]?.failureKind, "report-invalid");
+
+    await startPilot({ pilotId: "publisher-mwa-label", configPath });
+    const falseMwaReadiness = await runPilot({
+      pilotId: "publisher-mwa-label",
+      configPath,
+      projectRunner: passingRunner(directory, undefined, "Android/MWA Ready"),
+    });
+    assert.equal(falseMwaReadiness.exitCode, 3);
+    assert.equal(falseMwaReadiness.runs[0]?.failureKind, "report-invalid");
 
     await startPilot({ pilotId: "publisher-lambda", configPath });
     const wrongWalletBinary: PilotProjectRunner = async (...args) => {

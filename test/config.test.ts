@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initProject } from "../src/commands/init.js";
 import { loadConfig, validateConfigPaths } from "../src/config/load.js";
 import { ConfigError, validateConfig } from "../src/config/schema.js";
-import { validateMaestroFlowSafety } from "../src/security/flow.js";
+import { validateMaestroFlowSafety, validatePilotFlowReadiness } from "../src/security/flow.js";
 
 function validRawConfig(): Record<string, unknown> {
   return {
@@ -157,6 +157,92 @@ test("flow safety permits policy-limited commands and inline subflows", () => {
     "",
   ].join("\n");
   assert.deepEqual(validateMaestroFlowSafety(source, "com.publisher.app"), []);
+});
+
+test("pilot flow readiness rejects reserved selectors without scanning comments or input text", () => {
+  const safeSource = [
+    "# TODO: this comment is publisher guidance",
+    "appId: com.publisher.app",
+    "---",
+    "- inputText: \"TODO: literal test input\"",
+    "- assertVisible:",
+    "    id: publisher-ready",
+    "",
+  ].join("\n");
+  assert.deepEqual(validatePilotFlowReadiness(safeSource), []);
+
+  const reservedSelectors = [
+    "- assertVisible: \"TODO: ready-selector\"",
+    "- scrollUntilVisible:\n    element:\n      id: \"TODO: result-selector\"",
+    "- extendedWaitUntil:\n    notVisible: \"TODO: loading-selector\"",
+    [
+      "- runFlow:",
+      "    when:",
+      "      visible: \"TODO: condition-selector\"",
+      "    commands:",
+      "      - tapOn: publisher-ready",
+    ].join("\n"),
+    [
+      "- repeat:",
+      "    times: 2",
+      "    commands:",
+      "      - retry:",
+      "          maxRetries: 1",
+      "          commands:",
+      "            - tapOn:\n                id: \"TODO: nested-selector\"",
+    ].join("\n"),
+    [
+      "- repeat:",
+      "    while:",
+      "      visible: \"TODO: repeat-condition\"",
+      "    commands:",
+      "      - tapOn: publisher-ready",
+    ].join("\n"),
+  ];
+  for (const command of reservedSelectors) {
+    const issues = validatePilotFlowReadiness("appId: com.publisher.app\n---\n" + command + "\n");
+    assert.ok(issues.some((issue) => issue.includes("reserved TODO: selector")));
+  }
+  assert.ok(
+    validatePilotFlowReadiness("appId: com.publisher.app\n---\n[]\n").some((issue) =>
+      issue.includes("non-empty array"),
+    ),
+  );
+});
+
+test("path validation requires configured artifacts and regular publisher flow files", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-safe-paths-"));
+  try {
+    const outsideFlow = path.join(directory, "outside.yaml");
+    const linkedFlow = path.join(directory, "linked.yaml");
+    await writeFile(outsideFlow, "appId: com.publisher.app\n---\n- launchApp\n", "utf8");
+    await symlink(outsideFlow, linkedFlow);
+    const raw = validRawConfig();
+    raw.project = {
+      name: "Publisher",
+      packageName: "com.publisher.app",
+      apk: "./missing-app.apk",
+      install: false,
+    };
+    raw.wallet = {
+      mode: "mock-mwa",
+      packageName: "com.solana.mwallet",
+      apk: "./missing-wallet.apk",
+      install: false,
+    };
+    raw.scenarios = [
+      { id: "authorize", kind: "mwa-authorize", name: "Authorize", flow: "./linked.yaml" },
+    ];
+    const { stringify } = await import("yaml");
+    const configPath = path.join(directory, "launchrig.yml");
+    await writeFile(configPath, stringify(raw), "utf8");
+    const issues = await validateConfigPaths(await loadConfig(configPath));
+    assert.ok(issues.some((issue) => issue.includes("APK is missing")));
+    assert.ok(issues.some((issue) => issue.includes("Wallet fixture APK is missing")));
+    assert.ok(issues.some((issue) => issue.includes("flow cannot be read safely")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("flow safety rejects state clearing, scripts, external subflows, aliases, and duplicate keys", async (context) => {

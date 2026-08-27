@@ -252,7 +252,12 @@ function errorCode(error: unknown): string | undefined {
   return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
-async function resolvePilotDirectory(root: string, pilotId: string, create: boolean): Promise<string> {
+async function resolvePilotDirectory(
+  root: string,
+  pilotId: string,
+  create: boolean,
+  restrictPermissions: boolean,
+): Promise<string> {
   let current = root;
   for (const segment of [".launchrig", "pilots", pilotId]) {
     current = path.join(current, segment);
@@ -273,9 +278,13 @@ async function resolvePilotDirectory(root: string, pilotId: string, create: bool
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new PilotError("Pilot state path must use project-owned directories", 3);
     }
-    await chmod(current, 0o700).catch(() => {
-      throw new PilotError("Pilot state directory permissions cannot be restricted", 3);
-    });
+    if (restrictPermissions) {
+      await chmod(current, 0o700).catch(() => {
+        throw new PilotError("Pilot state directory permissions cannot be restricted", 3);
+      });
+    } else if ((metadata.mode & 0o077) !== 0) {
+      throw new PilotError("Pilot state directory permissions are not restricted", 3);
+    }
     const resolved = await realpath(current).catch(() => {
       throw new PilotError("Pilot state directory cannot be resolved", 3);
     });
@@ -290,7 +299,16 @@ export async function pilotStatePath(configDirectory: string, pilotId: string, c
   const root = await realpath(configDirectory).catch(() => {
     throw new PilotError("Pilot configuration directory cannot be resolved", 3);
   });
-  const resolvedDirectory = await resolvePilotDirectory(root, pilotId, create);
+  const resolvedDirectory = await resolvePilotDirectory(root, pilotId, create, true);
+  return path.join(resolvedDirectory, "evidence.json");
+}
+
+export async function readOnlyPilotStatePath(configDirectory: string, pilotId: string): Promise<string> {
+  assertPilotId(pilotId);
+  const root = await realpath(configDirectory).catch(() => {
+    throw new PilotError("Pilot configuration directory cannot be resolved", 3);
+  });
+  const resolvedDirectory = await resolvePilotDirectory(root, pilotId, false, false);
   return path.join(resolvedDirectory, "evidence.json");
 }
 

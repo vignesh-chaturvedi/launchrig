@@ -46,6 +46,29 @@ export interface PilotMetricsV1 {
   repeatabilityTargetMet: boolean;
 }
 
+export interface PilotTechnicalGate {
+  profile: "external-mwa-pilot";
+  qualified: boolean;
+  latestReadiness: PilotRunEvidenceV1["readiness"] | null;
+  trailingMwaPasses: number;
+  requiredTrailingMwaPasses: 3;
+  setupDurationMs: number | null;
+  medianRunDurationMs: number | null;
+  setupTargetMet: boolean;
+  runtimeTargetMet: boolean;
+  repeatabilityTargetMet: boolean;
+}
+
+export interface ExternalGrantGateStatus {
+  status: "not-established";
+  grantReady: false;
+  publisherAttestation: "not-established";
+  threeIndependentPublishers: "not-established";
+  confirmedDefect: "not-established";
+  seekerAttestation: "not-established";
+  publicRelease: "not-established";
+}
+
 export interface PublicPilotEvidenceV1 {
   schemaVersion: 1;
   kind: "launchrig-pilot-evidence";

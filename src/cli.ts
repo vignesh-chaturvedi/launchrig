@@ -13,6 +13,7 @@ import {
 } from "./commands/matrix.js";
 import { runProject } from "./commands/run.js";
 import {
+  checkPilot,
   exportPilotEvidence,
   getPilotStatus,
   PilotError,
@@ -32,6 +33,7 @@ export interface CliIO {
 export interface CliDependencies {
   runFixtureMatrix?: typeof runFixtureMatrix;
   startPilot?: typeof startPilot;
+  checkPilot?: typeof checkPilot;
   runPilot?: typeof runPilot;
   getPilotStatus?: typeof getPilotStatus;
   exportPilotEvidence?: typeof exportPilotEvidence;
@@ -53,6 +55,7 @@ const HELP = [
   "  launchrig run [--config launchrig.yml] [--device SERIAL] [--scenario ID]",
   "  launchrig matrix [--device SERIAL] [--json]  (source checkout only)",
   "  launchrig pilot start --pilot ID [--config launchrig.yml] [--force]",
+  "  launchrig pilot check --pilot ID [--config launchrig.yml] [--device SERIAL] [--json]",
   "  launchrig pilot run --pilot ID [--config launchrig.yml] [--device SERIAL] [--repeat N]",
   "  launchrig pilot status --pilot ID [--config launchrig.yml] [--json]",
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
@@ -112,6 +115,35 @@ function humanDuration(milliseconds: number | null): string {
   if (milliseconds === null) return "not available";
   if (milliseconds < 60_000) return (milliseconds / 1000).toFixed(1) + " seconds";
   return (milliseconds / 60_000).toFixed(1) + " minutes";
+}
+
+function humanPilotCheck(value: Awaited<ReturnType<typeof checkPilot>>): string {
+  const lines = [
+    value.readyToRecord ? "Pilot preflight: ready to record" : "Pilot preflight: action required",
+  ];
+  for (const check of value.checks) {
+    const label = check.status === "pass" ? "PASS " : check.status === "skip" ? "SKIP " : "FAIL ";
+    lines.push(label + check.summary);
+  }
+  lines.push(
+    "technical pilot gate: " + (value.technicalPilot.qualified ? "met" : "not met"),
+    "trailing Android/MWA Ready passes: " +
+      value.technicalPilot.trailingMwaPasses +
+      "/" +
+      value.technicalPilot.requiredTrailingMwaPasses,
+    "external grant gate: not established from local pilot state",
+    "No pilot attempt was recorded by this check.",
+  );
+  return lines.join("\n");
+}
+
+function unsupportedOption(argv: string[], allowed: ReadonlySet<string>): string | undefined {
+  return argv.find((argument) => {
+    if (!argument.startsWith("-")) return false;
+    const separator = argument.indexOf("=");
+    const name = separator >= 0 ? argument.slice(0, separator) : argument;
+    return !allowed.has(name);
+  });
 }
 
 export async function runCli(
@@ -248,13 +280,12 @@ export async function runCli(
       const subcommand = parsed.positionals[1];
 
       if (subcommand === "verify") {
-        const unsupportedOption = argv.find(
-          (argument) =>
-            argument.startsWith("-") &&
-            !["--json", "--help", "-h", "--version", "-v"].includes(argument),
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--json", "--help", "-h", "--version", "-v"]),
         );
-        if (unsupportedOption) {
-          throw new PilotError("pilot verify does not accept " + unsupportedOption);
+        if (rejectedOption) {
+          throw new PilotError("pilot verify does not accept " + rejectedOption);
         }
         const evidencePath = parsed.positionals[2];
         if (!evidencePath || parsed.positionals.length !== 3) {
@@ -269,7 +300,7 @@ export async function runCli(
                 "Public pilot evidence: internally consistent",
                 "Integrity valid. Evidence remains self-recorded and unattested.",
                 "reported qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
-                "reported technical targets: " + (output.reportedTechnicalTargetsMet ? "met" : "not met"),
+                "strict technical gate established by evidence v1: no",
                 "grant ready: no",
                 ...output.limitations.map((limitation) => "- " + limitation),
               ].join("\n"),
@@ -294,6 +325,41 @@ export async function runCli(
         return 0;
       }
 
+      if (subcommand === "check") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set([
+            "--pilot",
+            "--config",
+            "-c",
+            "--device",
+            "-d",
+            "--adb",
+            "--maestro",
+            "--json",
+            "--help",
+            "-h",
+            "--version",
+            "-v",
+          ]),
+        );
+        if (rejectedOption) throw new PilotError("pilot check does not accept " + rejectedOption);
+        if (parsed.positionals.length !== 2) {
+          throw new PilotError("pilot check does not accept positional arguments");
+        }
+        const check = dependencies.checkPilot ?? checkPilot;
+        const output = await check({
+          pilotId,
+          configPath,
+          ...(device ? { deviceSerial: device } : {}),
+          ...(adb ? { adbPath: adb } : {}),
+          ...(maestro ? { maestroPath: maestro } : {}),
+        });
+        const rendered = { ...output, statePath: path.relative(process.cwd(), output.statePath) };
+        io.out(parsed.values.json ? JSON.stringify(rendered, null, 2) : humanPilotCheck(output));
+        return output.exitCode;
+      }
+
       if (subcommand === "run") {
         if (repeatValue !== undefined && !Number.isSafeInteger(repeatValue)) {
           throw new PilotError("--repeat must be an integer from 1 to 10");
@@ -315,8 +381,13 @@ export async function runCli(
             ? JSON.stringify(rendered, null, 2)
             : [
                 "Pilot " + pilotId + ": " + output.runs.length + " run(s) recorded",
-                "qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
-                "consecutive passes: " + output.metrics.consecutivePasses,
+                "evidence-qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                "technical pilot gate: " + (output.technicalPilot.qualified ? "met" : "not met"),
+                "trailing Android/MWA Ready passes: " +
+                  output.technicalPilot.trailingMwaPasses +
+                  "/" +
+                  output.technicalPilot.requiredTrailingMwaPasses,
+                "external grant gate: not established from local pilot state",
                 "state: " + rendered.statePath,
               ].join("\n"),
         );
@@ -332,13 +403,16 @@ export async function runCli(
             ? JSON.stringify(rendered, null, 2)
             : [
                 "Pilot " + pilotId + " status",
-                "qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
+                "evidence-qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
                 "pass rate: " + (output.metrics.passRate * 100).toFixed(1) + "%",
-                "consecutive passes: " + output.metrics.consecutivePasses,
-                "setup duration: " + humanDuration(output.metrics.setupDurationMs),
-                "median current-fingerprint runtime: " + humanDuration(output.metrics.medianRunDurationMs),
-                "setup target: " + (output.metrics.setupTargetMet ? "met" : "not met"),
-                "runtime target: " + (output.metrics.runtimeTargetMet ? "met" : "not met"),
+                "technical pilot gate: " + (output.technicalPilot.qualified ? "met" : "not met"),
+                "trailing Android/MWA Ready passes: " +
+                  output.technicalPilot.trailingMwaPasses +
+                  "/" +
+                  output.technicalPilot.requiredTrailingMwaPasses,
+                "MWA setup duration: " + humanDuration(output.technicalPilot.setupDurationMs),
+                "median current-fingerprint MWA runtime: " + humanDuration(output.technicalPilot.medianRunDurationMs),
+                "external grant gate: not established from local pilot state",
               ].join("\n"),
         );
         return 0;
@@ -364,7 +438,7 @@ export async function runCli(
         return 0;
       }
 
-      throw new PilotError("pilot command must be start, run, status, export, or verify");
+      throw new PilotError("pilot command must be start, check, run, status, export, or verify");
     }
 
     io.error("Unknown command: " + command);

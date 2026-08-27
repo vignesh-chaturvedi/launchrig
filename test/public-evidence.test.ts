@@ -62,12 +62,13 @@ test("public evidence verifier is strict, offline, and explicit about its limita
     const verified = await verifyPublicPilotEvidence(evidencePath);
     assert.equal(verified.integrityValid, true);
     assert.equal(verified.internalConsistencyValid, true);
-    assert.equal(verified.reportedTechnicalTargetsMet, true);
+    assert.equal(verified.reportedTechnicalTargetsMet, false);
     assert.equal(verified.grantReady, false);
     assert.equal(verified.claimStatus, "self-recorded-unattested");
     assert.ok(verified.limitations.some((entry) => entry.includes("not a signature")));
     assert.ok(verified.limitations.some((entry) => entry.includes("cannot be independently recomputed")));
     assert.ok(verified.limitations.some((entry) => entry.includes("omits timestamps")));
+    assert.ok(verified.limitations.some((entry) => entry.includes("strict external-MWA technical gate")));
     assert.ok(verified.limitations.some((entry) => entry.includes("self-recorded values")));
 
     const cliOutput: string[] = [];
