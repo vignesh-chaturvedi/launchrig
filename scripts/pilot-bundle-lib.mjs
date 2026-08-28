@@ -12,6 +12,11 @@ import { createHash } from "node:crypto";
 
 export const BUNDLE_SCHEMA_VERSION = 1;
 export const BUNDLE_KIND = "launchrig-publisher-bundle";
+export const BUNDLE_PROFILE = "phase-2b-publisher-rc-v2";
+const SUPPORTED_BUNDLE_PROFILES = new Set([
+  "phase-2a-publisher-rc-v1",
+  BUNDLE_PROFILE,
+]);
 export const REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",
   "installed-version-match",
@@ -178,6 +183,7 @@ export async function collectPayloadEntries(directory) {
 }
 
 export function createPublisherManifest({
+  profile = BUNDLE_PROFILE,
   launchRigVersion,
   gitCommit,
   lockfileSha256,
@@ -186,6 +192,7 @@ export function createPublisherManifest({
   packagePath,
   files,
 }) {
+  if (!SUPPORTED_BUNDLE_PROFILES.has(profile)) throw new Error("Publisher bundle profile is unsupported.");
   if (!/^\d+\.\d+\.\d+$/.test(launchRigVersion)) throw new Error("LaunchRig version must be plain semver.");
   if (!/^[a-f0-9]{40}$/.test(gitCommit)) throw new Error("Source commit must be a full lowercase Git commit.");
   if (!/^[a-f0-9]{64}$/.test(lockfileSha256)) throw new Error("Lockfile digest must be lowercase SHA-256.");
@@ -200,7 +207,7 @@ export function createPublisherManifest({
   const manifestCore = {
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     kind: BUNDLE_KIND,
-    profile: "phase-2a-publisher-rc-v1",
+    profile,
     launchRigVersion,
     source: {
       gitCommit,

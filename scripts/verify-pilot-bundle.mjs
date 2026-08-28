@@ -41,7 +41,9 @@ const MAX_PAYLOAD_BYTES = 100 * 1024 * 1024;
 const MAX_ARCHIVE_EXPANDED_BYTES = 64 * 1024 * 1024;
 const MAX_ARCHIVE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_ARCHIVE_FILES = 1000;
-const PACKED_DOCUMENTS = [
+const BUNDLE_PROFILE_V1 = "phase-2a-publisher-rc-v1";
+const BUNDLE_PROFILE_V2 = "phase-2b-publisher-rc-v2";
+const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
   "docs/flows/mwa-sign-message.md",
@@ -53,7 +55,28 @@ const PACKED_DOCUMENTS = [
   "docs/publisher-pilot-quickstart.md",
   "docs/supported-environment.md",
 ];
-const PACKED_SCHEMAS = [
+const PACKED_DOCUMENTS_V2 = [
+  "docs/cohort-verification.md",
+  "docs/flows/mwa-authorize.md",
+  "docs/flows/mwa-reject.md",
+  "docs/flows/mwa-sign-message.md",
+  "docs/flows/mwa-siws.md",
+  "docs/phase-1.md",
+  "docs/phase-2.md",
+  "docs/physical-device.md",
+  "docs/publisher-bundle-readme.md",
+  "docs/publisher-pilot-quickstart.md",
+  "docs/supported-environment.md",
+];
+const PACKED_SCHEMAS_V1 = [
+  "schemas/launchrig-pilot-evidence-v1.schema.json",
+  "schemas/launchrig-pilot-evidence-v2.schema.json",
+  "schemas/launchrig-pilot-evidence.schema.json",
+  "schemas/launchrig-publisher-bundle.schema.json",
+  "schemas/launchrig.schema.json",
+];
+const PACKED_SCHEMAS_V2 = [
+  "schemas/launchrig-cohort-verification.schema.json",
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
   "schemas/launchrig-pilot-evidence.schema.json",
@@ -67,6 +90,16 @@ const PACKED_TEMPLATES = [
   "templates/publisher-intake.md",
   "templates/sharing-review.md",
 ];
+
+function packedInventory(profile) {
+  if (profile === BUNDLE_PROFILE_V1) {
+    return { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1 };
+  }
+  if (profile === BUNDLE_PROFILE_V2) {
+    return { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2 };
+  }
+  throw new Error("Unsupported bundle manifest.");
+}
 
 function comparePaths(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -248,7 +281,7 @@ function assertSafeArchivePath(value) {
   }
 }
 
-function isAllowedArchivePath(archivePath) {
+function isAllowedArchivePath(archivePath, inventory) {
   const relativePath = archivePath.slice("package/".length);
   const baseName = path.posix.basename(relativePath);
   const parts = relativePath.split("/");
@@ -267,13 +300,14 @@ function isAllowedArchivePath(archivePath) {
     relativePath === "package.json" ||
     (relativePath.startsWith("dist/src/") && /\.(?:js|js\.map|d\.ts)$/.test(relativePath)) ||
     relativePath.startsWith("dist/node_modules/yaml/") ||
-    PACKED_DOCUMENTS.includes(relativePath) ||
-    PACKED_SCHEMAS.includes(relativePath) ||
+    inventory.documents.includes(relativePath) ||
+    inventory.schemas.includes(relativePath) ||
     PACKED_TEMPLATES.includes(relativePath)
   );
 }
 
 export function inspectLaunchRigArchive(archiveBytes, manifest) {
+  const inventory = packedInventory(manifest.profile);
   let archive;
   try {
     archive = gunzipSync(archiveBytes, { maxOutputLength: MAX_ARCHIVE_EXPANDED_BYTES });
@@ -307,7 +341,7 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
     if (type !== 0 && type !== 0x30) {
       throw new Error("LaunchRig package archive contains a nonregular entry: " + archivePath);
     }
-    if (!isAllowedArchivePath(archivePath)) {
+    if (!isAllowedArchivePath(archivePath, inventory)) {
       throw new Error("LaunchRig package archive contains a file outside the release allowlist: " + archivePath);
     }
     const foldedPath = archivePath.toLowerCase();
@@ -331,8 +365,8 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
   for (const [label, expected, prefix] of [
-    ["documentation", PACKED_DOCUMENTS, "package/docs/"],
-    ["schema", PACKED_SCHEMAS, "package/schemas/"],
+    ["documentation", inventory.documents, "package/docs/"],
+    ["schema", inventory.schemas, "package/schemas/"],
     ["template", PACKED_TEMPLATES, "package/templates/"],
   ]) {
     const actual = [...entries.keys()]
@@ -425,7 +459,7 @@ function validateManifest(manifest) {
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
-    manifest.profile !== "phase-2a-publisher-rc-v1"
+    ![BUNDLE_PROFILE_V1, BUNDLE_PROFILE_V2].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");
   }
@@ -513,7 +547,7 @@ function validateManifest(manifest) {
   }
   const expectedPaths = expectedPayloadFiles(manifest.launchRigVersion);
   if (JSON.stringify(paths) !== JSON.stringify(expectedPaths)) {
-    throw new Error("Bundle payload does not match the exact Phase 2A profile allowlist.");
+    throw new Error("Bundle payload does not match the exact Phase 2 publisher profile allowlist.");
   }
 
   const payloadSha256 = sha256(canonicalJson(manifest.files));

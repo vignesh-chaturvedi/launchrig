@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-cohort-verification.schema.json",
+  "title": "LaunchRig Phase 2B cohort verification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "evidence",
+    "summary",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-cohort-verification" },
+    "profile": { "const": "phase-2b-external-pilots-v1" },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "submittedEvidenceFiles",
+        "uniqueEvidenceIds",
+        "recomputableV2Files",
+        "technicallyQualifiedFiles",
+        "requiredTechnicallyQualifiedFiles",
+        "selfRecordedTechnicalThresholdMet"
+      ],
+      "properties": {
+        "submittedEvidenceFiles": { "type": "integer", "minimum": 1, "maximum": 25 },
+        "uniqueEvidenceIds": { "type": "integer", "minimum": 1, "maximum": 25 },
+        "recomputableV2Files": { "$ref": "#/$defs/count" },
+        "technicallyQualifiedFiles": { "$ref": "#/$defs/count" },
+        "requiredTechnicallyQualifiedFiles": { "const": 3 },
+        "selfRecordedTechnicalThresholdMet": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "selfRecordedTechnicalThresholdMet": { "const": true }
+            }
+          },
+          "then": {
+            "properties": {
+              "technicallyQualifiedFiles": { "minimum": 3 }
+            }
+          },
+          "else": {
+            "properties": {
+              "technicallyQualifiedFiles": { "maximum": 2 }
+            }
+          }
+        }
+      ]
+    },
+    "externalGrantGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "threeIndependentPublishers",
+        "publisherConsent",
+        "confirmedDefectAcrossTwoProjects",
+        "seekerAttestation",
+        "publicRelease"
+      ],
+      "properties": {
+        "status": { "const": "not-established" },
+        "threeIndependentPublishers": { "const": "not-established" },
+        "publisherConsent": { "const": "not-established" },
+        "confirmedDefectAcrossTwoProjects": { "const": "not-established" },
+        "seekerAttestation": { "const": "not-established" },
+        "publicRelease": { "const": "not-established" }
+      }
+    },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "The cohort verifies internal consistency of self-recorded evidence only.",
+        "Distinct file identities and evidence IDs do not prove distinct publishers or projects.",
+        "Publisher identity, authority, consent, independence, and sharing permission require private operator review.",
+        "Defect confirmation, Seeker attestation, and public-release readiness remain not established.",
+        "A met self-recorded technical threshold does not establish the external grant gate."
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "selfRecordedTechnicalThresholdMet": { "const": true }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evidence": {
+            "contains": { "$ref": "#/$defs/qualifiedEvidence" },
+            "minContains": 3
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "evidence": {
+            "contains": { "$ref": "#/$defs/qualifiedEvidence" },
+            "minContains": 0,
+            "maxContains": 2
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 25
+    },
+    "duration": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "evidenceId",
+        "schemaVersion",
+        "claimStatus",
+        "internalConsistencyValid",
+        "technicalStatus",
+        "technicalProfile",
+        "setupDurationMs",
+        "medianRunDurationMs",
+        "trailingMwaPasses"
+      ],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1, "maximum": 25 },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+        },
+        "schemaVersion": { "enum": [1, 2] },
+        "claimStatus": { "const": "self-recorded-unattested" },
+        "internalConsistencyValid": { "const": true },
+        "technicalStatus": {
+          "enum": ["qualified", "not-qualified", "not-recomputable"]
+        },
+        "technicalProfile": {
+          "type": ["string", "null"],
+          "enum": ["external-mwa-pilot-v1", null]
+        },
+        "setupDurationMs": { "$ref": "#/$defs/duration" },
+        "medianRunDurationMs": { "$ref": "#/$defs/duration" },
+        "trailingMwaPasses": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "technicalStatus": { "const": "not-recomputable" },
+            "technicalProfile": { "const": null },
+            "setupDurationMs": { "const": null },
+            "medianRunDurationMs": { "const": null },
+            "trailingMwaPasses": { "const": null }
+          }
+        },
+        {
+          "properties": {
+            "schemaVersion": { "const": 2 },
+            "technicalStatus": { "enum": ["qualified", "not-qualified"] },
+            "technicalProfile": { "const": "external-mwa-pilot-v1" }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "technicalStatus": { "const": "qualified" }
+                }
+              },
+              "then": {
+                "properties": {
+                  "setupDurationMs": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1800000
+                  },
+                  "medianRunDurationMs": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 600000
+                  },
+                  "trailingMwaPasses": {
+                    "type": "integer",
+                    "minimum": 3,
+                    "maximum": 100
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "qualifiedEvidence": {
+      "type": "object",
+      "required": ["technicalStatus"],
+      "properties": {
+        "technicalStatus": { "const": "qualified" }
+      }
+    }
+  }
+}

@@ -22,6 +22,11 @@ import {
 } from "./commands/pilot.js";
 import { validateProject } from "./commands/validate.js";
 import { FixtureMatrixValidationError } from "./fixtures/matrix.js";
+import {
+  CohortError,
+  verifyCohortEvidence,
+  type CohortVerificationOutput,
+} from "./pilot/cohort.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
 
@@ -38,6 +43,7 @@ export interface CliDependencies {
   getPilotStatus?: typeof getPilotStatus;
   exportPilotEvidence?: typeof exportPilotEvidence;
   verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
+  verifyCohortEvidence?: typeof verifyCohortEvidence;
 }
 
 const defaultIO: CliIO = {
@@ -60,6 +66,7 @@ const HELP = [
   "  launchrig pilot status --pilot ID [--config launchrig.yml] [--json]",
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
   "  launchrig pilot verify FILE [--json]",
+  "  launchrig cohort verify FILE... [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -134,6 +141,39 @@ function humanPilotCheck(value: Awaited<ReturnType<typeof checkPilot>>): string 
     "external grant gate: not established from local pilot state",
     "No pilot attempt was recorded by this check.",
   );
+  return lines.join("\n");
+}
+
+function humanCohortVerification(value: CohortVerificationOutput): string {
+  const lines = [
+    "Cohort evidence verification: internally consistent",
+    "evidence files: " + value.summary.submittedEvidenceFiles,
+    "unique evidence IDs: " + value.summary.uniqueEvidenceIds,
+    "recomputable evidence v2 files: " + value.summary.recomputableV2Files,
+    "self-recorded technical files qualified: " +
+      value.summary.technicallyQualifiedFiles +
+      "/" +
+      value.summary.requiredTechnicallyQualifiedFiles,
+  ];
+  for (const entry of value.evidence) {
+    const detail =
+      entry.technicalStatus === "not-recomputable"
+        ? "evidence v1, technical gate not recomputable"
+        : "evidence v2, technical gate " + entry.technicalStatus;
+    lines.push("evidence " + entry.index + " " + entry.evidenceId + ": " + detail);
+  }
+  lines.push(
+    "self-recorded technical threshold: " +
+      (value.summary.selfRecordedTechnicalThresholdMet ? "met" : "not met"),
+    "three independent publishers: not established",
+    "publisher consent: not established",
+    "confirmed defect across two projects: not established",
+    "Seeker attestation: not established",
+    "public release: not established",
+    "external grant gate: not established",
+    "grant ready: no",
+  );
+  for (const limitation of value.limitations) lines.push("- " + limitation);
   return lines.join("\n");
 }
 
@@ -274,6 +314,23 @@ export async function runCli(
       });
       io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanMatrix(output));
       return output.exitCode;
+    }
+
+    if (command === "cohort") {
+      const subcommand = parsed.positionals[1];
+      if (subcommand !== "verify") {
+        throw new CohortError("cohort command must be verify");
+      }
+      const rejectedOption = unsupportedOption(
+        argv,
+        new Set(["--json", "--help", "-h", "--version", "-v"]),
+      );
+      if (rejectedOption) throw new CohortError("cohort verify does not accept " + rejectedOption);
+      const evidencePaths = parsed.positionals.slice(2);
+      const verifyCohort = dependencies.verifyCohortEvidence ?? verifyCohortEvidence;
+      const output = await verifyCohort(evidencePaths);
+      io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortVerification(output));
+      return 0;
     }
 
     if (command === "pilot") {
@@ -464,6 +521,10 @@ export async function runCli(
     }
     if (error instanceof PilotError) {
       io.error("Pilot error: " + error.message);
+      return error.exitCode;
+    }
+    if (error instanceof CohortError) {
+      io.error("Cohort error: " + error.message);
       return error.exitCode;
     }
     io.error(error instanceof Error ? error.message : String(error));

@@ -40,6 +40,39 @@ export interface DoctorOutput {
   issues: string[];
 }
 
+export const MINIMUM_MAESTRO_VERSION = "2.8.0";
+
+export interface MaestroVersionSupport {
+  version: string;
+  supported: boolean;
+}
+
+export function inspectMaestroVersion(value: string): MaestroVersionSupport | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 512) return null;
+  const candidates = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) =>
+      line.match(
+        /^(?:Maestro(?: CLI)?(?: version)?\s*[:=]?\s*)?v?(\d{1,4})\.(\d{1,4})\.(\d{1,4})(-[0-9A-Za-z.-]+)?$/i,
+      ),
+    )
+    .filter((match): match is RegExpMatchArray => match !== null);
+  if (candidates.length !== 1) return null;
+  const match = candidates[0];
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (![major, minor, patch].every(Number.isSafeInteger)) return null;
+  const prerelease = match[4] ?? "";
+  const supported =
+    prerelease.length === 0 &&
+    (major > 2 || (major === 2 && minor >= 8));
+  return { version: major + "." + minor + "." + patch + prerelease, supported };
+}
+
 export async function doctor(options: DoctorOptions = {}): Promise<DoctorOutput> {
   const env = options.env ?? process.env;
   const config = options.configPath ? await loadConfig(options.configPath) : undefined;
@@ -217,7 +250,25 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorOutput>
         minimalMaestroEnvironment(env, path.dirname(adbPath)),
       );
       if (result.exitCode === 0) {
-        maestroVersion = result.stdout.toString("utf8").trim() || "available";
+        const inspected = inspectMaestroVersion(result.stdout.toString("utf8").trim());
+        if (!inspected) {
+          issues.push(
+            "Maestro version could not be parsed. Phase 2 pilots require Maestro " +
+              MINIMUM_MAESTRO_VERSION +
+              " or newer.",
+          );
+        } else {
+          maestroVersion = inspected.version;
+          if (!inspected.supported) {
+            issues.push(
+              "Maestro " +
+                inspected.version +
+                " is below or outside the supported Phase 2 baseline of " +
+                MINIMUM_MAESTRO_VERSION +
+                ".",
+            );
+          }
+        }
       } else {
         issues.push("Maestro was found but its version check failed.");
       }

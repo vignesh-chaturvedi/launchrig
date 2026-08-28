@@ -148,6 +148,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     if (installedPackage.private !== true) throw new Error("Packed LaunchRig package must remain private.");
     for (const relativePath of [
       "dist/src/cli.js",
+      "docs/cohort-verification.md",
       "docs/publisher-pilot-quickstart.md",
       "docs/supported-environment.md",
       "docs/flows/mwa-authorize.md",
@@ -155,6 +156,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "docs/flows/mwa-sign-message.md",
       "docs/flows/mwa-siws.md",
       "schemas/launchrig-publisher-bundle.schema.json",
+      "schemas/launchrig-cohort-verification.schema.json",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
     ]) {
@@ -170,7 +172,11 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     const version = await run(executable, ["--version"], { cwd: installDirectory, env: rehearsalEnvironment });
     if (version.stdout !== launchRigVersion) throw new Error("Installed LaunchRig binary reported the wrong version.");
     const help = await run(executable, ["--help"], { cwd: installDirectory, env: rehearsalEnvironment });
-    for (const command of ["launchrig pilot check --pilot ID", "launchrig pilot verify FILE"]) {
+    for (const command of [
+      "launchrig pilot check --pilot ID",
+      "launchrig pilot verify FILE",
+      "launchrig cohort verify FILE...",
+    ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
     }
 

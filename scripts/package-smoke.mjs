@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { BUNDLE_PROFILE } from "./pilot-bundle-lib.mjs";
 import { inspectLaunchRigArchive } from "./verify-pilot-bundle.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -82,6 +83,7 @@ try {
   const installedDirectory = path.join(installDirectory, "node_modules", "launchrig");
   const installedPackage = JSON.parse(await readFile(path.join(installedDirectory, "package.json"), "utf8"));
   inspectLaunchRigArchive(await readFile(archive), {
+    profile: BUNDLE_PROFILE,
     launchRigVersion: installedPackage.version,
     package: { nodeEngine: installedPackage.engines?.node },
   });
@@ -101,6 +103,9 @@ try {
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-cohort-verification.schema.json")) {
+    throw new Error("Packed cohort verification schema is missing.");
+  }
   const publisherBundleSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-publisher-bundle.schema.json"), "utf8"),
   );
@@ -108,6 +113,8 @@ try {
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
     publisherBundleSchema.properties?.kind?.const !== "launchrig-publisher-bundle" ||
+    JSON.stringify(publisherBundleSchema.properties?.profile?.enum) !==
+      JSON.stringify(["phase-2a-publisher-rc-v1", "phase-2b-publisher-rc-v2"]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
@@ -121,7 +128,30 @@ try {
   ) {
     throw new Error("Packed publisher bundle schema does not preserve the claim-limited contract.");
   }
+  const cohortSchema = JSON.parse(
+    await readFile(path.join(installedDirectory, "schemas", "launchrig-cohort-verification.schema.json"), "utf8"),
+  );
+  if (
+    cohortSchema.$id !== "https://launchrig.dev/schemas/launchrig-cohort-verification.schema.json" ||
+    cohortSchema.additionalProperties !== false ||
+    cohortSchema.properties?.kind?.const !== "launchrig-cohort-verification" ||
+    cohortSchema.properties?.grantReady?.const !== false ||
+    cohortSchema.properties?.externalGrantGate?.properties?.status?.const !== "not-established" ||
+    cohortSchema.properties?.evidence?.maxItems !== 25 ||
+    cohortSchema.properties?.summary?.allOf?.[0]?.then?.properties?.technicallyQualifiedFiles?.minimum !== 3 ||
+    cohortSchema.properties?.summary?.allOf?.[0]?.else?.properties?.technicallyQualifiedFiles?.maximum !== 2 ||
+    cohortSchema.allOf?.[0]?.then?.properties?.evidence?.minContains !== 3 ||
+    cohortSchema.allOf?.[0]?.else?.properties?.evidence?.maxContains !== 2 ||
+    cohortSchema.$defs?.evidence?.oneOf?.[1]?.allOf?.[0]?.then?.properties?.setupDurationMs?.maximum !==
+      1800000 ||
+    cohortSchema.$defs?.evidence?.oneOf?.[1]?.allOf?.[0]?.then?.properties?.medianRunDurationMs?.maximum !==
+      600000 ||
+    cohortSchema.$defs?.evidence?.oneOf?.[1]?.allOf?.[0]?.then?.properties?.trailingMwaPasses?.minimum !== 3
+  ) {
+    throw new Error("Packed cohort schema does not preserve the claim-limited contract.");
+  }
   const expectedDocuments = [
+    "docs/cohort-verification.md",
     "docs/phase-1.md",
     "docs/phase-2.md",
     "docs/physical-device.md",
@@ -147,6 +177,7 @@ try {
     if (!installedFiles.includes(template)) throw new Error("Packed template is missing " + template + ".");
   }
   const expectedSchemas = [
+    "schemas/launchrig-cohort-verification.schema.json",
     "schemas/launchrig-pilot-evidence-v1.schema.json",
     "schemas/launchrig-pilot-evidence-v2.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
@@ -228,6 +259,9 @@ try {
   }
   if (!help.stdout.includes("launchrig pilot check --pilot ID")) {
     throw new Error("Installed CLI help is missing the publisher pilot preflight.");
+  }
+  if (!help.stdout.includes("launchrig cohort verify FILE...")) {
+    throw new Error("Installed CLI help is missing the Phase 2B cohort verifier.");
   }
 
   await mkdir(publisherDirectory, { recursive: true });

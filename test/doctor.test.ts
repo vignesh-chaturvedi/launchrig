@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { doctor } from "../src/commands/doctor.js";
+import { doctor, inspectMaestroVersion } from "../src/commands/doctor.js";
 
 const MULTI_DEVICE_ADB = `#!/usr/bin/env node
 const args = process.argv.slice(2);
@@ -54,6 +54,19 @@ const READY_MAESTRO = `#!/usr/bin/env node
 if (process.argv[2] === "--version") console.log("2.8.0");
 else process.exitCode = 1;
 `;
+
+test("Maestro version inspection enforces the stable Phase 2 minimum", () => {
+  assert.deepEqual(inspectMaestroVersion("2.7.9"), { version: "2.7.9", supported: false });
+  assert.deepEqual(inspectMaestroVersion("2.8.0"), { version: "2.8.0", supported: true });
+  assert.deepEqual(inspectMaestroVersion("Maestro CLI v2.9.3"), { version: "2.9.3", supported: true });
+  assert.deepEqual(inspectMaestroVersion("2.8.0-rc.1"), { version: "2.8.0-rc.1", supported: false });
+  assert.deepEqual(inspectMaestroVersion("dependency 9.9.9 loaded\nMaestro 2.7.9"), {
+    version: "2.7.9",
+    supported: false,
+  });
+  assert.equal(inspectMaestroVersion("9.9.9\nMaestro 2.7.9"), null);
+  assert.equal(inspectMaestroVersion("available"), null);
+});
 
 async function writeDoctorConfig(directory: string): Promise<string> {
   await writeFile(
@@ -142,6 +155,25 @@ test("strict doctor invokes Maestro and verifies installed app and wallet hashes
     assert.equal(output.packages.find((entry) => entry.role === "app")?.installedSha256, "a".repeat(64));
     assert.equal(output.packages.find((entry) => entry.role === "wallet")?.installedSha256, expectedWalletSha256);
     assert.doesNotMatch(JSON.stringify(output), /PHONE-PREFLIGHT-1234/);
+
+    await writeFile(
+      maestroPath,
+      '#!/usr/bin/env node\nif (process.argv[2] === "--version") console.log("2.7.9");\nelse process.exitCode = 1;\n',
+      "utf8",
+    );
+    await chmod(maestroPath, 0o755);
+    const oldMaestro = await doctor({
+      configPath,
+      adbPath,
+      maestroPath,
+      verifyInstalledArtifactHashes: true,
+      env: { PATH: process.env.PATH ?? "" },
+    });
+    assert.equal(oldMaestro.ok, false);
+    assert.ok(oldMaestro.issues.some((issue) => issue.includes("supported Phase 2 baseline")));
+
+    await writeFile(maestroPath, READY_MAESTRO, "utf8");
+    await chmod(maestroPath, 0o755);
 
     await writeFile(adbPath, readyAdb("c".repeat(64)), "utf8");
     await chmod(adbPath, 0o755);

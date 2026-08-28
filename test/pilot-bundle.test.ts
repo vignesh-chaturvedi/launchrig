@@ -30,6 +30,7 @@ interface BundleManifest {
 interface BundleLibrary {
   collectPayloadEntries(directory: string): Promise<PayloadEntry[]>;
   createPublisherManifest(input: {
+    profile?: string;
     launchRigVersion: string;
     gitCommit: string;
     lockfileSha256: string;
@@ -56,6 +57,8 @@ const bundleVerifier = (await import(
 
 const VERSION = "0.1.0";
 const ARCHIVE = "launchrig-" + VERSION + ".tgz";
+const BUNDLE_PROFILE_V1 = "phase-2a-publisher-rc-v1";
+const BUNDLE_PROFILE_V2 = "phase-2b-publisher-rc-v2";
 const REQUIRED_PAYLOADS = [
   "README.md",
   "docs/publisher-pilot-quickstart.md",
@@ -72,7 +75,7 @@ const REQUIRED_PAYLOADS = [
   "templates/publisher-intake.md",
   "templates/sharing-review.md",
 ];
-const PACKED_DOCUMENTS = [
+const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
   "docs/flows/mwa-sign-message.md",
@@ -84,7 +87,28 @@ const PACKED_DOCUMENTS = [
   "docs/publisher-pilot-quickstart.md",
   "docs/supported-environment.md",
 ];
-const PACKED_SCHEMAS = [
+const PACKED_DOCUMENTS_V2 = [
+  "docs/cohort-verification.md",
+  "docs/flows/mwa-authorize.md",
+  "docs/flows/mwa-reject.md",
+  "docs/flows/mwa-sign-message.md",
+  "docs/flows/mwa-siws.md",
+  "docs/phase-1.md",
+  "docs/phase-2.md",
+  "docs/physical-device.md",
+  "docs/publisher-bundle-readme.md",
+  "docs/publisher-pilot-quickstart.md",
+  "docs/supported-environment.md",
+];
+const PACKED_SCHEMAS_V1 = [
+  "schemas/launchrig-pilot-evidence-v1.schema.json",
+  "schemas/launchrig-pilot-evidence-v2.schema.json",
+  "schemas/launchrig-pilot-evidence.schema.json",
+  "schemas/launchrig-publisher-bundle.schema.json",
+  "schemas/launchrig.schema.json",
+];
+const PACKED_SCHEMAS_V2 = [
+  "schemas/launchrig-cohort-verification.schema.json",
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
   "schemas/launchrig-pilot-evidence.schema.json",
@@ -143,7 +167,12 @@ function collectPinnedYamlFiles(directory: string, prefix = ""): Map<string, Buf
 
 const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.cwd(), "node_modules", "yaml")));
 
-function createTestPackageArchive(extraPaths: string[] = []): Buffer {
+function createTestPackageArchive(
+  extraPaths: string[] = [],
+  profile = BUNDLE_PROFILE_V2,
+): Buffer {
+  const packedDocuments = profile === BUNDLE_PROFILE_V1 ? PACKED_DOCUMENTS_V1 : PACKED_DOCUMENTS_V2;
+  const packedSchemas = profile === BUNDLE_PROFILE_V1 ? PACKED_SCHEMAS_V1 : PACKED_SCHEMAS_V2;
   const packageMetadata = {
     name: "launchrig",
     version: VERSION,
@@ -159,8 +188,8 @@ function createTestPackageArchive(extraPaths: string[] = []): Buffer {
     "package/dist/src/fixtures/matrix.js",
     "package/package.json",
     ...[...PINNED_YAML_FILES.keys()].map((entry) => "package/dist/node_modules/yaml/" + entry),
-    ...PACKED_DOCUMENTS.map((entry) => "package/" + entry),
-    ...PACKED_SCHEMAS.map((entry) => "package/" + entry),
+    ...packedDocuments.map((entry) => "package/" + entry),
+    ...packedSchemas.map((entry) => "package/" + entry),
     ...PACKED_TEMPLATES.map((entry) => "package/" + entry),
     ...extraPaths,
   ].sort();
@@ -190,6 +219,7 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
+  profile = BUNDLE_PROFILE_V2,
 ): Promise<BundleManifest> {
   for (const relativePath of [...REQUIRED_PAYLOADS, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
@@ -198,6 +228,7 @@ async function writeSyntheticBundle(
   }
   const files = await bundleLibrary.collectPayloadEntries(directory);
   const manifest = bundleLibrary.createPublisherManifest({
+    profile,
     launchRigVersion: VERSION,
     gitCommit: "a".repeat(40),
     lockfileSha256: "b".repeat(64),
@@ -245,28 +276,32 @@ test("pilot bundle output refuses relative, existing, and symlink-parent paths",
 });
 
 test("publisher bundle verifier accepts the strict self-limited handoff contract", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
-  try {
-    const expected = await writeSyntheticBundle(directory);
-    const verified = await bundleVerifier.verifyPublisherBundle(directory);
-    assert.equal(verified.bundleId, expected.bundleId);
-    assert.equal(verified.package.sha256, expected.package.sha256);
-    assert.equal(verified.consumerRehearsal.status, "passed");
-    assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
-    assert.deepEqual(verified.sourceVerification, {
-      status: "passed",
-      checks: [
-        "package-manager-version",
-        "frozen-offline-dependency-restore",
-        "typecheck",
-        "test-suite",
-        "package-smoke",
-      ],
-    });
-    assert.ok(Object.values(verified.claims).every((claim) => claim === "not-established"));
-    assert.equal(verified.grantReady, false);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
+  for (const profile of [BUNDLE_PROFILE_V1, BUNDLE_PROFILE_V2]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
+    try {
+      const archive = createTestPackageArchive([], profile);
+      const expected = await writeSyntheticBundle(directory, [], archive, profile);
+      const verified = await bundleVerifier.verifyPublisherBundle(directory);
+      assert.equal(verified.profile, profile);
+      assert.equal(verified.bundleId, expected.bundleId);
+      assert.equal(verified.package.sha256, expected.package.sha256);
+      assert.equal(verified.consumerRehearsal.status, "passed");
+      assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
+      assert.deepEqual(verified.sourceVerification, {
+        status: "passed",
+        checks: [
+          "package-manager-version",
+          "frozen-offline-dependency-restore",
+          "typecheck",
+          "test-suite",
+          "package-smoke",
+        ],
+      });
+      assert.ok(Object.values(verified.claims).every((claim) => claim === "not-established"));
+      assert.equal(verified.grantReady, false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 });
 
@@ -353,7 +388,7 @@ test("publisher bundle verifier rejects private files even when inventoried", as
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-private-"));
   try {
     await writeSyntheticBundle(directory, [".launchrig/pilots/private-evidence.json"]);
-    await assert.rejects(() => bundleVerifier.verifyPublisherBundle(directory), /exact Phase 2A profile allowlist/);
+    await assert.rejects(() => bundleVerifier.verifyPublisherBundle(directory), /exact Phase 2 publisher profile allowlist/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
