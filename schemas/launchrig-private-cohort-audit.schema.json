@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-cohort-audit.schema.json",
+  "title": "LaunchRig private cohort register audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "register",
+    "entries",
+    "defects",
+    "summary",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-cohort-register-audit" },
+    "profile": { "const": "phase-2c-publisher-governance-v1" },
+    "register": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fileSha256",
+        "contentSha256",
+        "revision",
+        "integrityRecorded",
+        "privacyShapeValid",
+        "structuralConsistencyValid"
+      ],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "contentSha256": { "$ref": "#/$defs/hash" },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "integrityRecorded": { "type": "boolean" },
+        "privacyShapeValid": { "const": true },
+        "structuralConsistencyValid": { "const": true }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "defects": {
+      "type": "array",
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/defect" }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateRecords",
+        "interestRecorded",
+        "activeConsentRecorded",
+        "completedSessionsRecorded",
+        "sharingApprovedRecorded",
+        "recordedIncludedCandidates",
+        "suppliedEvidenceFiles",
+        "matchedEvidenceBindings",
+        "recomputedQualifiedV2Bindings",
+        "recordedIncludedWithQualifiedV2",
+        "distinctRecordedPublishersForQualifiedIncluded",
+        "distinctRecordedProjectsForQualifiedIncluded",
+        "requiredPublisherProjects",
+        "recordedGovernanceAndTechnicalThresholdMet",
+        "defectRecords",
+        "recordedCrossProjectDefectReviews",
+        "recordedCrossProjectDefectReviewsWithQualifiedBindings"
+      ],
+      "properties": {
+        "candidateRecords": { "$ref": "#/$defs/count" },
+        "interestRecorded": { "$ref": "#/$defs/count" },
+        "activeConsentRecorded": { "$ref": "#/$defs/count" },
+        "completedSessionsRecorded": { "$ref": "#/$defs/count" },
+        "sharingApprovedRecorded": { "$ref": "#/$defs/count" },
+        "recordedIncludedCandidates": { "$ref": "#/$defs/count" },
+        "suppliedEvidenceFiles": { "$ref": "#/$defs/count" },
+        "matchedEvidenceBindings": { "$ref": "#/$defs/count" },
+        "recomputedQualifiedV2Bindings": { "$ref": "#/$defs/count" },
+        "recordedIncludedWithQualifiedV2": { "$ref": "#/$defs/count" },
+        "distinctRecordedPublishersForQualifiedIncluded": { "$ref": "#/$defs/count" },
+        "distinctRecordedProjectsForQualifiedIncluded": { "$ref": "#/$defs/count" },
+        "requiredPublisherProjects": { "const": 3 },
+        "recordedGovernanceAndTechnicalThresholdMet": { "type": "boolean" },
+        "defectRecords": { "$ref": "#/$defs/count" },
+        "recordedCrossProjectDefectReviews": { "$ref": "#/$defs/count" },
+        "recordedCrossProjectDefectReviewsWithQualifiedBindings": { "$ref": "#/$defs/count" }
+      }
+    },
+    "externalGrantGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "publisherIdentity",
+        "publisherAuthority",
+        "publisherConsent",
+        "publisherIndependence",
+        "confirmedDefectAcrossTwoProjects",
+        "seekerAttestation",
+        "publicRelease"
+      ],
+      "properties": {
+        "status": { "const": "not-established" },
+        "publisherIdentity": { "const": "not-established" },
+        "publisherAuthority": { "const": "not-established" },
+        "publisherConsent": { "const": "not-established" },
+        "publisherIndependence": { "const": "not-established" },
+        "confirmedDefectAcrossTwoProjects": { "const": "not-established" },
+        "seekerAttestation": { "const": "not-established" },
+        "publicRelease": { "const": "not-established" }
+      }
+    },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "The audit verifies internal consistency of private operator-recorded metadata and supplied self-recorded evidence only.",
+        "Opaque references and digests do not authenticate people, organizations, projects, authority, consent, or independence.",
+        "Technical qualification is recomputed from self-recorded evidence fields and is not an external attestation.",
+        "Relationship truth, defect causality, Seeker hardware, and public-release readiness still require permissioned human evidence.",
+        "File ownership and mode checks do not prove ACL, backup, sync, or cloud-storage privacy.",
+        "The audit does not grant publication permission or grant readiness."
+      ]
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "count": { "type": "integer", "minimum": 0, "maximum": 25 },
+    "entryBlocker": {
+      "enum": [
+        "recruitment-not-interest-recorded",
+        "intake-not-sufficient",
+        "independence-not-eligible",
+        "relationship-disclosure-required",
+        "consent-not-active",
+        "consent-not-current",
+        "session-not-completed",
+        "session-binding-missing",
+        "evidence-binding-missing",
+        "evidence-not-supplied",
+        "evidence-v1-not-recomputable",
+        "evidence-v2-not-qualified",
+        "sharing-not-approved",
+        "closeout-not-complete",
+        "count-decision-not-include",
+        "count-decision-metadata-incomplete",
+        "governance-metadata-incomplete",
+        "lifecycle-date-inconsistent",
+        "duplicate-included-publisher",
+        "duplicate-included-project",
+        "withdrawal-recorded"
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "recordedCountDecision", "governanceStatus", "evidenceStatus", "blockers"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1, "maximum": 25 },
+        "recordedCountDecision": {
+          "enum": ["not-reviewed", "operator-recorded-include", "operator-recorded-exclude", "operator-recorded-hold"]
+        },
+        "governanceStatus": { "enum": ["recorded-ready", "recorded-blocked", "recorded-not-selected"] },
+        "evidenceStatus": {
+          "enum": [
+            "not-bound",
+            "not-supplied",
+            "matched-v1-not-recomputable",
+            "matched-v2-qualified",
+            "matched-v2-not-qualified"
+          ]
+        },
+        "blockers": {
+          "type": "array",
+          "maxItems": 21,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entryBlocker" }
+        }
+      }
+    },
+    "defectBlocker": {
+      "enum": [
+        "defect-decision-metadata-incomplete",
+        "defect-reproduction-insufficient",
+        "defect-reproduction-candidate-not-included",
+        "defect-reproduction-evidence-not-qualified",
+        "defect-reproduction-sharing-not-approved",
+        "defect-reproduction-not-independent",
+        "defect-withdrawal-recorded"
+      ]
+    },
+    "defect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "recordedStatus", "structuralStatus", "qualifiedReproductionBindings", "blockers"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1, "maximum": 25 },
+        "recordedStatus": {
+          "enum": [
+            "suspected",
+            "operator-recorded-one-project-reproduction",
+            "operator-recorded-cross-project-reproduction",
+            "operator-recorded-not-a-defect",
+            "operator-recorded-withdrawn"
+          ]
+        },
+        "structuralStatus": { "enum": ["consistent", "blocked"] },
+        "qualifiedReproductionBindings": { "$ref": "#/$defs/count" },
+        "blockers": {
+          "type": "array",
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/defectBlocker" }
+        }
+      }
+    }
+  }
+}

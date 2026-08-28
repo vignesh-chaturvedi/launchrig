@@ -344,6 +344,25 @@ test("published schemas stay synchronized with lifecycle and privacy rules", asy
   for (const claim of Object.values(pilotV2Schema.$defs.claims.properties) as Array<Record<string, unknown>>) {
     assert.equal(claim.const, "not-established");
   }
+
+  const privateRegisterSchema = JSON.parse(
+    await readFile(path.join(process.cwd(), "schemas", "launchrig-private-cohort-register.schema.json"), "utf8"),
+  ) as Record<string, any>;
+  const privateAuditSchema = JSON.parse(
+    await readFile(path.join(process.cwd(), "schemas", "launchrig-private-cohort-audit.schema.json"), "utf8"),
+  ) as Record<string, any>;
+  assert.equal(privateRegisterSchema.additionalProperties, false);
+  assert.equal(privateRegisterSchema.properties.profile.const, "phase-2c-publisher-governance-v1");
+  assert.equal(privateRegisterSchema.properties.privacyProfile.const, "opaque-refs-digests-dates-v1");
+  assert.equal(privateRegisterSchema.properties.candidates.maxItems, 25);
+  assert.equal(privateRegisterSchema.$defs.candidate.additionalProperties, false);
+  assert.equal(privateRegisterSchema.$defs.evidenceBinding.additionalProperties, false);
+  assert.deepEqual(privateRegisterSchema.$defs.evidenceBinding.properties.schemaVersion.enum, [1, 2]);
+  assert.equal(privateAuditSchema.additionalProperties, false);
+  assert.equal(privateAuditSchema.properties.profile.const, "phase-2c-publisher-governance-v1");
+  assert.equal(privateAuditSchema.properties.externalGrantGate.properties.status.const, "not-established");
+  assert.equal(privateAuditSchema.properties.grantReady.const, false);
+  assert.equal(privateAuditSchema.properties.entries.maxItems, 25);
 });
 
 test("config caps scenario count at the pilot evidence limit", () => {

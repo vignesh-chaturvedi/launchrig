@@ -148,6 +148,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     if (installedPackage.private !== true) throw new Error("Packed LaunchRig package must remain private.");
     for (const relativePath of [
       "dist/src/cli.js",
+      "docs/cohort-audit.md",
       "docs/cohort-verification.md",
       "docs/publisher-pilot-quickstart.md",
       "docs/supported-environment.md",
@@ -157,6 +158,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "docs/flows/mwa-siws.md",
       "schemas/launchrig-publisher-bundle.schema.json",
       "schemas/launchrig-cohort-verification.schema.json",
+      "schemas/launchrig-private-cohort-audit.schema.json",
+      "schemas/launchrig-private-cohort-register.schema.json",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
     ]) {
@@ -176,6 +179,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "launchrig pilot check --pilot ID",
       "launchrig pilot verify FILE",
       "launchrig cohort verify FILE...",
+      "launchrig cohort audit REGISTER [EVIDENCE...]",
     ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
     }

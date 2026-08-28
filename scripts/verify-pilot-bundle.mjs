@@ -43,6 +43,7 @@ const MAX_ARCHIVE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_ARCHIVE_FILES = 1000;
 const BUNDLE_PROFILE_V1 = "phase-2a-publisher-rc-v1";
 const BUNDLE_PROFILE_V2 = "phase-2b-publisher-rc-v2";
+const BUNDLE_PROFILE_V3 = "phase-2c-publisher-rc-v3";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -56,6 +57,20 @@ const PACKED_DOCUMENTS_V1 = [
   "docs/supported-environment.md",
 ];
 const PACKED_DOCUMENTS_V2 = [
+  "docs/cohort-verification.md",
+  "docs/flows/mwa-authorize.md",
+  "docs/flows/mwa-reject.md",
+  "docs/flows/mwa-sign-message.md",
+  "docs/flows/mwa-siws.md",
+  "docs/phase-1.md",
+  "docs/phase-2.md",
+  "docs/physical-device.md",
+  "docs/publisher-bundle-readme.md",
+  "docs/publisher-pilot-quickstart.md",
+  "docs/supported-environment.md",
+];
+const PACKED_DOCUMENTS_V3 = [
+  "docs/cohort-audit.md",
   "docs/cohort-verification.md",
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -83,6 +98,16 @@ const PACKED_SCHEMAS_V2 = [
   "schemas/launchrig-publisher-bundle.schema.json",
   "schemas/launchrig.schema.json",
 ];
+const PACKED_SCHEMAS_V3 = [
+  "schemas/launchrig-cohort-verification.schema.json",
+  "schemas/launchrig-pilot-evidence-v1.schema.json",
+  "schemas/launchrig-pilot-evidence-v2.schema.json",
+  "schemas/launchrig-pilot-evidence.schema.json",
+  "schemas/launchrig-private-cohort-audit.schema.json",
+  "schemas/launchrig-private-cohort-register.schema.json",
+  "schemas/launchrig-publisher-bundle.schema.json",
+  "schemas/launchrig.schema.json",
+];
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
@@ -97,6 +122,9 @@ function packedInventory(profile) {
   }
   if (profile === BUNDLE_PROFILE_V2) {
     return { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2 };
+  }
+  if (profile === BUNDLE_PROFILE_V3) {
+    return { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3 };
   }
   throw new Error("Unsupported bundle manifest.");
 }
@@ -459,7 +487,7 @@ function validateManifest(manifest) {
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
-    ![BUNDLE_PROFILE_V1, BUNDLE_PROFILE_V2].includes(manifest.profile)
+    ![BUNDLE_PROFILE_V1, BUNDLE_PROFILE_V2, BUNDLE_PROFILE_V3].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");
   }

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,6 +106,12 @@ try {
   if (!installedFiles.includes("schemas/launchrig-cohort-verification.schema.json")) {
     throw new Error("Packed cohort verification schema is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-private-cohort-register.schema.json")) {
+    throw new Error("Packed private cohort register schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-private-cohort-audit.schema.json")) {
+    throw new Error("Packed private cohort audit schema is missing.");
+  }
   const publisherBundleSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-publisher-bundle.schema.json"), "utf8"),
   );
@@ -114,7 +120,11 @@ try {
     publisherBundleSchema.additionalProperties !== false ||
     publisherBundleSchema.properties?.kind?.const !== "launchrig-publisher-bundle" ||
     JSON.stringify(publisherBundleSchema.properties?.profile?.enum) !==
-      JSON.stringify(["phase-2a-publisher-rc-v1", "phase-2b-publisher-rc-v2"]) ||
+      JSON.stringify([
+        "phase-2a-publisher-rc-v1",
+        "phase-2b-publisher-rc-v2",
+        "phase-2c-publisher-rc-v3",
+      ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
@@ -150,7 +160,35 @@ try {
   ) {
     throw new Error("Packed cohort schema does not preserve the claim-limited contract.");
   }
+  const privateRegisterSchema = JSON.parse(
+    await readFile(path.join(installedDirectory, "schemas", "launchrig-private-cohort-register.schema.json"), "utf8"),
+  );
+  const privateAuditSchema = JSON.parse(
+    await readFile(path.join(installedDirectory, "schemas", "launchrig-private-cohort-audit.schema.json"), "utf8"),
+  );
+  if (
+    privateRegisterSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-private-cohort-register.schema.json" ||
+    privateRegisterSchema.additionalProperties !== false ||
+    privateRegisterSchema.properties?.privacyProfile?.const !== "opaque-refs-digests-dates-v1" ||
+    privateRegisterSchema.properties?.candidates?.maxItems !== 25 ||
+    privateRegisterSchema.$defs?.candidate?.additionalProperties !== false ||
+    privateRegisterSchema.$defs?.evidenceBinding?.properties?.schemaVersion?.enum?.join(",") !== "1,2"
+  ) {
+    throw new Error("Packed private cohort register schema does not preserve the privacy contract.");
+  }
+  if (
+    privateAuditSchema.$id !== "https://launchrig.dev/schemas/launchrig-private-cohort-audit.schema.json" ||
+    privateAuditSchema.additionalProperties !== false ||
+    privateAuditSchema.properties?.kind?.const !== "launchrig-private-cohort-register-audit" ||
+    privateAuditSchema.properties?.grantReady?.const !== false ||
+    privateAuditSchema.properties?.externalGrantGate?.properties?.status?.const !== "not-established" ||
+    privateAuditSchema.properties?.entries?.maxItems !== 25
+  ) {
+    throw new Error("Packed private cohort audit schema does not preserve the claim-limited contract.");
+  }
   const expectedDocuments = [
+    "docs/cohort-audit.md",
     "docs/cohort-verification.md",
     "docs/phase-1.md",
     "docs/phase-2.md",
@@ -181,6 +219,8 @@ try {
     "schemas/launchrig-pilot-evidence-v1.schema.json",
     "schemas/launchrig-pilot-evidence-v2.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
+    "schemas/launchrig-private-cohort-audit.schema.json",
+    "schemas/launchrig-private-cohort-register.schema.json",
     "schemas/launchrig-publisher-bundle.schema.json",
     "schemas/launchrig.schema.json",
   ];
@@ -262,6 +302,47 @@ try {
   }
   if (!help.stdout.includes("launchrig cohort verify FILE...")) {
     throw new Error("Installed CLI help is missing the Phase 2B cohort verifier.");
+  }
+  if (!help.stdout.includes("launchrig cohort audit REGISTER [EVIDENCE...]")) {
+    throw new Error("Installed CLI help is missing the Phase 2C private cohort audit.");
+  }
+
+  const privateRegisterCore = {
+    schemaVersion: 1,
+    kind: "launchrig-private-cohort-register",
+    profile: "phase-2c-publisher-governance-v1",
+    privacyProfile: "opaque-refs-digests-dates-v1",
+    registerRef: "urn:launchrig:register:123e4567-e89b-42d3-a456-426614174000",
+    revision: 1,
+    asOfDate: "2026-08-28",
+    operatorRef: "urn:launchrig:operator:223e4567-e89b-42d3-a456-426614174000",
+    candidates: [],
+    defects: [],
+  };
+  const privateRegisterPath = path.join(temporaryDirectory, "private-cohort-register.json");
+  await writeFile(
+    privateRegisterPath,
+    JSON.stringify(
+      { ...privateRegisterCore, integritySha256: sha256Value(privateRegisterCore) },
+      null,
+      2,
+    ) + "\n",
+    { encoding: "utf8", mode: 0o600 },
+  );
+  await chmod(privateRegisterPath, 0o600);
+  const privateAudit = JSON.parse(
+    (await run(executable, ["cohort", "audit", privateRegisterPath, "--json"], { cwd: installDirectory })).stdout,
+  );
+  if (
+    privateAudit.kind !== "launchrig-private-cohort-register-audit" ||
+    privateAudit.register?.integrityRecorded !== true ||
+    privateAudit.summary?.candidateRecords !== 0 ||
+    privateAudit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+    privateAudit.externalGrantGate?.status !== "not-established" ||
+    privateAudit.grantReady !== false ||
+    JSON.stringify(privateAudit).includes(privateRegisterPath)
+  ) {
+    throw new Error("Installed private cohort audit did not preserve its privacy and claim limits.");
   }
 
   await mkdir(publisherDirectory, { recursive: true });

@@ -26,7 +26,8 @@
     "profile": {
       "enum": [
         "phase-2a-publisher-rc-v1",
-        "phase-2b-publisher-rc-v2"
+        "phase-2b-publisher-rc-v2",
+        "phase-2c-publisher-rc-v3"
       ]
     },
     "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },

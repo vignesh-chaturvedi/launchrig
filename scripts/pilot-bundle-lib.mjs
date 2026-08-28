@@ -12,10 +12,11 @@ import { createHash } from "node:crypto";
 
 export const BUNDLE_SCHEMA_VERSION = 1;
 export const BUNDLE_KIND = "launchrig-publisher-bundle";
-export const BUNDLE_PROFILE = "phase-2b-publisher-rc-v2";
+export const BUNDLE_PROFILE = "phase-2c-publisher-rc-v3";
 const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-2a-publisher-rc-v1",
-  BUNDLE_PROFILE,
+  "phase-2b-publisher-rc-v2",
+  "phase-2c-publisher-rc-v3",
 ]);
 export const REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",

@@ -27,6 +27,11 @@ import {
   verifyCohortEvidence,
   type CohortVerificationOutput,
 } from "./pilot/cohort.js";
+import {
+  auditPrivateCohortRegister,
+  CohortRegisterError,
+  type CohortRegisterAuditOutput,
+} from "./pilot/cohort-register.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
 
@@ -44,6 +49,7 @@ export interface CliDependencies {
   exportPilotEvidence?: typeof exportPilotEvidence;
   verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
   verifyCohortEvidence?: typeof verifyCohortEvidence;
+  auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
 }
 
 const defaultIO: CliIO = {
@@ -67,6 +73,7 @@ const HELP = [
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
   "  launchrig pilot verify FILE [--json]",
   "  launchrig cohort verify FILE... [--json]",
+  "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -167,6 +174,59 @@ function humanCohortVerification(value: CohortVerificationOutput): string {
       (value.summary.selfRecordedTechnicalThresholdMet ? "met" : "not met"),
     "three independent publishers: not established",
     "publisher consent: not established",
+    "confirmed defect across two projects: not established",
+    "Seeker attestation: not established",
+    "public release: not established",
+    "external grant gate: not established",
+    "grant ready: no",
+  );
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  return lines.join("\n");
+}
+
+function humanCohortRegisterAudit(value: CohortRegisterAuditOutput): string {
+  const lines = [
+    "Private cohort register audit: internally consistent",
+    "register content SHA-256: " + value.register.contentSha256,
+    "register integrity recorded: " + (value.register.integrityRecorded ? "yes" : "no"),
+    "candidate records: " + value.summary.candidateRecords,
+    "recorded included candidates: " + value.summary.recordedIncludedCandidates,
+    "included candidates with recomputed qualified evidence v2: " +
+      value.summary.recordedIncludedWithQualifiedV2 +
+      "/" +
+      value.summary.requiredPublisherProjects,
+    "distinct recorded publishers for qualified included candidates: " +
+      value.summary.distinctRecordedPublishersForQualifiedIncluded,
+    "distinct recorded projects for qualified included candidates: " +
+      value.summary.distinctRecordedProjectsForQualifiedIncluded,
+  ];
+  for (const entry of value.entries) {
+    lines.push(
+      "candidate " +
+        entry.index +
+        ": " +
+        entry.governanceStatus +
+        ", " +
+        entry.evidenceStatus +
+        (entry.blockers.length > 0 ? ", blockers " + entry.blockers.join(", ") : ""),
+    );
+  }
+  for (const defect of value.defects) {
+    lines.push(
+      "defect " +
+        defect.index +
+        ": " +
+        defect.structuralStatus +
+        ", qualified reproduction bindings " +
+        defect.qualifiedReproductionBindings +
+        (defect.blockers.length > 0 ? ", blockers " + defect.blockers.join(", ") : ""),
+    );
+  }
+  lines.push(
+    "recorded governance and technical threshold: " +
+      (value.summary.recordedGovernanceAndTechnicalThresholdMet ? "met" : "not met"),
+    "publisher identity and authority: not established",
+    "publisher consent and independence: not established",
     "confirmed defect across two projects: not established",
     "Seeker attestation: not established",
     "public release: not established",
@@ -318,19 +378,29 @@ export async function runCli(
 
     if (command === "cohort") {
       const subcommand = parsed.positionals[1];
-      if (subcommand !== "verify") {
-        throw new CohortError("cohort command must be verify");
-      }
       const rejectedOption = unsupportedOption(
         argv,
         new Set(["--json", "--help", "-h", "--version", "-v"]),
       );
-      if (rejectedOption) throw new CohortError("cohort verify does not accept " + rejectedOption);
-      const evidencePaths = parsed.positionals.slice(2);
-      const verifyCohort = dependencies.verifyCohortEvidence ?? verifyCohortEvidence;
-      const output = await verifyCohort(evidencePaths);
-      io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortVerification(output));
-      return 0;
+      if (subcommand === "verify") {
+        if (rejectedOption) throw new CohortError("cohort verify does not accept " + rejectedOption);
+        const evidencePaths = parsed.positionals.slice(2);
+        const verifyCohort = dependencies.verifyCohortEvidence ?? verifyCohortEvidence;
+        const output = await verifyCohort(evidencePaths);
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortVerification(output));
+        return 0;
+      }
+      if (subcommand === "audit") {
+        if (rejectedOption) throw new CohortRegisterError("cohort audit does not accept " + rejectedOption);
+        const registerPath = parsed.positionals[2];
+        if (!registerPath) throw new CohortRegisterError("cohort audit requires a private register file");
+        const evidencePaths = parsed.positionals.slice(3);
+        const auditRegister = dependencies.auditPrivateCohortRegister ?? auditPrivateCohortRegister;
+        const output = await auditRegister(registerPath, evidencePaths);
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortRegisterAudit(output));
+        return 0;
+      }
+      throw new CohortError("cohort command must be verify or audit");
     }
 
     if (command === "pilot") {
@@ -525,6 +595,10 @@ export async function runCli(
     }
     if (error instanceof CohortError) {
       io.error("Cohort error: " + error.message);
+      return error.exitCode;
+    }
+    if (error instanceof CohortRegisterError) {
+      io.error("Cohort register error: " + error.message);
       return error.exitCode;
     }
     io.error(error instanceof Error ? error.message : String(error));

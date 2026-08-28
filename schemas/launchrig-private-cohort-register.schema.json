@@ -1,0 +1,418 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-cohort-register.schema.json",
+  "title": "LaunchRig private cohort register",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "privacyProfile",
+    "registerRef",
+    "revision",
+    "asOfDate",
+    "operatorRef",
+    "candidates",
+    "defects",
+    "integritySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-cohort-register" },
+    "profile": { "const": "phase-2c-publisher-governance-v1" },
+    "privacyProfile": { "const": "opaque-refs-digests-dates-v1" },
+    "registerRef": { "$ref": "#/$defs/registerRef" },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "asOfDate": { "$ref": "#/$defs/date" },
+    "operatorRef": { "$ref": "#/$defs/operatorRef" },
+    "candidates": {
+      "type": "array",
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "defects": {
+      "type": "array",
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/defect" }
+    },
+    "integritySha256": { "$ref": "#/$defs/nullableHash" }
+  },
+  "$defs": {
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "registerRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:register:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "operatorRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:operator:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "candidateRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:candidate:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "publisherRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:publisher:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "projectRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:project:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "lineageRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:lineage:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "pilotRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:pilot:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "reviewerRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:reviewer:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "defectRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:defect:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "nullableReviewerRef": {
+      "anyOf": [
+        { "$ref": "#/$defs/reviewerRef" },
+        { "type": "null" }
+      ]
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableHash": {
+      "anyOf": [
+        { "$ref": "#/$defs/hash" },
+        { "type": "null" }
+      ]
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "nullableDate": {
+      "anyOf": [
+        { "$ref": "#/$defs/date" },
+        { "type": "null" }
+      ]
+    },
+    "recruitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordSha256", "statusOn"],
+      "properties": {
+        "status": {
+          "enum": ["screening", "invited", "interest-recorded", "declined", "paused", "screened-out"]
+        },
+        "recordSha256": { "$ref": "#/$defs/nullableHash" },
+        "statusOn": { "$ref": "#/$defs/nullableDate" }
+      }
+    },
+    "intakeReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordSha256", "reviewedOn", "reviewerRef"],
+      "properties": {
+        "status": {
+          "enum": ["not-reviewed", "needs-review", "operator-recorded-sufficient", "operator-recorded-insufficient"]
+        },
+        "recordSha256": { "$ref": "#/$defs/nullableHash" },
+        "reviewedOn": { "$ref": "#/$defs/nullableDate" },
+        "reviewerRef": { "$ref": "#/$defs/nullableReviewerRef" }
+      }
+    },
+    "independenceReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordSha256", "reviewedOn", "reviewerRef", "relationshipCodes"],
+      "properties": {
+        "status": {
+          "enum": [
+            "not-reviewed",
+            "needs-review",
+            "operator-recorded-eligible",
+            "operator-recorded-related",
+            "operator-recorded-ineligible"
+          ]
+        },
+        "recordSha256": { "$ref": "#/$defs/nullableHash" },
+        "reviewedOn": { "$ref": "#/$defs/nullableDate" },
+        "reviewerRef": { "$ref": "#/$defs/nullableReviewerRef" },
+        "relationshipCodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 14,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "none-declared",
+              "same-control",
+              "same-project",
+              "agency-client",
+              "shared-repository",
+              "fork",
+              "white-label",
+              "shared-maintainers",
+              "shared-release-operator",
+              "shared-mwa-code",
+              "prior-pilot",
+              "compensated",
+              "prior-relationship",
+              "other-documented"
+            ]
+          },
+          "allOf": [
+            {
+              "if": { "contains": { "const": "none-declared" } },
+              "then": { "maxItems": 1 }
+            }
+          ]
+        }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "recordSha256",
+        "scopeSha256",
+        "effectiveOn",
+        "expiresOn",
+        "withdrawalRecordSha256",
+        "withdrawnOn"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not-requested",
+            "pending",
+            "operator-recorded-active",
+            "operator-recorded-expired",
+            "operator-recorded-withdrawn",
+            "operator-recorded-superseded"
+          ]
+        },
+        "recordSha256": { "$ref": "#/$defs/nullableHash" },
+        "scopeSha256": { "$ref": "#/$defs/nullableHash" },
+        "effectiveOn": { "$ref": "#/$defs/nullableDate" },
+        "expiresOn": { "$ref": "#/$defs/nullableDate" },
+        "withdrawalRecordSha256": { "$ref": "#/$defs/nullableHash" },
+        "withdrawnOn": { "$ref": "#/$defs/nullableDate" }
+      }
+    },
+    "sessionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundleId",
+        "packageSha256",
+        "appBuildSha256",
+        "walletArtifactSha256",
+        "flowReviewSha256",
+        "scopeSha256"
+      ],
+      "properties": {
+        "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "packageSha256": { "$ref": "#/$defs/hash" },
+        "appBuildSha256": { "$ref": "#/$defs/hash" },
+        "walletArtifactSha256": { "$ref": "#/$defs/hash" },
+        "flowReviewSha256": { "$ref": "#/$defs/hash" },
+        "scopeSha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "statusOn", "binding"],
+      "properties": {
+        "status": { "enum": ["not-scheduled", "scheduled", "ready", "completed", "stopped", "cancelled"] },
+        "statusOn": { "$ref": "#/$defs/nullableDate" },
+        "binding": {
+          "anyOf": [
+            { "$ref": "#/$defs/sessionBinding" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "evidenceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceId", "fileSha256", "evidenceSha256", "schemaVersion"],
+      "properties": {
+        "evidenceId": { "$ref": "#/$defs/uuidV4" },
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "evidenceSha256": { "$ref": "#/$defs/hash" },
+        "schemaVersion": { "enum": [1, 2] }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sharingStatus",
+        "binding",
+        "decisionRecordSha256",
+        "decidedOn",
+        "withdrawalRecordSha256",
+        "withdrawnOn"
+      ],
+      "properties": {
+        "sharingStatus": {
+          "enum": [
+            "not-reviewed",
+            "private-only",
+            "operator-recorded-approved",
+            "operator-recorded-denied",
+            "operator-recorded-withdrawn"
+          ]
+        },
+        "binding": {
+          "anyOf": [
+            { "$ref": "#/$defs/evidenceBinding" },
+            { "type": "null" }
+          ]
+        },
+        "decisionRecordSha256": { "$ref": "#/$defs/nullableHash" },
+        "decidedOn": { "$ref": "#/$defs/nullableDate" },
+        "withdrawalRecordSha256": { "$ref": "#/$defs/nullableHash" },
+        "withdrawnOn": { "$ref": "#/$defs/nullableDate" }
+      }
+    },
+    "closeout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordSha256", "completedOn"],
+      "properties": {
+        "status": { "enum": ["not-required", "pending", "operator-recorded-complete"] },
+        "recordSha256": { "$ref": "#/$defs/nullableHash" },
+        "completedOn": { "$ref": "#/$defs/nullableDate" }
+      }
+    },
+    "countDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordSha256", "reviewedOn", "reviewerRef", "reasonCodes"],
+      "properties": {
+        "status": {
+          "enum": ["not-reviewed", "operator-recorded-include", "operator-recorded-exclude", "operator-recorded-hold"]
+        },
+        "recordSha256": { "$ref": "#/$defs/nullableHash" },
+        "reviewedOn": { "$ref": "#/$defs/nullableDate" },
+        "reviewerRef": { "$ref": "#/$defs/nullableReviewerRef" },
+        "reasonCodes": {
+          "type": "array",
+          "maxItems": 14,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "meets-recorded-policy",
+              "authority-unresolved",
+              "consent-inactive",
+              "session-incomplete",
+              "evidence-unavailable",
+              "sharing-not-approved",
+              "related-publisher",
+              "related-project",
+              "lineage-unresolved",
+              "unsafe-or-unsupported",
+              "technical-result-unavailable",
+              "technical-result-not-qualified",
+              "withdrawn",
+              "other-documented"
+            ]
+          }
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateRef",
+        "publisherRef",
+        "projectRef",
+        "lineageRef",
+        "pilotRef",
+        "recruitment",
+        "intakeReview",
+        "independenceReview",
+        "consent",
+        "session",
+        "evidence",
+        "closeout",
+        "countDecision"
+      ],
+      "properties": {
+        "candidateRef": { "$ref": "#/$defs/candidateRef" },
+        "publisherRef": { "$ref": "#/$defs/publisherRef" },
+        "projectRef": { "$ref": "#/$defs/projectRef" },
+        "lineageRef": { "$ref": "#/$defs/lineageRef" },
+        "pilotRef": { "$ref": "#/$defs/pilotRef" },
+        "recruitment": { "$ref": "#/$defs/recruitment" },
+        "intakeReview": { "$ref": "#/$defs/intakeReview" },
+        "independenceReview": { "$ref": "#/$defs/independenceReview" },
+        "consent": { "$ref": "#/$defs/consent" },
+        "session": { "$ref": "#/$defs/session" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "closeout": { "$ref": "#/$defs/closeout" },
+        "countDecision": { "$ref": "#/$defs/countDecision" }
+      }
+    },
+    "defectReproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateRef", "defectRecordSha256", "sharingStatus", "sharingDecisionRecordSha256"],
+      "properties": {
+        "candidateRef": { "$ref": "#/$defs/candidateRef" },
+        "defectRecordSha256": { "$ref": "#/$defs/hash" },
+        "sharingStatus": {
+          "enum": [
+            "not-reviewed",
+            "private-only",
+            "operator-recorded-approved",
+            "operator-recorded-denied",
+            "operator-recorded-withdrawn"
+          ]
+        },
+        "sharingDecisionRecordSha256": { "$ref": "#/$defs/nullableHash" }
+      }
+    },
+    "defect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defectRef", "status", "decisionRecordSha256", "reviewedOn", "reviewerRef", "reproductions"],
+      "properties": {
+        "defectRef": { "$ref": "#/$defs/defectRef" },
+        "status": {
+          "enum": [
+            "suspected",
+            "operator-recorded-one-project-reproduction",
+            "operator-recorded-cross-project-reproduction",
+            "operator-recorded-not-a-defect",
+            "operator-recorded-withdrawn"
+          ]
+        },
+        "decisionRecordSha256": { "$ref": "#/$defs/nullableHash" },
+        "reviewedOn": { "$ref": "#/$defs/nullableDate" },
+        "reviewerRef": { "$ref": "#/$defs/nullableReviewerRef" },
+        "reproductions": {
+          "type": "array",
+          "maxItems": 25,
+          "items": { "$ref": "#/$defs/defectReproduction" }
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { TextDecoder } from "node:util";
@@ -52,6 +53,12 @@ export interface VerifiedPublicPilotEvidence {
   reportedTechnicalTargetsMet: boolean;
   grantReady: false;
   limitations: string[];
+}
+
+export interface BoundVerifiedPublicPilotEvidence extends VerifiedPublicPilotEvidence {
+  fileSha256: string;
+  evidenceSha256: string;
+  fileIdentity: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -598,7 +605,13 @@ function parsePublicEvidence(value: unknown): PublicPilotEvidence {
   throw new PilotError("Public evidence schema identity is invalid");
 }
 
-async function readPublicEvidence(inputPath: string): Promise<unknown> {
+interface ReadPublicEvidence {
+  value: unknown;
+  fileSha256: string;
+  fileIdentity: string;
+}
+
+async function readPublicEvidence(inputPath: string): Promise<ReadPublicEvidence> {
   let handle;
   try {
     const before = await lstat(inputPath, { bigint: true });
@@ -632,12 +645,19 @@ async function readPublicEvidence(inputPath: string): Promise<unknown> {
       bytesRead += result.bytesRead;
     }
     const after = await handle.stat({ bigint: true });
+    const afterPath = await lstat(inputPath, { bigint: true });
     if (
       bytesRead !== expectedSize ||
       after.dev !== opened.dev ||
       after.ino !== opened.ino ||
       after.size !== opened.size ||
-      after.mtimeNs !== opened.mtimeNs
+      after.mtimeNs !== opened.mtimeNs ||
+      afterPath.isSymbolicLink() ||
+      !afterPath.isFile() ||
+      afterPath.dev !== opened.dev ||
+      afterPath.ino !== opened.ino ||
+      afterPath.size !== opened.size ||
+      afterPath.mtimeNs !== opened.mtimeNs
     ) {
       throw new Error("evidence changed while reading");
     }
@@ -655,7 +675,11 @@ async function readPublicEvidence(inputPath: string): Promise<unknown> {
     }
     const document = parseDocument(source, { prettyErrors: false, uniqueKeys: true });
     if (document.errors.length > 0) throw new PilotError("Public evidence must be strict JSON without duplicate keys");
-    return parsed;
+    return {
+      value: parsed,
+      fileSha256: createHash("sha256").update(buffer.subarray(0, expectedSize)).digest("hex"),
+      fileIdentity: opened.dev.toString() + ":" + opened.ino.toString(),
+    };
   } catch (error) {
     if (error instanceof PilotError) throw error;
     throw new PilotError("Public evidence file cannot be read safely", 3);
@@ -664,8 +688,7 @@ async function readPublicEvidence(inputPath: string): Promise<unknown> {
   }
 }
 
-export async function verifyPublicPilotEvidence(inputPath: string): Promise<VerifiedPublicPilotEvidence> {
-  const evidence = parsePublicEvidence(await readPublicEvidence(inputPath));
+function verificationFromEvidence(evidence: PublicPilotEvidence): VerifiedPublicPilotEvidence {
   if (evidence.schemaVersion === 1) {
     return {
       schemaVersion: 1,
@@ -692,4 +715,24 @@ export async function verifyPublicPilotEvidence(inputPath: string): Promise<Veri
     grantReady: false,
     limitations: [...PUBLIC_EVIDENCE_V2_LIMITATIONS],
   };
+}
+
+export async function verifyPublicPilotEvidenceWithBinding(
+  inputPath: string,
+): Promise<BoundVerifiedPublicPilotEvidence> {
+  const read = await readPublicEvidence(inputPath);
+  const evidence = parsePublicEvidence(read.value);
+  return {
+    ...verificationFromEvidence(evidence),
+    fileSha256: read.fileSha256,
+    evidenceSha256: evidence.evidenceSha256,
+    fileIdentity: read.fileIdentity,
+  };
+}
+
+export async function verifyPublicPilotEvidence(inputPath: string): Promise<VerifiedPublicPilotEvidence> {
+  const bound = await verifyPublicPilotEvidenceWithBinding(inputPath);
+  const { fileSha256: _fileSha256, evidenceSha256: _evidenceSha256, fileIdentity: _fileIdentity, ...verified } =
+    bound;
+  return verified;
 }
