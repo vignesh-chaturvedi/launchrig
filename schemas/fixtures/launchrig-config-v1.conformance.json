@@ -1,0 +1,344 @@
+{
+  "schemaVersion": 1,
+  "kind": "launchrig-config-v1-conformance",
+  "configVersion": 1,
+  "status": "pre-award-foundation",
+  "schemaPath": "schemas/launchrig.schema.json",
+  "parityCaseCount": 23,
+  "runtimeExtensionCaseCount": 2,
+  "grantMilestoneComplete": false,
+  "base": {
+    "version": 1,
+    "project": {
+      "name": "Fixture",
+      "packageName": "dev.launchrig.fixture"
+    },
+    "target": {
+      "network": "devnet"
+    },
+    "device": {},
+    "wallet": {
+      "mode": "mock-mwa",
+      "packageName": "com.solana.mwallet"
+    },
+    "scenarios": [],
+    "artifacts": {
+      "directory": "./.launchrig/results"
+    },
+    "privacy": {},
+    "tooling": {}
+  },
+  "cases": [
+    {
+      "id": "valid-minimal-defaults",
+      "classification": "parity",
+      "set": {},
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-project-install-with-apk",
+      "classification": "parity",
+      "set": {
+        "/project/install": true,
+        "/project/apk": "./fixture.apk"
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-wallet-install-with-apk",
+      "classification": "parity",
+      "set": {
+        "/wallet/install": true,
+        "/wallet/apk": "./mock-wallet.apk"
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-reference-wallet-identity",
+      "classification": "parity",
+      "set": {
+        "/wallet/mode": "reference-fakewallet",
+        "/wallet/packageName": "com.solana.mobilewalletadapter.fakewallet"
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-official-fakedapp-testnet",
+      "classification": "parity",
+      "set": {
+        "/project/packageName": "com.solana.mobilewalletadapter.fakedapp",
+        "/target/network": "testnet"
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-real-wallet-default-logcat",
+      "classification": "parity",
+      "set": {
+        "/wallet/mode": "real",
+        "/artifacts/screenshots": "never"
+      },
+      "remove": [
+        "/wallet/packageName"
+      ],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-lower-numeric-boundaries",
+      "classification": "parity",
+      "set": {
+        "/device/minimumApiLevel": 23,
+        "/artifacts/retention": 1,
+        "/privacy/logcatLines": 1,
+        "/scenarios": [
+          {
+            "id": "custom-minimum",
+            "kind": "custom",
+            "name": "Minimum timeout",
+            "flow": "./flow.yaml",
+            "timeoutMs": 1000
+          }
+        ]
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "invalid-unknown-root-key",
+      "classification": "parity",
+      "set": {
+        "/unsupported": true
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-missing-privacy",
+      "classification": "parity",
+      "set": {},
+      "remove": [
+        "/privacy"
+      ],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-mainnet",
+      "classification": "parity",
+      "set": {
+        "/target/network": "mainnet-beta"
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-android-application-id",
+      "classification": "parity",
+      "set": {
+        "/project/packageName": "not-an-app-id"
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-project-install-missing-apk",
+      "classification": "parity",
+      "set": {
+        "/project/install": true
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-project-install-blank-apk",
+      "classification": "parity",
+      "set": {
+        "/project/install": true,
+        "/project/apk": " "
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-project-apk-null",
+      "classification": "parity",
+      "set": {
+        "/project/apk": null
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-wallet-install-missing-apk",
+      "classification": "parity",
+      "set": {
+        "/wallet/install": true
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-mock-wallet-package",
+      "classification": "parity",
+      "set": {
+        "/wallet/packageName": "com.example.wallet"
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-reference-wallet-package",
+      "classification": "parity",
+      "set": {
+        "/wallet/mode": "reference-fakewallet",
+        "/wallet/packageName": "com.solana.mwallet"
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-official-fakedapp-devnet",
+      "classification": "parity",
+      "set": {
+        "/project/packageName": "com.solana.mobilewalletadapter.fakedapp"
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-real-wallet-default-screenshots",
+      "classification": "parity",
+      "set": {
+        "/wallet/mode": "real"
+      },
+      "remove": [
+        "/wallet/packageName"
+      ],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-real-wallet-logcat",
+      "classification": "parity",
+      "set": {
+        "/wallet/mode": "real",
+        "/artifacts/screenshots": "never",
+        "/privacy/includeLogcat": true
+      },
+      "remove": [
+        "/wallet/packageName"
+      ],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-real-wallet-scenario",
+      "classification": "parity",
+      "set": {
+        "/wallet/mode": "real",
+        "/artifacts/screenshots": "never",
+        "/scenarios": [
+          {
+            "id": "custom-real",
+            "kind": "custom",
+            "name": "Real wallet scenario",
+            "flow": "./flow.yaml"
+          }
+        ]
+      },
+      "remove": [
+        "/wallet/packageName"
+      ],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-scenario-kind",
+      "classification": "parity",
+      "set": {
+        "/scenarios": [
+          {
+            "id": "bad-kind",
+            "kind": 42,
+            "name": "Bad kind",
+            "flow": "./flow.yaml"
+          }
+        ]
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "invalid-tooling-adb-null",
+      "classification": "parity",
+      "set": {
+        "/tooling/adb": null
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
+    },
+    {
+      "id": "runtime-extension-duplicate-scenario-id",
+      "classification": "runtime-extension",
+      "set": {
+        "/scenarios": [
+          {
+            "id": "duplicate",
+            "kind": "custom",
+            "name": "First",
+            "flow": "./first.yaml"
+          },
+          {
+            "id": "duplicate",
+            "kind": "custom",
+            "name": "Second",
+            "flow": "./second.yaml"
+          }
+        ]
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": true
+    },
+    {
+      "id": "runtime-extension-invalid-redact-regexp",
+      "classification": "runtime-extension",
+      "set": {
+        "/privacy/redactPatterns": [
+          "["
+        ]
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": true
+    }
+  ],
+  "limitations": [
+    "Portable JSON Schema cannot require uniqueness of one object property across array entries.",
+    "Portable JSON Schema regular-expression assertion behavior is not consistent enough to replace JavaScript runtime compilation."
+  ]
+}

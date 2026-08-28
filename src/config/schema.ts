@@ -1,4 +1,30 @@
 import type { LaunchRigConfig, ScenarioConfig } from "../types.js";
+import {
+  ANDROID_APPLICATION_ID_PATTERN,
+  ARTIFACT_KEYS,
+  CONFIG_NETWORKS,
+  CONFIG_ROOT_KEYS,
+  CONFIG_V1_DEFAULTS,
+  CONFIG_V1_LIMITS,
+  CONFIG_V1_VERSION,
+  DEVICE_KEYS,
+  INSTALLABLE_TEST_WALLET_PACKAGES,
+  INSTALL_POLICIES,
+  MOCK_MWA_PACKAGE,
+  MWA_SCENARIO_KINDS,
+  PRIVACY_KEYS,
+  PROJECT_KEYS,
+  REFERENCE_FAKEDAPP_PACKAGE,
+  REFERENCE_FAKEWALLET_PACKAGE,
+  SCENARIO_ID_PATTERN,
+  SCENARIO_KEYS,
+  SCENARIO_KINDS,
+  SCREENSHOT_MODES,
+  TARGET_KEYS,
+  TOOLING_KEYS,
+  WALLET_KEYS,
+  WALLET_MODES,
+} from "./contract.js";
 
 export class ConfigError extends Error {
   readonly issues: string[];
@@ -39,17 +65,24 @@ function requiredString(record: Record<string, unknown>, key: string, path: stri
     issues.push(path + "." + key + " must be a non-empty string");
     return "";
   }
-  return value.trim();
+  return value;
 }
 
 function optionalString(record: Record<string, unknown>, key: string, path: string, issues: string[]): string | undefined {
   const value = record[key];
-  if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "string") {
-    issues.push(path + "." + key + " must be a string");
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim().length === 0) {
+    issues.push(path + "." + key + " must be a non-empty string when provided");
     return undefined;
   }
-  return value.trim();
+  return value;
+}
+
+function isAllowedString<const Values extends readonly string[]>(
+  value: unknown,
+  allowed: Values,
+): value is Values[number] {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value);
 }
 
 function booleanWithDefault(
@@ -88,13 +121,14 @@ function integerWithDefault(
 
 function installPolicyWithDefault(
   record: Record<string, unknown>,
+  defaultValue: "always" | "if-missing",
   path: string,
   issues: string[],
 ): "always" | "if-missing" {
-  const value = record.installPolicy ?? "always";
-  if (value !== "always" && value !== "if-missing") {
+  const value = record.installPolicy === undefined ? defaultValue : record.installPolicy;
+  if (!isAllowedString(value, INSTALL_POLICIES)) {
     issues.push(path + ".installPolicy must be always or if-missing");
-    return "always";
+    return defaultValue;
   }
   return value;
 }
@@ -104,38 +138,41 @@ function parseScenarios(value: unknown, issues: string[]): ScenarioConfig[] {
     issues.push("scenarios must be an array");
     return [];
   }
-  if (value.length > 50) issues.push("scenarios must contain at most 50 entries");
+  if (value.length > CONFIG_V1_LIMITS.scenarioCount.maximum) {
+    issues.push("scenarios must contain at most " + CONFIG_V1_LIMITS.scenarioCount.maximum + " entries");
+  }
 
   const seen = new Set<string>();
   return value.map((entry, index) => {
     const path = "scenarios[" + index + "]";
     const record = readRecord(entry, path, issues);
-    rejectUnknownKeys(record, ["id", "kind", "name", "flow", "required", "timeoutMs"], path, issues);
+    rejectUnknownKeys(record, SCENARIO_KEYS, path, issues);
     const id = requiredString(record, "id", path, issues);
-    if (id && !/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+    if (id && !new RegExp(SCENARIO_ID_PATTERN).test(id)) {
       issues.push(path + ".id must contain lowercase letters, numbers, or hyphens");
     }
-    if (seen.has(id)) issues.push(path + ".id duplicates " + id);
-    seen.add(id);
-    const kind = record.kind;
-    if (
-      kind !== "mwa-authorize" &&
-      kind !== "mwa-siws" &&
-      kind !== "mwa-sign-message" &&
-      kind !== "mwa-reject" &&
-      kind !== "mwa-stale-authorization" &&
-      kind !== "mwa-process-death" &&
-      kind !== "custom"
-    ) {
+    if (id && seen.has(id)) issues.push(path + ".id duplicates " + id);
+    if (id) seen.add(id);
+    const kindValue = record.kind;
+    if (!isAllowedString(kindValue, SCENARIO_KINDS)) {
       issues.push(path + ".kind must be a supported versioned scenario kind");
     }
+    const kind = isAllowedString(kindValue, SCENARIO_KINDS) ? kindValue : "custom";
     return {
       id,
-      kind: kind as ScenarioConfig["kind"],
+      kind,
       name: requiredString(record, "name", path, issues),
       flow: requiredString(record, "flow", path, issues),
-      required: booleanWithDefault(record, "required", true, path, issues),
-      timeoutMs: integerWithDefault(record, "timeoutMs", 120000, 1000, 600000, path, issues),
+      required: booleanWithDefault(record, "required", CONFIG_V1_DEFAULTS.scenarioRequired, path, issues),
+      timeoutMs: integerWithDefault(
+        record,
+        "timeoutMs",
+        CONFIG_V1_DEFAULTS.scenarioTimeoutMs,
+        CONFIG_V1_LIMITS.scenarioTimeoutMs.minimum,
+        CONFIG_V1_LIMITS.scenarioTimeoutMs.maximum,
+        path,
+        issues,
+      ),
     };
   });
 }
@@ -143,84 +180,123 @@ function parseScenarios(value: unknown, issues: string[]): ScenarioConfig[] {
 export function validateConfig(value: unknown): LaunchRigConfig {
   const issues: string[] = [];
   const root = readRecord(value, "config", issues);
-  rejectUnknownKeys(
-    root,
-    ["version", "project", "target", "device", "wallet", "scenarios", "artifacts", "privacy", "tooling"],
-    "config",
-    issues,
-  );
+  rejectUnknownKeys(root, CONFIG_ROOT_KEYS, "config", issues);
 
-  if (root.version !== 1) issues.push("version must be 1");
+  if (root.version !== CONFIG_V1_VERSION) issues.push("version must be " + CONFIG_V1_VERSION);
 
   const project = readRecord(root.project, "project", issues);
-  rejectUnknownKeys(project, ["name", "packageName", "apk", "install", "installPolicy"], "project", issues);
+  rejectUnknownKeys(project, PROJECT_KEYS, "project", issues);
+  const projectName = requiredString(project, "name", "project", issues);
   const packageName = requiredString(project, "packageName", "project", issues);
-  if (packageName && !/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/.test(packageName)) {
+  if (packageName && !new RegExp(ANDROID_APPLICATION_ID_PATTERN).test(packageName)) {
     issues.push("project.packageName is not a valid Android application ID");
   }
   const apk = optionalString(project, "apk", "project", issues);
-  const install = booleanWithDefault(project, "install", false, "project", issues);
-  const projectInstallPolicy = installPolicyWithDefault(project, "project", issues);
+  const install = booleanWithDefault(project, "install", CONFIG_V1_DEFAULTS.projectInstall, "project", issues);
+  const projectInstallPolicy = installPolicyWithDefault(
+    project,
+    CONFIG_V1_DEFAULTS.projectInstallPolicy,
+    "project",
+    issues,
+  );
   if (install && !apk) issues.push("project.apk is required when project.install is true");
 
   const target = readRecord(root.target, "target", issues);
-  rejectUnknownKeys(target, ["network"], "target", issues);
+  rejectUnknownKeys(target, TARGET_KEYS, "target", issues);
   const network = target.network;
-  if (network !== "devnet" && network !== "testnet") {
+  if (!isAllowedString(network, CONFIG_NETWORKS)) {
     issues.push("target.network must be devnet or testnet; LaunchRig Phase 1 refuses mainnet");
   }
-  if (
-    packageName === "com.solana.mobilewalletadapter.fakedapp" &&
-    network !== "testnet"
-  ) {
+  if (packageName === REFERENCE_FAKEDAPP_PACKAGE && network !== "testnet") {
     issues.push("the official MWA fakedapp fixture is hard-coded to testnet; target.network must be testnet");
   }
 
   const device = readRecord(root.device, "device", issues);
-  rejectUnknownKeys(device, ["requirePhysical", "minimumApiLevel"], "device", issues);
+  rejectUnknownKeys(device, DEVICE_KEYS, "device", issues);
+  const requirePhysical = booleanWithDefault(
+    device,
+    "requirePhysical",
+    CONFIG_V1_DEFAULTS.requirePhysical,
+    "device",
+    issues,
+  );
+  const minimumApiLevel = integerWithDefault(
+    device,
+    "minimumApiLevel",
+    CONFIG_V1_DEFAULTS.minimumApiLevel,
+    CONFIG_V1_LIMITS.minimumApiLevel.minimum,
+    CONFIG_V1_LIMITS.minimumApiLevel.maximum,
+    "device",
+    issues,
+  );
 
   const wallet = readRecord(root.wallet, "wallet", issues);
-  rejectUnknownKeys(wallet, ["mode", "packageName", "apk", "install", "installPolicy"], "wallet", issues);
+  rejectUnknownKeys(wallet, WALLET_KEYS, "wallet", issues);
   const walletMode = wallet.mode;
-  if (walletMode !== "mock-mwa" && walletMode !== "reference-fakewallet" && walletMode !== "real") {
+  if (!isAllowedString(walletMode, WALLET_MODES)) {
     issues.push("wallet.mode must be mock-mwa, reference-fakewallet, or real");
   }
   const walletPackageName = optionalString(wallet, "packageName", "wallet", issues);
   const walletApk = optionalString(wallet, "apk", "wallet", issues);
-  const walletInstall = booleanWithDefault(wallet, "install", false, "wallet", issues);
-  const walletInstallPolicy = installPolicyWithDefault(wallet, "wallet", issues);
-  if (walletMode === "mock-mwa" && walletPackageName !== "com.solana.mwallet") {
-    issues.push("wallet.mode mock-mwa requires packageName com.solana.mwallet");
+  const walletInstall = booleanWithDefault(wallet, "install", CONFIG_V1_DEFAULTS.walletInstall, "wallet", issues);
+  const walletInstallPolicy = installPolicyWithDefault(
+    wallet,
+    CONFIG_V1_DEFAULTS.walletInstallPolicy,
+    "wallet",
+    issues,
+  );
+  if (walletMode === "mock-mwa" && walletPackageName !== MOCK_MWA_PACKAGE) {
+    issues.push("wallet.mode mock-mwa requires packageName " + MOCK_MWA_PACKAGE);
   }
-  if (
-    walletMode === "reference-fakewallet" &&
-    walletPackageName !== "com.solana.mobilewalletadapter.fakewallet"
-  ) {
-    issues.push("wallet.mode reference-fakewallet requires packageName com.solana.mobilewalletadapter.fakewallet");
+  if (walletMode === "reference-fakewallet" && walletPackageName !== REFERENCE_FAKEWALLET_PACKAGE) {
+    issues.push("wallet.mode reference-fakewallet requires packageName " + REFERENCE_FAKEWALLET_PACKAGE);
   }
   if (walletInstall && !walletApk) issues.push("wallet.apk is required when wallet.install is true");
   if (walletInstall && walletMode === "real") issues.push("LaunchRig will not install or replace a real wallet package");
-  if (
-    walletInstall &&
-    walletPackageName !== "com.solana.mwallet" &&
-    walletPackageName !== "com.solana.mobilewalletadapter.fakewallet"
-  ) {
+  if (walletInstall && !isAllowedString(walletPackageName, INSTALLABLE_TEST_WALLET_PACKAGES)) {
     issues.push("wallet.install is limited to an allowlisted Solana Mobile test-wallet package");
   }
 
   const artifacts = readRecord(root.artifacts, "artifacts", issues);
-  rejectUnknownKeys(artifacts, ["directory", "screenshots", "retention"], "artifacts", issues);
-  const screenshotMode = artifacts.screenshots ?? "failure";
-  if (screenshotMode !== "failure" && screenshotMode !== "always" && screenshotMode !== "never") {
+  rejectUnknownKeys(artifacts, ARTIFACT_KEYS, "artifacts", issues);
+  const artifactDirectory = requiredString(artifacts, "directory", "artifacts", issues);
+  const screenshotMode =
+    artifacts.screenshots === undefined ? CONFIG_V1_DEFAULTS.screenshots : artifacts.screenshots;
+  if (!isAllowedString(screenshotMode, SCREENSHOT_MODES)) {
     issues.push("artifacts.screenshots must be failure, always, or never");
   }
+  const retention = integerWithDefault(
+    artifacts,
+    "retention",
+    CONFIG_V1_DEFAULTS.retention,
+    CONFIG_V1_LIMITS.retention.minimum,
+    CONFIG_V1_LIMITS.retention.maximum,
+    "artifacts",
+    issues,
+  );
   if (walletMode === "real" && screenshotMode !== "never") {
     issues.push("artifacts.screenshots must be never when wallet.mode is real");
   }
 
   const privacy = readRecord(root.privacy, "privacy", issues);
-  rejectUnknownKeys(privacy, ["includeLogcat", "logcatLines", "redactPatterns"], "privacy", issues);
-  let redactPatterns: string[] = [];
+  rejectUnknownKeys(privacy, PRIVACY_KEYS, "privacy", issues);
+  const includeLogcat = booleanWithDefault(
+    privacy,
+    "includeLogcat",
+    CONFIG_V1_DEFAULTS.includeLogcat,
+    "privacy",
+    issues,
+  );
+  const logcatLines = integerWithDefault(
+    privacy,
+    "logcatLines",
+    CONFIG_V1_DEFAULTS.logcatLines,
+    CONFIG_V1_LIMITS.logcatLines.minimum,
+    CONFIG_V1_LIMITS.logcatLines.maximum,
+    "privacy",
+    issues,
+  );
+  let redactPatterns: string[] = [...CONFIG_V1_DEFAULTS.redactPatterns];
   if (privacy.redactPatterns !== undefined) {
     if (!Array.isArray(privacy.redactPatterns) || privacy.redactPatterns.some((item) => typeof item !== "string")) {
       issues.push("privacy.redactPatterns must be an array of regular-expression strings");
@@ -236,8 +312,9 @@ export function validateConfig(value: unknown): LaunchRigConfig {
     }
   }
 
-  const tooling = root.tooling === undefined ? {} : readRecord(root.tooling, "tooling", issues);
-  rejectUnknownKeys(tooling, ["adb", "maestro"], "tooling", issues);
+  const tooling =
+    root.tooling === undefined ? { ...CONFIG_V1_DEFAULTS.tooling } : readRecord(root.tooling, "tooling", issues);
+  rejectUnknownKeys(tooling, TOOLING_KEYS, "tooling", issues);
   const adb = optionalString(tooling, "adb", "tooling", issues);
   const maestro = optionalString(tooling, "maestro", "tooling", issues);
 
@@ -245,19 +322,19 @@ export function validateConfig(value: unknown): LaunchRigConfig {
   if (walletMode === "real" && scenarios.length > 0) {
     issues.push("wallet.mode real supports package checks only; automated wallet scenarios are disabled");
   }
-  if (walletMode === "real" && privacy.includeLogcat === true) {
+  if (walletMode === "real" && includeLogcat) {
     issues.push("privacy.includeLogcat must be false when wallet.mode is real");
   }
-  if (scenarios.some((scenario) => scenario.kind.startsWith("mwa-")) && !walletPackageName) {
+  if (scenarios.some((scenario) => isAllowedString(scenario.kind, MWA_SCENARIO_KINDS)) && !walletPackageName) {
     issues.push("wallet.packageName is required when an MWA scenario is configured");
   }
 
   if (issues.length > 0) throw new ConfigError(issues);
 
   const parsed: LaunchRigConfig = {
-    version: 1,
+    version: CONFIG_V1_VERSION,
     project: {
-      name: requiredString(project, "name", "project", []),
+      name: projectName,
       packageName,
       install,
       installPolicy: projectInstallPolicy,
@@ -265,8 +342,8 @@ export function validateConfig(value: unknown): LaunchRigConfig {
     },
     target: { network: network as "devnet" | "testnet" },
     device: {
-      requirePhysical: booleanWithDefault(device, "requirePhysical", true, "device", []),
-      minimumApiLevel: integerWithDefault(device, "minimumApiLevel", 26, 23, 100, "device", []),
+      requirePhysical,
+      minimumApiLevel,
     },
     wallet: {
       mode: walletMode as "mock-mwa" | "reference-fakewallet" | "real",
@@ -277,13 +354,13 @@ export function validateConfig(value: unknown): LaunchRigConfig {
     },
     scenarios,
     artifacts: {
-      directory: requiredString(artifacts, "directory", "artifacts", []),
+      directory: artifactDirectory,
       screenshots: screenshotMode as "failure" | "always" | "never",
-      retention: integerWithDefault(artifacts, "retention", 5, 1, 25, "artifacts", []),
+      retention,
     },
     privacy: {
-      includeLogcat: booleanWithDefault(privacy, "includeLogcat", false, "privacy", []),
-      logcatLines: integerWithDefault(privacy, "logcatLines", 200, 1, 1000, "privacy", []),
+      includeLogcat,
+      logcatLines,
       redactPatterns,
     },
     tooling: {

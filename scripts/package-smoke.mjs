@@ -115,6 +115,12 @@ try {
   if (!installedFiles.includes("schemas/launchrig-private-cohort-audit.schema.json")) {
     throw new Error("Packed private cohort audit schema is missing.");
   }
+  if (!installedFiles.includes("schemas/fixtures/launchrig-config-v1.conformance.json")) {
+    throw new Error("Packed config v1 conformance corpus is missing.");
+  }
+  if (!installedFiles.includes("docs/config-v1-compatibility.md")) {
+    throw new Error("Packed config v1 compatibility guide is missing.");
+  }
   const publisherBundleSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-publisher-bundle.schema.json"), "utf8"),
   );
@@ -128,6 +134,7 @@ try {
         "phase-2b-publisher-rc-v2",
         "phase-2c-publisher-rc-v3",
         "phase-3-foundation-rc-v4",
+        "phase-3-config-parity-rc-v5",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
@@ -173,6 +180,12 @@ try {
   const coreRuleCatalogSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-core-rule-catalog.schema.json"), "utf8"),
   );
+  const configConformance = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "fixtures", "launchrig-config-v1.conformance.json"),
+      "utf8",
+    ),
+  );
   if (
     coreRuleCatalogSchema.$id !== "https://launchrig.dev/schemas/launchrig-core-rule-catalog.schema.json" ||
     coreRuleCatalogSchema.additionalProperties !== false ||
@@ -184,6 +197,46 @@ try {
     coreRuleCatalogSchema.properties?.grantMilestoneComplete?.const !== false
   ) {
     throw new Error("Packed core rule catalog schema does not preserve the pre-award contract.");
+  }
+  const parityCases = configConformance.cases?.filter((entry) => entry.classification === "parity") ?? [];
+  const runtimeExtensionCases =
+    configConformance.cases?.filter((entry) => entry.classification === "runtime-extension") ?? [];
+  if (
+    JSON.stringify(Object.keys(configConformance)) !==
+      JSON.stringify([
+        "schemaVersion",
+        "kind",
+        "configVersion",
+        "status",
+        "schemaPath",
+        "parityCaseCount",
+        "runtimeExtensionCaseCount",
+        "grantMilestoneComplete",
+        "base",
+        "cases",
+        "limitations",
+      ]) ||
+    configConformance.schemaVersion !== 1 ||
+    configConformance.kind !== "launchrig-config-v1-conformance" ||
+    configConformance.configVersion !== 1 ||
+    configConformance.status !== "pre-award-foundation" ||
+    configConformance.schemaPath !== "schemas/launchrig.schema.json" ||
+    configConformance.parityCaseCount !== 23 ||
+    configConformance.runtimeExtensionCaseCount !== 2 ||
+    configConformance.grantMilestoneComplete !== false ||
+    configConformance.cases?.length !== 25 ||
+    new Set(configConformance.cases?.map((entry) => entry.id)).size !== 25 ||
+    parityCases.length !== 23 ||
+    parityCases.some((entry) => entry.runtimeValid !== entry.schemaValid) ||
+    runtimeExtensionCases.length !== 2 ||
+    runtimeExtensionCases.some((entry) => entry.runtimeValid !== false || entry.schemaValid !== true) ||
+    configConformance.cases?.some(
+      (entry) =>
+        JSON.stringify(Object.keys(entry)) !==
+        JSON.stringify(["id", "classification", "set", "remove", "runtimeValid", "schemaValid"]),
+    )
+  ) {
+    throw new Error("Packed config v1 corpus does not preserve its executable pre-award contract.");
   }
   if (
     privateRegisterSchema.$id !==
@@ -209,6 +262,7 @@ try {
   const expectedDocuments = [
     "docs/cohort-audit.md",
     "docs/cohort-verification.md",
+    "docs/config-v1-compatibility.md",
     "docs/phase-1.md",
     "docs/phase-2.md",
     "docs/phase-3-foundation.md",
@@ -235,6 +289,7 @@ try {
     if (!installedFiles.includes(template)) throw new Error("Packed template is missing " + template + ".");
   }
   const expectedSchemas = [
+    "schemas/fixtures/launchrig-config-v1.conformance.json",
     "schemas/launchrig-cohort-verification.schema.json",
     "schemas/launchrig-core-rule-catalog.schema.json",
     "schemas/launchrig-pilot-evidence-v1.schema.json",

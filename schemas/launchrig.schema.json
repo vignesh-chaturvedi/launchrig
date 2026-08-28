@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrig.dev/schemas/launchrig-v1.schema.json",
   "title": "LaunchRig configuration",
+  "$comment": "Portable structural contract. The LaunchRig runtime additionally enforces unique scenario IDs and JavaScript regular-expression compilation as documented runtime extensions.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "project", "target", "device", "wallet", "scenarios", "artifacts", "privacy"],
@@ -12,9 +13,9 @@
       "additionalProperties": false,
       "required": ["name", "packageName"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "packageName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$" },
-        "apk": { "type": "string", "minLength": 1 },
+        "apk": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "install": { "type": "boolean", "default": false },
         "installPolicy": { "enum": ["always", "if-missing"], "default": "always" }
       }
@@ -39,8 +40,8 @@
       "required": ["mode"],
       "properties": {
         "mode": { "enum": ["mock-mwa", "reference-fakewallet", "real"] },
-        "packageName": { "type": "string" },
-        "apk": { "type": "string", "minLength": 1 },
+        "packageName": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "apk": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "install": { "type": "boolean", "default": false },
         "installPolicy": { "enum": ["always", "if-missing"], "default": "always" }
       }
@@ -55,8 +56,8 @@
         "properties": {
           "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
           "kind": { "enum": ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject", "mwa-stale-authorization", "mwa-process-death", "custom"] },
-          "name": { "type": "string", "minLength": 1 },
-          "flow": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "flow": { "type": "string", "minLength": 1, "pattern": "\\S" },
           "required": { "type": "boolean", "default": true },
           "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 600000, "default": 120000 }
         }
@@ -67,7 +68,7 @@
       "additionalProperties": false,
       "required": ["directory"],
       "properties": {
-        "directory": { "type": "string", "minLength": 1 },
+        "directory": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "screenshots": { "enum": ["failure", "always", "never"], "default": "failure" },
         "retention": { "type": "integer", "minimum": 1, "maximum": 25, "default": 5 }
       }
@@ -78,15 +79,16 @@
       "properties": {
         "includeLogcat": { "type": "boolean", "default": false },
         "logcatLines": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 },
-        "redactPatterns": { "type": "array", "items": { "type": "string" } }
+        "redactPatterns": { "type": "array", "items": { "type": "string" }, "default": [] }
       }
     },
     "tooling": {
       "type": "object",
       "additionalProperties": false,
+      "default": {},
       "properties": {
-        "adb": { "type": "string" },
-        "maestro": { "type": "string" }
+        "adb": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "maestro": { "type": "string", "minLength": 1, "pattern": "\\S" }
       }
     }
   },
@@ -116,7 +118,7 @@
         "properties": {
           "wallet": { "properties": { "install": { "const": false } } },
           "artifacts": { "properties": { "screenshots": { "const": "never" } }, "required": ["screenshots"] },
-          "privacy": { "properties": { "includeLogcat": { "const": false } }, "required": ["includeLogcat"] },
+          "privacy": { "properties": { "includeLogcat": { "const": false } } },
           "scenarios": { "maxItems": 0 }
         }
       }
