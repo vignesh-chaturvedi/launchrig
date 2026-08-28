@@ -151,6 +151,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "docs/cohort-audit.md",
       "docs/cohort-verification.md",
       "docs/config-v1-compatibility.md",
+      "docs/github-action.md",
       "docs/phase-3-foundation.md",
       "docs/publisher-pilot-quickstart.md",
       "docs/supported-environment.md",
@@ -166,6 +167,9 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "schemas/launchrig-private-cohort-register.schema.json",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
+      "action.yml",
+      "action/run-validation.mjs",
+      "examples/github-actions/launchrig-validation.yml",
     ]) {
       await assertInstalledFile(installDirectory, relativePath);
     }

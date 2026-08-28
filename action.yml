@@ -1,57 +1,39 @@
-name: LaunchRig
-description: Validate or run LaunchRig release checks
+name: LaunchRig config validation
+description: Validate a LaunchRig v1 configuration without ADB, a phone, or wallet access.
 inputs:
-  command:
-    description: validate on hosted CI; run only on a self-hosted Android USB runner
-    required: false
-    default: validate
   config:
-    description: Path to launchrig.yml inside the caller workspace
+    description: Relative config path inside the working directory.
     required: false
     default: launchrig.yml
-  device:
-    description: Optional ADB serial for a self-hosted physical-device run
+  working-directory:
+    description: Relative project directory inside GITHUB_WORKSPACE.
     required: false
-    default: ""
+    default: .
+  output:
+    description: Relative JSON result path beneath .launchrig in the working directory.
+    required: false
+    default: .launchrig/validation.json
+outputs:
+  valid:
+    description: true only when LaunchRig accepts the configuration and its referenced files.
+    value: ${{ steps.validate.outputs.valid }}
+  scenario-count:
+    description: Validated scenario count, or an empty value when structured validation could not run.
+    value: ${{ steps.validate.outputs.scenario-count }}
+  result-file:
+    description: Workspace-relative path to the normalized JSON result.
+    value: ${{ steps.validate.outputs.result-file }}
 runs:
   using: composite
   steps:
-    - name: Verify Node.js
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 20 || (major === 20 && minor < 11)) { console.error("LaunchRig requires Node.js 20.11 or newer"); process.exit(1); }'
-    - name: Set up pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 10.34.0
-    - name: Install LaunchRig
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: pnpm install --frozen-lockfile
-    - name: Build LaunchRig
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: pnpm build
-    - name: Execute LaunchRig
+    - id: validate
+      name: Validate LaunchRig configuration
       shell: bash
       env:
-        LAUNCHRIG_COMMAND: ${{ inputs.command }}
-        LAUNCHRIG_CONFIG: ${{ inputs.config }}
-        LAUNCHRIG_DEVICE: ${{ inputs.device }}
-      run: |
-        case "$LAUNCHRIG_COMMAND" in
-          validate)
-            node "$GITHUB_ACTION_PATH/dist/src/cli.js" validate --config "$GITHUB_WORKSPACE/$LAUNCHRIG_CONFIG"
-            ;;
-          run)
-            if [ -n "$LAUNCHRIG_DEVICE" ]; then
-              node "$GITHUB_ACTION_PATH/dist/src/cli.js" run --config "$GITHUB_WORKSPACE/$LAUNCHRIG_CONFIG" --device "$LAUNCHRIG_DEVICE"
-            else
-              node "$GITHUB_ACTION_PATH/dist/src/cli.js" run --config "$GITHUB_WORKSPACE/$LAUNCHRIG_CONFIG"
-            fi
-            ;;
-          *)
-            echo "command must be validate or run" >&2
-            exit 2
-            ;;
-        esac
+        LAUNCHRIG_ACTION_CONFIG: ${{ inputs.config }}
+        LAUNCHRIG_ACTION_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        LAUNCHRIG_ACTION_OUTPUT: ${{ inputs.output }}
+      run: node "$GITHUB_ACTION_PATH/action/run-validation.mjs"
+branding:
+  icon: check-circle
+  color: purple

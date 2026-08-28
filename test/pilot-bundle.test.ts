@@ -62,6 +62,7 @@ const BUNDLE_PROFILE_V2 = "phase-2b-publisher-rc-v2";
 const BUNDLE_PROFILE_V3 = "phase-2c-publisher-rc-v3";
 const BUNDLE_PROFILE_V4 = "phase-3-foundation-rc-v4";
 const BUNDLE_PROFILE_V5 = "phase-3-config-parity-rc-v5";
+const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
 const REQUIRED_PAYLOADS = [
   "README.md",
   "docs/publisher-pilot-quickstart.md",
@@ -148,6 +149,23 @@ const PACKED_DOCUMENTS_V5 = [
   "docs/publisher-pilot-quickstart.md",
   "docs/supported-environment.md",
 ];
+const PACKED_DOCUMENTS_V6 = [
+  "docs/cohort-audit.md",
+  "docs/cohort-verification.md",
+  "docs/config-v1-compatibility.md",
+  "docs/flows/mwa-authorize.md",
+  "docs/flows/mwa-reject.md",
+  "docs/flows/mwa-sign-message.md",
+  "docs/flows/mwa-siws.md",
+  "docs/github-action.md",
+  "docs/phase-1.md",
+  "docs/phase-2.md",
+  "docs/phase-3-foundation.md",
+  "docs/physical-device.md",
+  "docs/publisher-bundle-readme.md",
+  "docs/publisher-pilot-quickstart.md",
+  "docs/supported-environment.md",
+];
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -203,6 +221,11 @@ const PACKED_TEMPLATES = [
   "templates/publisher-intake.md",
   "templates/sharing-review.md",
 ];
+const PACKED_ACTION_FILES_V6 = [
+  "action.yml",
+  "action/run-validation.mjs",
+  "examples/github-actions/launchrig-validation.yml",
+];
 
 function tarHeader(name: string, size: number): Buffer {
   assert.ok(Buffer.byteLength(name, "ascii") <= 100);
@@ -250,15 +273,20 @@ const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.
 
 function createTestPackageArchive(
   extraPaths: string[] = [],
-  profile = BUNDLE_PROFILE_V5,
+  profile = BUNDLE_PROFILE_V6,
   omittedPaths: string[] = [],
 ): Buffer {
   const inventories = {
-    [BUNDLE_PROFILE_V1]: { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1 },
-    [BUNDLE_PROFILE_V2]: { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2 },
-    [BUNDLE_PROFILE_V3]: { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3 },
-    [BUNDLE_PROFILE_V4]: { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4 },
-    [BUNDLE_PROFILE_V5]: { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5 },
+    [BUNDLE_PROFILE_V1]: { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1, actionFiles: [] },
+    [BUNDLE_PROFILE_V2]: { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2, actionFiles: [] },
+    [BUNDLE_PROFILE_V3]: { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3, actionFiles: [] },
+    [BUNDLE_PROFILE_V4]: { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4, actionFiles: [] },
+    [BUNDLE_PROFILE_V5]: { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5, actionFiles: [] },
+    [BUNDLE_PROFILE_V6]: {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V5,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    },
   };
   const inventory = inventories[profile as keyof typeof inventories];
   if (!inventory) throw new Error("Unsupported synthetic bundle profile.");
@@ -282,6 +310,7 @@ function createTestPackageArchive(
     ...packedDocuments.map((entry) => "package/" + entry),
     ...packedSchemas.map((entry) => "package/" + entry),
     ...PACKED_TEMPLATES.map((entry) => "package/" + entry),
+    ...inventory.actionFiles.map((entry) => "package/" + entry),
     ...extraPaths,
   ].filter((entry) => !omittedPaths.includes(entry)).sort();
   const blocks: Buffer[] = [];
@@ -310,7 +339,7 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
-  profile = BUNDLE_PROFILE_V5,
+  profile = BUNDLE_PROFILE_V6,
 ): Promise<BundleManifest> {
   for (const relativePath of [...REQUIRED_PAYLOADS, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
@@ -373,6 +402,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     BUNDLE_PROFILE_V3,
     BUNDLE_PROFILE_V4,
     BUNDLE_PROFILE_V5,
+    BUNDLE_PROFILE_V6,
   ]) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
     try {
@@ -466,6 +496,44 @@ test("publisher bundle v5 requires the config compatibility guide and conformanc
     try {
       const archive = createTestPackageArchive([], BUNDLE_PROFILE_V5, [omittedPath]);
       await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V5);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /inventory does not match the release allowlist/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v5 rejects validation Action files added by v6", async () => {
+  for (const addedPath of [
+    "package/docs/github-action.md",
+    ...PACKED_ACTION_FILES_V6.map((entry) => "package/" + entry),
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v5-frozen-"));
+    try {
+      const archive = createTestPackageArchive([addedPath], BUNDLE_PROFILE_V5);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V5);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /outside the release allowlist/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v6 requires the validation Action guide, runner, metadata, and example", async () => {
+  for (const omittedPath of [
+    "package/docs/github-action.md",
+    ...PACKED_ACTION_FILES_V6.map((entry) => "package/" + entry),
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v6-required-"));
+    try {
+      const archive = createTestPackageArchive([], BUNDLE_PROFILE_V6, [omittedPath]);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V6);
       await assert.rejects(
         () => bundleVerifier.verifyPublisherBundle(directory),
         /inventory does not match the release allowlist/,

@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
 import type { ResolvedLaunchRigConfig } from "../types.js";
@@ -10,7 +9,7 @@ export async function loadConfig(configPath: string): Promise<ResolvedLaunchRigC
   const absolutePath = path.resolve(configPath);
   let source: string;
   try {
-    source = await readFile(absolutePath, "utf8");
+    source = await readBoundedUtf8File(absolutePath, 1024 * 1024);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new ConfigError(["Cannot read " + absolutePath + ": " + message]);

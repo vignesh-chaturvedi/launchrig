@@ -46,6 +46,7 @@ const BUNDLE_PROFILE_V2 = "phase-2b-publisher-rc-v2";
 const BUNDLE_PROFILE_V3 = "phase-2c-publisher-rc-v3";
 const BUNDLE_PROFILE_V4 = "phase-3-foundation-rc-v4";
 const BUNDLE_PROFILE_V5 = "phase-3-config-parity-rc-v5";
+const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -116,6 +117,23 @@ const PACKED_DOCUMENTS_V5 = [
   "docs/publisher-pilot-quickstart.md",
   "docs/supported-environment.md",
 ];
+const PACKED_DOCUMENTS_V6 = [
+  "docs/cohort-audit.md",
+  "docs/cohort-verification.md",
+  "docs/config-v1-compatibility.md",
+  "docs/flows/mwa-authorize.md",
+  "docs/flows/mwa-reject.md",
+  "docs/flows/mwa-sign-message.md",
+  "docs/flows/mwa-siws.md",
+  "docs/github-action.md",
+  "docs/phase-1.md",
+  "docs/phase-2.md",
+  "docs/phase-3-foundation.md",
+  "docs/physical-device.md",
+  "docs/publisher-bundle-readme.md",
+  "docs/publisher-pilot-quickstart.md",
+  "docs/supported-environment.md",
+];
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -164,6 +182,11 @@ const PACKED_SCHEMAS_V5 = [
   "schemas/launchrig-publisher-bundle.schema.json",
   "schemas/launchrig.schema.json",
 ];
+const PACKED_ACTION_FILES_V6 = [
+  "action.yml",
+  "action/run-validation.mjs",
+  "examples/github-actions/launchrig-validation.yml",
+];
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
@@ -174,19 +197,26 @@ const PACKED_TEMPLATES = [
 
 function packedInventory(profile) {
   if (profile === BUNDLE_PROFILE_V1) {
-    return { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1 };
+    return { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1, actionFiles: [] };
   }
   if (profile === BUNDLE_PROFILE_V2) {
-    return { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2 };
+    return { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2, actionFiles: [] };
   }
   if (profile === BUNDLE_PROFILE_V3) {
-    return { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3 };
+    return { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3, actionFiles: [] };
   }
   if (profile === BUNDLE_PROFILE_V4) {
-    return { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4 };
+    return { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4, actionFiles: [] };
   }
   if (profile === BUNDLE_PROFILE_V5) {
-    return { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5 };
+    return { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5, actionFiles: [] };
+  }
+  if (profile === BUNDLE_PROFILE_V6) {
+    return {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V5,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    };
   }
   throw new Error("Unsupported bundle manifest.");
 }
@@ -392,7 +422,8 @@ function isAllowedArchivePath(archivePath, inventory) {
     relativePath.startsWith("dist/node_modules/yaml/") ||
     inventory.documents.includes(relativePath) ||
     inventory.schemas.includes(relativePath) ||
-    PACKED_TEMPLATES.includes(relativePath)
+    PACKED_TEMPLATES.includes(relativePath) ||
+    inventory.actionFiles.includes(relativePath)
   );
 }
 
@@ -466,6 +497,18 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
     if (JSON.stringify(actual) !== JSON.stringify([...expected].sort())) {
       throw new Error("LaunchRig package " + label + " inventory does not match the release allowlist.");
     }
+  }
+  const actualActionFiles = [...entries.keys()]
+    .filter(
+      (entry) =>
+        entry === "package/action.yml" ||
+        entry.startsWith("package/action/") ||
+        entry.startsWith("package/examples/"),
+    )
+    .map((entry) => entry.slice("package/".length))
+    .sort();
+  if (JSON.stringify(actualActionFiles) !== JSON.stringify([...inventory.actionFiles].sort())) {
+    throw new Error("LaunchRig package Action inventory does not match the release allowlist.");
   }
 
   for (const required of [
@@ -555,6 +598,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V3,
       BUNDLE_PROFILE_V4,
       BUNDLE_PROFILE_V5,
+      BUNDLE_PROFILE_V6,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");

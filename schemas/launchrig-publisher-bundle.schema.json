@@ -29,7 +29,8 @@
         "phase-2b-publisher-rc-v2",
         "phase-2c-publisher-rc-v3",
         "phase-3-foundation-rc-v4",
-        "phase-3-config-parity-rc-v5"
+        "phase-3-config-parity-rc-v5",
+        "phase-3-validation-action-rc-v6"
       ]
     },
     "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },

@@ -1,0 +1,36 @@
+name: LaunchRig config validation
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the app repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20.11.0
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.34.0
+          run_install: false
+      - name: Install the pinned project dependencies
+        # The consumer manifest and frozen lockfile must already pin a reviewed LaunchRig package.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      # Replace the value below only after LaunchRig has a reviewed remote and immutable commit.
+      # This template is intentionally outside .github/workflows and cannot run as committed here.
+      - name: Validate LaunchRig configuration
+        uses: YOUR_ORG/launchrig@FULL_COMMIT_SHA
+        with:
+          config: launchrig.yml
+          output: .launchrig/validation.json

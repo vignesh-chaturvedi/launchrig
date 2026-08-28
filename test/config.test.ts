@@ -114,6 +114,30 @@ test("flow paths resolve relative to launchrig.yml", async () => {
   }
 });
 
+test("config loading rejects symlinks and files larger than the bounded input contract", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-config-input-"));
+  try {
+    const { stringify } = await import("yaml");
+    const target = path.join(directory, "target.yml");
+    await writeFile(target, stringify(validRawConfig()), "utf8");
+    const linked = path.join(directory, "linked.yml");
+    await symlink(target, linked);
+    await assert.rejects(
+      () => loadConfig(linked),
+      (error: unknown) => error instanceof ConfigError && error.issues.some((issue) => issue.includes("Cannot read")),
+    );
+
+    const oversized = path.join(directory, "oversized.yml");
+    await writeFile(oversized, "x".repeat(1024 * 1024 + 1), "utf8");
+    await assert.rejects(
+      () => loadConfig(oversized),
+      (error: unknown) => error instanceof ConfigError && error.issues.some((issue) => issue.includes("Cannot read")),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("real-wallet configs require screenshots to be disabled", () => {
   const raw = validRawConfig();
   raw.wallet = { mode: "real", packageName: "com.publisher.wallet", install: false };

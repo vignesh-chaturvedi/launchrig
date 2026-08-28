@@ -9,10 +9,13 @@
     "launchrig": "dist/src/cli.js"
   },
   "files": [
+    "action.yml",
+    "action",
     "dist/src",
     "dist/node_modules/yaml",
     "schemas",
     "docs",
+    "examples",
     "templates",
     "README.md",
     "LICENSE"

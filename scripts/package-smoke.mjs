@@ -121,6 +121,16 @@ try {
   if (!installedFiles.includes("docs/config-v1-compatibility.md")) {
     throw new Error("Packed config v1 compatibility guide is missing.");
   }
+  if (!installedFiles.includes("docs/github-action.md")) {
+    throw new Error("Packed validation Action guide is missing.");
+  }
+  for (const actionFile of [
+    "action.yml",
+    "action/run-validation.mjs",
+    "examples/github-actions/launchrig-validation.yml",
+  ]) {
+    if (!installedFiles.includes(actionFile)) throw new Error("Packed validation Action is missing " + actionFile + ".");
+  }
   const publisherBundleSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-publisher-bundle.schema.json"), "utf8"),
   );
@@ -135,6 +145,7 @@ try {
         "phase-2c-publisher-rc-v3",
         "phase-3-foundation-rc-v4",
         "phase-3-config-parity-rc-v5",
+        "phase-3-validation-action-rc-v6",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
@@ -263,6 +274,7 @@ try {
     "docs/cohort-audit.md",
     "docs/cohort-verification.md",
     "docs/config-v1-compatibility.md",
+    "docs/github-action.md",
     "docs/phase-1.md",
     "docs/phase-2.md",
     "docs/phase-3-foundation.md",
@@ -300,6 +312,11 @@ try {
     "schemas/launchrig-publisher-bundle.schema.json",
     "schemas/launchrig.schema.json",
   ];
+  const expectedActionFiles = [
+    "action.yml",
+    "action/run-validation.mjs",
+    "examples/github-actions/launchrig-validation.yml",
+  ];
   for (const [label, expected, prefix] of [
     ["documentation", expectedDocuments, "docs/"],
     ["schema", expectedSchemas, "schemas/"],
@@ -309,6 +326,12 @@ try {
     if (JSON.stringify(actual) !== JSON.stringify([...expected].sort())) {
       throw new Error("Packed " + label + " inventory does not match the release allowlist.");
     }
+  }
+  const actualActionFiles = installedFiles
+    .filter((file) => file === "action.yml" || file.startsWith("action/") || file.startsWith("examples/"))
+    .sort();
+  if (JSON.stringify(actualActionFiles) !== JSON.stringify([...expectedActionFiles].sort())) {
+    throw new Error("Packed Action inventory does not match the release allowlist.");
   }
   const allowedPackageFile = (file) =>
     file === "LICENSE" ||
@@ -321,7 +344,8 @@ try {
     file.startsWith("dist/node_modules/yaml/") ||
     file.startsWith("docs/") ||
     file.startsWith("schemas/") ||
-    file.startsWith("templates/");
+    file.startsWith("templates/") ||
+    expectedActionFiles.includes(file);
   const unexpectedPackageFile = installedFiles.find((file) => !allowedPackageFile(file));
   if (unexpectedPackageFile) throw new Error("Packed archive contains an unexpected file: " + unexpectedPackageFile);
   const forbiddenPackageFile = installedFiles.find(
@@ -452,6 +476,43 @@ try {
   });
   if (!validation.stdout.includes("Configuration valid")) {
     throw new Error("Installed publisher starter configuration did not validate.");
+  }
+  const actionOutputPath = path.join(temporaryDirectory, "github-action-output.txt");
+  await writeFile(actionOutputPath, "", { encoding: "utf8", mode: 0o600 });
+  const actionRunner = path.join(installedDirectory, "action", "run-validation.mjs");
+  const actionRun = await run(process.execPath, [actionRunner], {
+    cwd: publisherDirectory,
+    env: {
+      ...process.env,
+      GITHUB_ACTION_PATH: installedDirectory,
+      GITHUB_OUTPUT: actionOutputPath,
+      GITHUB_WORKSPACE: publisherDirectory,
+      LAUNCHRIG_ACTION_CONFIG: "launchrig.yml",
+      LAUNCHRIG_ACTION_OUTPUT: ".launchrig/package-smoke-validation.json",
+      LAUNCHRIG_ACTION_WORKING_DIRECTORY: ".",
+    },
+  });
+  if (!actionRun.stdout.includes("LaunchRig configuration validation passed.")) {
+    throw new Error("Installed validation Action did not report a passing starter config.");
+  }
+  const actionResult = JSON.parse(
+    await readFile(path.join(publisherDirectory, ".launchrig", "package-smoke-validation.json"), "utf8"),
+  );
+  if (
+    actionResult.schemaVersion !== 1 ||
+    actionResult.kind !== "launchrig-validation-action-result" ||
+    actionResult.status !== "passed" ||
+    actionResult.valid !== true ||
+    actionResult.scenarioCount !== 0 ||
+    actionResult.failureCode !== null
+  ) {
+    throw new Error("Installed validation Action result does not preserve its normalized contract.");
+  }
+  if (
+    (await readFile(actionOutputPath, "utf8")) !==
+    "valid=true\nscenario-count=0\nresult-file=.launchrig/package-smoke-validation.json\n"
+  ) {
+    throw new Error("Installed validation Action outputs do not preserve their safe contract.");
   }
   let preflightFailure;
   try {
