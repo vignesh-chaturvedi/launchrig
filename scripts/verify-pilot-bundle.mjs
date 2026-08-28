@@ -20,7 +20,7 @@ const CLAIM_KEYS = [
   "seedVault",
   "seekerHardware",
 ];
-const REHEARSAL_CHECKS = [
+const LEGACY_REHEARSAL_CHECKS = [
   "offline-package-install",
   "installed-version-match",
   "installed-help-contract",
@@ -28,6 +28,10 @@ const REHEARSAL_CHECKS = [
   "starter-generation",
   "starter-validation",
   "device-free-preflight-refusal",
+];
+const REHEARSAL_CHECKS_V7 = [
+  ...LEGACY_REHEARSAL_CHECKS,
+  "device-free-pilot-policy-lint-refusal",
 ];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
@@ -47,6 +51,7 @@ const BUNDLE_PROFILE_V3 = "phase-2c-publisher-rc-v3";
 const BUNDLE_PROFILE_V4 = "phase-3-foundation-rc-v4";
 const BUNDLE_PROFILE_V5 = "phase-3-config-parity-rc-v5";
 const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
+const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -182,10 +187,19 @@ const PACKED_SCHEMAS_V5 = [
   "schemas/launchrig-publisher-bundle.schema.json",
   "schemas/launchrig.schema.json",
 ];
+const PACKED_SCHEMAS_V7 = [
+  ...PACKED_SCHEMAS_V5,
+  "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
+].sort();
 const PACKED_ACTION_FILES_V6 = [
   "action.yml",
   "action/run-validation.mjs",
   "examples/github-actions/launchrig-validation.yml",
+];
+const PACKED_COMPILED_ADDITIONS_V7 = [
+  "package/dist/src/pilot/binding.d.ts",
+  "package/dist/src/pilot/binding.js",
+  "package/dist/src/pilot/binding.js.map",
 ];
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
@@ -215,6 +229,13 @@ function packedInventory(profile) {
     return {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V5,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    };
+  }
+  if (profile === BUNDLE_PROFILE_V7) {
+    return {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V7,
       actionFiles: PACKED_ACTION_FILES_V6,
     };
   }
@@ -485,6 +506,19 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
+  if (manifest.profile === BUNDLE_PROFILE_V7) {
+    for (const required of PACKED_COMPILED_ADDITIONS_V7) {
+      if (!entries.has(required)) {
+        throw new Error("LaunchRig package RC7 is missing " + required + ".");
+      }
+    }
+  } else {
+    const unexpected = PACKED_COMPILED_ADDITIONS_V7.find((entry) => entries.has(entry));
+    if (unexpected) {
+      throw new Error("LaunchRig package contains an RC7 file outside its historical profile: " + unexpected);
+    }
+  }
+
   for (const [label, expected, prefix] of [
     ["documentation", inventory.documents, "package/docs/"],
     ["schema", inventory.schemas, "package/schemas/"],
@@ -589,6 +623,8 @@ function validateManifest(manifest) {
     ],
     "Bundle manifest",
   );
+  const expectedRehearsalChecks =
+    manifest.profile === BUNDLE_PROFILE_V7 ? REHEARSAL_CHECKS_V7 : LEGACY_REHEARSAL_CHECKS;
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
@@ -599,6 +635,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V4,
       BUNDLE_PROFILE_V5,
       BUNDLE_PROFILE_V6,
+      BUNDLE_PROFILE_V7,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");
@@ -639,7 +676,7 @@ function validateManifest(manifest) {
     manifest.consumerRehearsal.status !== "passed" ||
     manifest.consumerRehearsal.mode !== "clean-offline-pnpm-install" ||
     manifest.consumerRehearsal.deviceOrWalletTested !== false ||
-    JSON.stringify(manifest.consumerRehearsal.checks) !== JSON.stringify(REHEARSAL_CHECKS)
+    JSON.stringify(manifest.consumerRehearsal.checks) !== JSON.stringify(expectedRehearsalChecks)
   ) {
     throw new Error("Bundle consumer rehearsal contract is invalid.");
   }

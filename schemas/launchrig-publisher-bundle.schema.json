@@ -30,7 +30,8 @@
         "phase-2c-publisher-rc-v3",
         "phase-3-foundation-rc-v4",
         "phase-3-config-parity-rc-v5",
-        "phase-3-validation-action-rc-v6"
+        "phase-3-validation-action-rc-v6",
+        "phase-2d-publisher-readiness-rc-v7"
       ]
     },
     "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
@@ -67,15 +68,7 @@
         "status": { "const": "passed" },
         "mode": { "const": "clean-offline-pnpm-install" },
         "checks": {
-          "const": [
-            "offline-package-install",
-            "installed-version-match",
-            "installed-help-contract",
-            "pilot-timer-start",
-            "starter-generation",
-            "starter-validation",
-            "device-free-preflight-refusal"
-          ]
+          "type": "array"
         },
         "deviceOrWalletTested": { "const": false }
       }
@@ -144,6 +137,56 @@
     },
     "payloadSha256": { "$ref": "#/$defs/sha256" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": { "const": "phase-2d-publisher-readiness-rc-v7" }
+        }
+      },
+      "then": {
+        "properties": {
+          "consumerRehearsal": {
+            "type": "object",
+            "properties": {
+              "checks": {
+                "const": [
+                  "offline-package-install",
+                  "installed-version-match",
+                  "installed-help-contract",
+                  "pilot-timer-start",
+                  "starter-generation",
+                  "starter-validation",
+                  "device-free-preflight-refusal",
+                  "device-free-pilot-policy-lint-refusal"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "consumerRehearsal": {
+            "type": "object",
+            "properties": {
+              "checks": {
+                "const": [
+                  "offline-package-install",
+                  "installed-version-match",
+                  "installed-help-contract",
+                  "pilot-timer-start",
+                  "starter-generation",
+                  "starter-validation",
+                  "device-free-preflight-refusal"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "safePath": {
       "type": "string",

@@ -46,8 +46,8 @@ import {
   scenarioCheckId,
   type PilotPreflightCheckId,
 } from "../rules/catalog.js";
-import { readBoundedRegularFile, readBoundedUtf8File } from "../security/file.js";
-import { validatePilotFlowReadiness } from "../security/flow.js";
+import { isRegularFileNoFollow, readBoundedRegularFile } from "../security/file.js";
+import { validateMaestroFlowSafety, validatePilotFlowReadiness } from "../security/flow.js";
 import { redactJsonValue } from "../security/redact.js";
 import { managedWalletExpectedSha256 } from "../security/wallet-artifact.js";
 import { doctor, type DoctorOptions, type DoctorOutput } from "./doctor.js";
@@ -132,11 +132,17 @@ async function loadEligibleConfig(configPath: string): Promise<ResolvedLaunchRig
   return config;
 }
 
-async function pilotFlowPromotionIssues(config: ResolvedLaunchRigConfig): Promise<string[]> {
-  const issues: string[] = [];
+interface PilotFlowReview {
+  promotionIssues: string[];
+  coverageIssues: string[];
+}
+
+async function reviewPilotFlows(config: ResolvedLaunchRigConfig): Promise<PilotFlowReview> {
+  const promotionIssues: string[] = [];
+  const flowHashes = new Map<string, string>();
   for (const scenario of config.scenarios) {
     if (GENERATED_FLOW_TEMPLATES.has(path.basename(scenario.flow).toLowerCase())) {
-      issues.push(
+      promotionIssues.push(
         "Scenario " +
           scenario.id +
           " uses the reserved init template " +
@@ -144,59 +150,74 @@ async function pilotFlowPromotionIssues(config: ResolvedLaunchRigConfig): Promis
           ". Copy it to a publisher-owned filename and update scenarios[].flow",
       );
     }
+    let bytes: Buffer;
     let source: string;
     try {
-      source = await readBoundedUtf8File(scenario.resolvedFlow, 512 * 1024);
+      bytes = await readBoundedRegularFile(scenario.resolvedFlow, 512 * 1024);
+      source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     } catch {
-      issues.push("Scenario " + scenario.id + " flow cannot be read");
+      promotionIssues.push("Scenario " + scenario.id + " flow cannot be read safely");
       continue;
     }
+    flowHashes.set(scenario.id, sha256Bytes(bytes));
+    for (const issue of validateMaestroFlowSafety(source, config.project.packageName)) {
+      promotionIssues.push("Scenario " + scenario.id + " " + issue);
+    }
     for (const issue of validatePilotFlowReadiness(source)) {
-      issues.push("Scenario " + scenario.id + " " + issue);
+      promotionIssues.push("Scenario " + scenario.id + " " + issue);
     }
   }
-  return issues;
-}
 
-async function pilotMwaCoverageIssues(config: ResolvedLaunchRigConfig): Promise<string[]> {
+  const coverageIssues: string[] = [];
   const missingKinds = CORE_MWA_KINDS.filter(
     (kind) => !config.scenarios.some((scenario) => scenario.kind === kind && scenario.required),
   );
   if (missingKinds.length > 0) {
-    return ["Required MWA coverage is missing: " + missingKinds.join(", ")];
+    coverageIssues.push("Required MWA coverage is missing: " + missingKinds.join(", "));
+  } else {
+    const coreScenarios = CORE_MWA_KINDS.flatMap((kind) => {
+      const scenario = config.scenarios.find((entry) => entry.kind === kind && entry.required);
+      return scenario ? [scenario] : [];
+    });
+    if (new Set(coreScenarios.map((scenario) => scenario.resolvedFlow)).size !== CORE_MWA_KINDS.length) {
+      coverageIssues.push("Required MWA coverage must use four distinct promoted flow files");
+    } else if (coreScenarios.some((scenario) => !flowHashes.has(scenario.id))) {
+      coverageIssues.push("Required MWA flow definitions could not be inspected safely");
+    } else if (
+      new Set(coreScenarios.map((scenario) => flowHashes.get(scenario.id))).size !== CORE_MWA_KINDS.length
+    ) {
+      coverageIssues.push("Required MWA coverage must use four distinct publisher flow definitions");
+    }
   }
-  const coreScenarios = CORE_MWA_KINDS.map((kind) =>
-    config.scenarios.find((scenario) => scenario.kind === kind && scenario.required),
-  );
-  const resolvedFlows = coreScenarios.flatMap((scenario) =>
-    scenario ? [scenario.resolvedFlow] : [],
-  );
-  if (new Set(resolvedFlows).size !== CORE_MWA_KINDS.length) {
-    return ["Required MWA coverage must use four distinct promoted flow files"];
-  }
-  const flowHashes = await Promise.all(
-    resolvedFlows.map(async (flowPath) =>
-      sha256Bytes(await readBoundedRegularFile(flowPath, 512 * 1024)),
-    ),
-  );
-  if (new Set(flowHashes).size !== CORE_MWA_KINDS.length) {
-    return ["Required MWA coverage must use four distinct publisher flow definitions"];
-  }
-  return [];
+  return { promotionIssues, coverageIssues };
 }
 
-async function assertPilotFlowsPromoted(config: ResolvedLaunchRigConfig): Promise<void> {
-  const issues = await pilotFlowPromotionIssues(config);
-  if (issues.length > 0) throw new PilotError("Pilot flows are not ready: " + issues.join("; "));
-}
-
-async function assertFullMwaCoverageIntegrity(config: ResolvedLaunchRigConfig): Promise<void> {
+async function assertPilotFlowPolicy(config: ResolvedLaunchRigConfig): Promise<void> {
+  const review = await reviewPilotFlows(config);
+  if (review.promotionIssues.length > 0) {
+    throw new PilotError("Pilot flows are not ready: " + review.promotionIssues.join("; "));
+  }
   const hasAllCoreKinds = CORE_MWA_KINDS.every((kind) =>
     config.scenarios.some((scenario) => scenario.kind === kind && scenario.required),
   );
   if (!hasAllCoreKinds) return;
-  const issues = await pilotMwaCoverageIssues(config);
-  if (issues.length > 0) throw new PilotError("Pilot MWA coverage is not ready: " + issues.join("; "));
+  if (review.coverageIssues.length > 0) {
+    throw new PilotError("Pilot MWA coverage is not ready: " + review.coverageIssues.join("; "));
+  }
+}
+
+async function loadPilotLintConfig(configPath: string): Promise<ResolvedLaunchRigConfig> {
+  try {
+    return await loadConfig(configPath);
+  } catch (error) {
+    if (error instanceof ConfigError) {
+      const issues = error.issues.map((issue) =>
+        issue.startsWith("Cannot read ") ? "Configuration file cannot be read safely" : issue,
+      );
+      throw new ConfigError(issues);
+    }
+    throw error;
+  }
 }
 
 async function inputHashes(config: ResolvedLaunchRigConfig) {
@@ -729,6 +750,105 @@ export interface PilotPreflightCheck {
   summary: string;
 }
 
+const PILOT_POLICY_LIMITATIONS = [
+  "No pilot state, connected device, ADB, Maestro, installed package, or flow execution was checked.",
+  "This local result does not establish publisher identity, consent, independence, external adoption, a confirmed defect, Seeker hardware, production-wallet behavior, Seed Vault behavior, the technical pilot gate, or grant readiness.",
+] as const;
+
+async function pilotPolicyChecks(config: ResolvedLaunchRigConfig): Promise<PilotPreflightCheck[]> {
+  const projectIssues = pilotProjectIssues(config);
+  const walletIssues = pilotWalletIssues(config);
+  const [flowReview, appArtifactSafe, walletArtifactSafe] = await Promise.all([
+    reviewPilotFlows(config),
+    config.resolvedApk ? isRegularFileNoFollow(config.resolvedApk) : true,
+    config.resolvedWalletApk ? isRegularFileNoFollow(config.resolvedWalletApk) : true,
+  ]);
+  if (!appArtifactSafe) {
+    projectIssues.push("Configured app APK is missing or cannot be read safely");
+  }
+  if (!walletArtifactSafe) {
+    walletIssues.push("Configured development-wallet APK is missing or cannot be read safely");
+  }
+  const checks: PilotPreflightCheck[] = [
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.project,
+      status: projectIssues.length === 0 ? "pass" : "fail",
+      summary: projectIssues.length === 0
+        ? "Project identity does not match LaunchRig's blocked default or reference-fixture identifiers"
+        : projectIssues.join("; "),
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.wallet,
+      status: walletIssues.length === 0 ? "pass" : "fail",
+      summary: walletIssues.length === 0
+        ? "Pilot automation uses the allowlisted " + config.wallet.mode + " development-wallet profile"
+        : walletIssues.join("; "),
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.devicePolicy,
+      status: config.device.requirePhysical ? "pass" : "fail",
+      summary: config.device.requirePhysical
+        ? "Pilot configuration requires a physical Android device"
+        : "Pilot evidence requires device.requirePhysical: true",
+    },
+  ];
+
+  checks.push({
+    id: PILOT_PREFLIGHT_CHECK_IDS.flows,
+    status: flowReview.promotionIssues.length === 0 ? "pass" : "fail",
+    summary:
+      flowReview.promotionIssues.length === 0
+        ? "Every configured flow is promoted and has no reserved selector"
+        : flowReview.promotionIssues.join("; "),
+  });
+  checks.push({
+    id: PILOT_PREFLIGHT_CHECK_IDS.mwaCoverage,
+    status: flowReview.coverageIssues.length === 0 ? "pass" : "fail",
+    summary:
+      flowReview.coverageIssues.length === 0
+        ? "Required authorize, SIWS, message-signing, and rejection scenarios are configured"
+        : flowReview.coverageIssues.join("; "),
+  });
+  return checks;
+}
+
+export interface LintPilotPolicyOptions {
+  configPath?: string;
+}
+
+export interface PilotPolicyLintOutput {
+  schemaVersion: 1;
+  kind: "launchrig-pilot-policy-lint";
+  status: "passed" | "failed";
+  staticPolicyValid: boolean;
+  pilotStateChecked: false;
+  deviceEnvironmentChecked: false;
+  checks: PilotPreflightCheck[];
+  externalGrantGate: ExternalGrantGateStatus;
+  grantReady: false;
+  limitations: string[];
+  exitCode: 0 | 2;
+}
+
+export async function lintPilotPolicy(options: LintPilotPolicyOptions = {}): Promise<PilotPolicyLintOutput> {
+  const config = await loadPilotLintConfig(options.configPath ?? "launchrig.yml");
+  const checks = await pilotPolicyChecks(config);
+  const staticPolicyValid = checks.every((check) => check.status === "pass");
+  return {
+    schemaVersion: 1,
+    kind: "launchrig-pilot-policy-lint",
+    status: staticPolicyValid ? "passed" : "failed",
+    staticPolicyValid,
+    pilotStateChecked: false,
+    deviceEnvironmentChecked: false,
+    checks,
+    externalGrantGate: externalGrantGateStatus(),
+    grantReady: false,
+    limitations: [...PILOT_POLICY_LIMITATIONS],
+    exitCode: staticPolicyValid ? 0 : 2,
+  };
+}
+
 export interface CheckPilotOptions extends PilotBaseOptions {
   deviceSerial?: string;
   adbPath?: string;
@@ -753,52 +873,14 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
   const state = await readPilotState(statePath);
   if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
 
-  const projectIssues = pilotProjectIssues(config);
-  const walletIssues = pilotWalletIssues(config);
   const checks: PilotPreflightCheck[] = [
     {
       id: PILOT_PREFLIGHT_CHECK_IDS.state,
       status: "pass",
       summary: "Private pilot state exists and its integrity check passed",
     },
-    {
-      id: PILOT_PREFLIGHT_CHECK_IDS.project,
-      status: projectIssues.length === 0 ? "pass" : "fail",
-      summary: projectIssues.length === 0
-        ? "Publisher project identity is not a generated or controlled fixture identity"
-        : projectIssues.join("; "),
-    },
-    {
-      id: PILOT_PREFLIGHT_CHECK_IDS.wallet,
-      status: walletIssues.length === 0 ? "pass" : "fail",
-      summary: walletIssues.length === 0
-        ? "Pilot automation uses the allowlisted " + config.wallet.mode + " development-wallet profile"
-        : walletIssues.join("; "),
-    },
-    {
-      id: PILOT_PREFLIGHT_CHECK_IDS.devicePolicy,
-      status: config.device.requirePhysical ? "pass" : "fail",
-      summary: config.device.requirePhysical
-        ? "Pilot configuration requires a physical Android device"
-        : "Pilot evidence requires device.requirePhysical: true",
-    },
+    ...(await pilotPolicyChecks(config)),
   ];
-
-  const flowIssues = await pilotFlowPromotionIssues(config);
-  checks.push({
-    id: PILOT_PREFLIGHT_CHECK_IDS.flows,
-    status: flowIssues.length === 0 ? "pass" : "fail",
-    summary: flowIssues.length === 0 ? "Every configured flow is promoted and has no reserved selector" : flowIssues.join("; "),
-  });
-  const coverageIssues = await pilotMwaCoverageIssues(config);
-  checks.push({
-    id: PILOT_PREFLIGHT_CHECK_IDS.mwaCoverage,
-    status: coverageIssues.length === 0 ? "pass" : "fail",
-    summary:
-      coverageIssues.length === 0
-        ? "Required authorize, SIWS, message-signing, and rejection scenarios are configured"
-        : coverageIssues.join("; "),
-  });
 
   const policyReady = checks.every((check) => check.status === "pass");
   let doctorOutput: DoctorOutput | undefined;
@@ -864,8 +946,7 @@ export async function runPilot(
     throw new PilotError("Pilot runs must execute every configured scenario");
   }
   const config = await loadEligibleConfig(options.configPath ?? "launchrig.yml");
-  await assertPilotFlowsPromoted(config);
-  await assertFullMwaCoverageIntegrity(config);
+  await assertPilotFlowPolicy(config);
   let lastKnownHashes = await inputHashes(config);
   const statePath = await pilotStatePath(config.configDirectory, options.pilotId);
   const runner = options.projectRunner ?? runProject;
@@ -885,8 +966,7 @@ export async function runPilot(
       try {
         const configSha256BeforeLoad = await sha256File(config.configPath);
         attemptConfig = await loadEligibleConfig(config.configPath);
-        await assertPilotFlowsPromoted(attemptConfig);
-        await assertFullMwaCoverageIntegrity(attemptConfig);
+        await assertPilotFlowPolicy(attemptConfig);
         staged = await stagePilotInputs(attemptConfig);
         if (configSha256BeforeLoad !== staged.hashes.configSha256) {
           await staged.dispose();

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCli } from "../src/cli.js";
+import { createPublicPilotEvidenceBinding } from "../src/pilot/binding.js";
 import {
   auditPrivateCohortRegister,
   CohortRegisterError,
@@ -291,7 +292,11 @@ test("private cohort audit counts three governed qualified bindings without elev
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-register-qualified-"));
   try {
     const evidence = await Promise.all([1, 2, 3].map((index) => writeEvidence(directory, index)));
-    const candidates = evidence.map((entry, index) => makeCandidate(index + 1, binding(entry)));
+    const receiptBindings = await Promise.all(
+      evidence.map(async (entry) => (await createPublicPilotEvidenceBinding(entry.path)).binding),
+    );
+    assert.deepEqual(receiptBindings, evidence.map((entry) => binding(entry)));
+    const candidates = receiptBindings.map((entry, index) => makeCandidate(index + 1, entry));
     const registerPath = await writeRegister(directory, sealedRegister(candidates, [makeDefect(1, candidates)]));
     const output = await auditPrivateCohortRegister(registerPath, evidence.map((entry) => entry.path));
 

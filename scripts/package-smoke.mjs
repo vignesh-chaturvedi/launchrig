@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { BUNDLE_PROFILE } from "./pilot-bundle-lib.mjs";
 import { inspectLaunchRigArchive } from "./verify-pilot-bundle.mjs";
 
@@ -100,6 +101,9 @@ try {
   if (!installedFiles.includes("schemas/launchrig-pilot-evidence-v2.schema.json")) {
     throw new Error("Packed pilot evidence v2 schema is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-pilot-evidence-binding-receipt.schema.json")) {
+    throw new Error("Packed pilot evidence binding receipt schema is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
   }
@@ -134,6 +138,20 @@ try {
   const publisherBundleSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-publisher-bundle.schema.json"), "utf8"),
   );
+  new Ajv2020({ strict: true }).compile(publisherBundleSchema);
+  const legacyRehearsalChecks = [
+    "offline-package-install",
+    "installed-version-match",
+    "installed-help-contract",
+    "pilot-timer-start",
+    "starter-generation",
+    "starter-validation",
+    "device-free-preflight-refusal",
+  ];
+  const v7RehearsalChecks = [
+    ...legacyRehearsalChecks,
+    "device-free-pilot-policy-lint-refusal",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -146,9 +164,16 @@ try {
         "phase-3-foundation-rc-v4",
         "phase-3-config-parity-rc-v5",
         "phase-3-validation-action-rc-v6",
+        "phase-2d-publisher-readiness-rc-v7",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v7RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.else?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
       JSON.stringify([
         "package-manager-version",
@@ -159,6 +184,44 @@ try {
       ])
   ) {
     throw new Error("Packed publisher bundle schema does not preserve the claim-limited contract.");
+  }
+  const bindingReceiptSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-pilot-evidence-binding-receipt.schema.json"),
+      "utf8",
+    ),
+  );
+  const validateBindingReceipt = new Ajv2020({ strict: true }).compile(bindingReceiptSchema);
+  const bindingReceiptLimitations = bindingReceiptSchema.properties?.limitations?.const;
+  const sampleBindingReceipt = {
+    receiptSchemaVersion: 1,
+    kind: "launchrig-pilot-evidence-binding-receipt",
+    binding: {
+      evidenceId: "123e4567-e89b-42d3-a456-426614174000",
+      fileSha256: "a".repeat(64),
+      evidenceSha256: "b".repeat(64),
+      schemaVersion: 1,
+    },
+    integrityValid: true,
+    internalConsistencyValid: true,
+    claimStatus: "self-recorded-unattested",
+    technicalStatus: "not-recomputable",
+    externalGrantGate: "not-established",
+    grantReady: false,
+    limitations: bindingReceiptLimitations,
+  };
+  if (
+    bindingReceiptSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-pilot-evidence-binding-receipt.schema.json" ||
+    bindingReceiptSchema.additionalProperties !== false ||
+    bindingReceiptSchema.properties?.receiptSchemaVersion?.const !== 1 ||
+    bindingReceiptSchema.properties?.kind?.const !== "launchrig-pilot-evidence-binding-receipt" ||
+    bindingReceiptSchema.properties?.binding?.additionalProperties !== false ||
+    bindingReceiptSchema.properties?.grantReady?.const !== false ||
+    !validateBindingReceipt(sampleBindingReceipt) ||
+    validateBindingReceipt({ ...sampleBindingReceipt, technicalStatus: "qualified-self-recorded" })
+  ) {
+    throw new Error("Packed binding receipt schema does not preserve the claim-limited contract.");
   }
   const cohortSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-cohort-verification.schema.json"), "utf8"),
@@ -306,6 +369,7 @@ try {
     "schemas/launchrig-core-rule-catalog.schema.json",
     "schemas/launchrig-pilot-evidence-v1.schema.json",
     "schemas/launchrig-pilot-evidence-v2.schema.json",
+    "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
     "schemas/launchrig-private-cohort-audit.schema.json",
     "schemas/launchrig-private-cohort-register.schema.json",
@@ -396,6 +460,12 @@ try {
   const help = await run(executable, ["--help"], { cwd: installDirectory });
   if (!help.stdout.includes("launchrig pilot verify FILE")) {
     throw new Error("Installed CLI help is missing the public evidence verifier.");
+  }
+  if (!help.stdout.includes("launchrig pilot binding FILE")) {
+    throw new Error("Installed CLI help is missing the public evidence binding receipt.");
+  }
+  if (!help.stdout.includes("launchrig pilot lint")) {
+    throw new Error("Installed CLI help is missing the device-free pilot policy lint.");
   }
   if (!help.stdout.includes("launchrig pilot check --pilot ID")) {
     throw new Error("Installed CLI help is missing the publisher pilot preflight.");
@@ -531,12 +601,88 @@ try {
   ) {
     throw new Error("Installed pilot preflight did not reject the incomplete starter without device access.");
   }
+  let lintFailure;
+  try {
+    await run(executable, ["pilot", "lint", "--config", "launchrig.yml", "--json"], {
+      cwd: publisherDirectory,
+    });
+  } catch (error) {
+    lintFailure = error;
+  }
+  if (
+    !(lintFailure instanceof Error) ||
+    !lintFailure.message.includes('"kind": "launchrig-pilot-policy-lint"') ||
+    !lintFailure.message.includes('"staticPolicyValid": false') ||
+    !lintFailure.message.includes("Required MWA coverage is missing") ||
+    lintFailure.message.includes("Android Device Ready") ||
+    lintFailure.message.includes("Android/MWA Ready")
+  ) {
+    throw new Error("Installed pilot lint did not safely reject the incomplete starter.");
+  }
   const ignoreSource = await readFile(path.join(publisherDirectory, ".gitignore"), "utf8");
   if (!ignoreSource.split(/\r?\n/).includes(".launchrig/")) {
     throw new Error("Installed init did not ignore private LaunchRig state.");
   }
   for (const flow of ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"]) {
     await readFile(path.join(publisherDirectory, "launchrig-flows", flow + ".example.yaml"), "utf8");
+  }
+  const promotedScenarios = [
+    ["authorize", "mwa-authorize", "Authorize"],
+    ["siws", "mwa-siws", "Sign in with Solana"],
+    ["sign-message", "mwa-sign-message", "Sign message"],
+    ["reject", "mwa-reject", "Reject and recover"],
+  ];
+  for (const [id] of promotedScenarios) {
+    await writeFile(
+      path.join(publisherDirectory, "launchrig-flows", id + ".yaml"),
+      [
+        "appId: com.example.packagesmoke",
+        "---",
+        "- launchApp:",
+        "    clearState: false",
+        "- assertVisible:",
+        "    id: package-smoke-" + id + "-ready",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+  }
+  const starterSource = await readFile(path.join(publisherDirectory, "launchrig.yml"), "utf8");
+  const promotedConfig = starterSource.replace(
+    "scenarios: []",
+    [
+      "scenarios:",
+      ...promotedScenarios.flatMap(([id, kind, name]) => [
+        "  - id: " + id,
+        "    kind: " + kind,
+        "    name: " + name,
+        "    flow: ./launchrig-flows/" + id + ".yaml",
+        "    required: true",
+      ]),
+    ].join("\n"),
+  );
+  await writeFile(path.join(publisherDirectory, "launchrig.yml"), promotedConfig, "utf8");
+  const policyLint = JSON.parse(
+    (
+      await run(executable, ["pilot", "lint", "--config", "launchrig.yml", "--json"], {
+        cwd: publisherDirectory,
+      })
+    ).stdout,
+  );
+  if (
+    policyLint.kind !== "launchrig-pilot-policy-lint" ||
+    policyLint.status !== "passed" ||
+    policyLint.staticPolicyValid !== true ||
+    policyLint.pilotStateChecked !== false ||
+    policyLint.deviceEnvironmentChecked !== false ||
+    policyLint.checks?.length !== 5 ||
+    policyLint.checks.some((check) => check.status !== "pass") ||
+    policyLint.externalGrantGate?.status !== "not-established" ||
+    policyLint.grantReady !== false ||
+    JSON.stringify(policyLint).includes("Android Device Ready") ||
+    JSON.stringify(policyLint).includes("Android/MWA Ready")
+  ) {
+    throw new Error("Installed pilot lint did not accept the promoted static policy contract.");
   }
 
   const claims = {
@@ -583,6 +729,24 @@ try {
     verificationV1.grantReady !== false
   ) {
     throw new Error("Installed verifier did not retain evidence v1 compatibility.");
+  }
+  const bindingV1 = JSON.parse(
+    (await run(executable, ["pilot", "binding", evidenceV1Path, "--json"], { cwd: publisherDirectory })).stdout,
+  );
+  if (
+    bindingV1.kind !== "launchrig-pilot-evidence-binding-receipt" ||
+    bindingV1.receiptSchemaVersion !== 1 ||
+    bindingV1.binding?.evidenceId !== evidenceV1Core.evidenceId ||
+    bindingV1.binding?.fileSha256 !== createHash("sha256").update(await readFile(evidenceV1Path)).digest("hex") ||
+    bindingV1.binding?.evidenceSha256 !== sha256Value(evidenceV1Core) ||
+    bindingV1.binding?.schemaVersion !== 1 ||
+    bindingV1.technicalStatus !== "not-recomputable" ||
+    bindingV1.externalGrantGate !== "not-established" ||
+    bindingV1.grantReady !== false ||
+    "fileIdentity" in bindingV1 ||
+    JSON.stringify(bindingV1).includes(evidenceV1Path)
+  ) {
+    throw new Error("Installed evidence binding receipt did not preserve its path-omitting v1 contract.");
   }
 
   const evidenceV2NotMetCore = {
@@ -718,6 +882,18 @@ try {
     verificationV2Met.grantReady !== false
   ) {
     throw new Error("Installed verifier did not recompute a valid evidence v2 technical gate.");
+  }
+  const bindingV2Met = JSON.parse(
+    (await run(executable, ["pilot", "binding", evidenceV2MetPath, "--json"], { cwd: publisherDirectory })).stdout,
+  );
+  if (
+    bindingV2Met.receiptSchemaVersion !== 1 ||
+    bindingV2Met.binding?.schemaVersion !== 2 ||
+    bindingV2Met.technicalStatus !== "qualified-self-recorded" ||
+    bindingV2Met.externalGrantGate !== "not-established" ||
+    bindingV2Met.grantReady !== false
+  ) {
+    throw new Error("Installed evidence binding receipt did not preserve its qualified self-recorded boundary.");
   }
 
   let matrixFailure;

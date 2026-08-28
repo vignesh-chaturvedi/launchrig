@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
+  "title": "LaunchRig public pilot evidence binding receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receiptSchemaVersion",
+    "kind",
+    "binding",
+    "integrityValid",
+    "internalConsistencyValid",
+    "claimStatus",
+    "technicalStatus",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "receiptSchemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-pilot-evidence-binding-receipt" },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceId", "fileSha256", "evidenceSha256", "schemaVersion"],
+      "properties": {
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+        },
+        "fileSha256": { "$ref": "#/$defs/sha256" },
+        "evidenceSha256": { "$ref": "#/$defs/sha256" },
+        "schemaVersion": { "enum": [1, 2] }
+      }
+    },
+    "integrityValid": { "const": true },
+    "internalConsistencyValid": { "const": true },
+    "claimStatus": { "const": "self-recorded-unattested" },
+    "technicalStatus": {
+      "enum": ["not-recomputable", "not-qualified-self-recorded", "qualified-self-recorded"]
+    },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "The receipt binds exact local file bytes to an internally consistent evidence document, but it is not a signature or publisher attestation.",
+        "Any qualified technical status is recomputed from self-recorded evidence fields and does not establish an external publisher, consent, independence, a confirmed defect, Seeker hardware, production-wallet behavior, Seed Vault behavior, or grant readiness."
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "type": "object",
+            "properties": { "schemaVersion": { "const": 1 } },
+            "required": ["schemaVersion"]
+          }
+        },
+        "required": ["binding"]
+      },
+      "then": {
+        "properties": { "technicalStatus": { "const": "not-recomputable" } }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "type": "object",
+            "properties": { "schemaVersion": { "const": 2 } },
+            "required": ["schemaVersion"]
+          }
+        },
+        "required": ["binding"]
+      },
+      "then": {
+        "properties": {
+          "technicalStatus": {
+            "enum": ["not-qualified-self-recorded", "qualified-self-recorded"]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

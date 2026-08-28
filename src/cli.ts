@@ -16,12 +16,14 @@ import {
   checkPilot,
   exportPilotEvidence,
   getPilotStatus,
+  lintPilotPolicy,
   PilotError,
   runPilot,
   startPilot,
 } from "./commands/pilot.js";
 import { validateProject } from "./commands/validate.js";
 import { FixtureMatrixValidationError } from "./fixtures/matrix.js";
+import { createPublicPilotEvidenceBinding } from "./pilot/binding.js";
 import {
   CohortError,
   verifyCohortEvidence,
@@ -45,9 +47,11 @@ export interface CliDependencies {
   runFixtureMatrix?: typeof runFixtureMatrix;
   startPilot?: typeof startPilot;
   checkPilot?: typeof checkPilot;
+  lintPilotPolicy?: typeof lintPilotPolicy;
   runPilot?: typeof runPilot;
   getPilotStatus?: typeof getPilotStatus;
   exportPilotEvidence?: typeof exportPilotEvidence;
+  createPublicPilotEvidenceBinding?: typeof createPublicPilotEvidenceBinding;
   verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
   verifyCohortEvidence?: typeof verifyCohortEvidence;
   auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
@@ -68,12 +72,14 @@ const HELP = [
   "  launchrig doctor [--config launchrig.yml] [--device SERIAL] [--json]",
   "  launchrig run [--config launchrig.yml] [--device SERIAL] [--scenario ID]",
   "  launchrig matrix [--device SERIAL] [--json]  (source checkout only)",
+  "  launchrig pilot lint [--config launchrig.yml] [--json]",
   "  launchrig pilot start --pilot ID [--config launchrig.yml] [--force]",
   "  launchrig pilot check --pilot ID [--config launchrig.yml] [--device SERIAL] [--json]",
   "  launchrig pilot run --pilot ID [--config launchrig.yml] [--device SERIAL] [--repeat N]",
   "  launchrig pilot status --pilot ID [--config launchrig.yml] [--json]",
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
   "  launchrig pilot verify FILE [--json]",
+  "  launchrig pilot binding FILE [--json]",
   "  launchrig cohort verify FILE... [--json]",
   "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
   "",
@@ -176,6 +182,44 @@ function humanPilotCheck(value: Awaited<ReturnType<typeof checkPilot>>): string 
   return lines.join("\n");
 }
 
+function humanPilotPolicyLint(value: Awaited<ReturnType<typeof lintPilotPolicy>>): string {
+  const lines = [
+    value.staticPolicyValid
+      ? "Pilot policy lint: ready for an attended device check"
+      : "Pilot policy lint: action required",
+  ];
+  for (const check of value.checks) {
+    lines.push((check.status === "pass" ? "PASS " : "FAIL ") + check.summary);
+  }
+  lines.push(
+    "pilot state checked: no",
+    "device environment checked: no",
+    "external grant gate: not established",
+    "grant ready: no",
+  );
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  if (value.staticPolicyValid) {
+    lines.push("Next attended step: after the timer is started and the phone is connected, run launchrig pilot check.");
+  }
+  return lines.join("\n");
+}
+
+function humanPilotEvidenceBinding(value: Awaited<ReturnType<typeof createPublicPilotEvidenceBinding>>): string {
+  const lines = [
+    "Public pilot evidence binding receipt",
+    "evidence ID: " + value.binding.evidenceId,
+    "file SHA-256: " + value.binding.fileSha256,
+    "internal evidence SHA-256: " + value.binding.evidenceSha256,
+    "evidence schema: v" + value.binding.schemaVersion,
+    "technical status: " + value.technicalStatus,
+    "claim status: " + value.claimStatus,
+    "external grant gate: " + value.externalGrantGate,
+    "grant ready: no",
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  return lines.join("\n");
+}
+
 function humanCohortVerification(value: CohortVerificationOutput): string {
   const lines = [
     "Cohort evidence verification: internally consistent",
@@ -263,12 +307,13 @@ function humanCohortRegisterAudit(value: CohortRegisterAuditOutput): string {
 }
 
 function unsupportedOption(argv: string[], allowed: ReadonlySet<string>): string | undefined {
-  return argv.find((argument) => {
-    if (!argument.startsWith("-")) return false;
+  for (const argument of argv) {
+    if (!argument.startsWith("-")) continue;
     const separator = argument.indexOf("=");
     const name = separator >= 0 ? argument.slice(0, separator) : argument;
-    return !allowed.has(name);
-  });
+    if (!allowed.has(name)) return name;
+  }
+  return undefined;
 }
 
 export async function runCli(
@@ -433,6 +478,7 @@ export async function runCli(
         io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortVerification(output));
         return 0;
       }
+
       if (subcommand === "audit") {
         if (rejectedOption) throw new CohortRegisterError("cohort audit does not accept " + rejectedOption);
         const registerPath = parsed.positionals[2];
@@ -448,6 +494,21 @@ export async function runCli(
 
     if (command === "pilot") {
       const subcommand = parsed.positionals[1];
+
+      if (subcommand === "lint") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--config", "-c", "--json", "--help", "-h", "--version", "-v"]),
+        );
+        if (rejectedOption) throw new PilotError("pilot lint does not accept " + rejectedOption);
+        if (parsed.positionals.length !== 2) {
+          throw new PilotError("pilot lint does not accept positional arguments");
+        }
+        const lint = dependencies.lintPilotPolicy ?? lintPilotPolicy;
+        const output = await lint({ configPath });
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanPilotPolicyLint(output));
+        return output.exitCode;
+      }
 
       if (subcommand === "verify") {
         const rejectedOption = unsupportedOption(
@@ -480,6 +541,25 @@ export async function runCli(
                 ...output.limitations.map((limitation) => "- " + limitation),
               ].join("\n"),
         );
+        return 0;
+      }
+
+      if (subcommand === "binding") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--json", "--help", "-h", "--version", "-v"]),
+        );
+        if (rejectedOption) {
+          throw new PilotError("pilot binding does not accept " + rejectedOption);
+        }
+        const evidencePath = parsed.positionals[2];
+        if (!evidencePath || parsed.positionals.length !== 3) {
+          throw new PilotError("pilot binding requires exactly one evidence file");
+        }
+        const createBinding =
+          dependencies.createPublicPilotEvidenceBinding ?? createPublicPilotEvidenceBinding;
+        const output = await createBinding(evidencePath);
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanPilotEvidenceBinding(output));
         return 0;
       }
 
@@ -613,7 +693,7 @@ export async function runCli(
         return 0;
       }
 
-      throw new PilotError("pilot command must be start, check, run, status, export, or verify");
+      throw new PilotError("pilot command must be lint, start, check, run, status, export, verify, or binding");
     }
 
     io.error("Unknown command: " + command);

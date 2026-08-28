@@ -632,7 +632,8 @@ async function readPublicEvidence(inputPath: string): Promise<ReadPublicEvidence
       opened.dev !== before.dev ||
       opened.ino !== before.ino ||
       opened.size !== before.size ||
-      opened.mtimeNs !== before.mtimeNs
+      opened.mtimeNs !== before.mtimeNs ||
+      opened.ctimeNs !== before.ctimeNs
     ) {
       throw new Error("unsafe evidence file");
     }
@@ -652,12 +653,14 @@ async function readPublicEvidence(inputPath: string): Promise<ReadPublicEvidence
       after.ino !== opened.ino ||
       after.size !== opened.size ||
       after.mtimeNs !== opened.mtimeNs ||
+      after.ctimeNs !== opened.ctimeNs ||
       afterPath.isSymbolicLink() ||
       !afterPath.isFile() ||
       afterPath.dev !== opened.dev ||
       afterPath.ino !== opened.ino ||
       afterPath.size !== opened.size ||
-      afterPath.mtimeNs !== opened.mtimeNs
+      afterPath.mtimeNs !== opened.mtimeNs ||
+      afterPath.ctimeNs !== opened.ctimeNs
     ) {
       throw new Error("evidence changed while reading");
     }

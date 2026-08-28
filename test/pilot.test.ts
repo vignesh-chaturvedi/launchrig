@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,15 +8,18 @@ import {
   checkPilot,
   exportPilotEvidence,
   getPilotStatus,
+  lintPilotPolicy,
   pilotMetrics,
   pilotTechnicalGate,
   PilotError,
   runPilot,
   startPilot,
+  type PilotPolicyLintOutput,
 } from "../src/commands/pilot.js";
 import type { DoctorOutput } from "../src/commands/doctor.js";
 import { runCli } from "../src/cli.js";
 import { loadConfig } from "../src/config/load.js";
+import { createPublicPilotEvidenceBinding } from "../src/pilot/binding.js";
 import { verifyPublicPilotEvidence } from "../src/pilot/public-evidence.js";
 import { readPilotState, sha256Value } from "../src/pilot/store.js";
 import type { PilotProjectRunner, PilotRunEvidenceV1, PilotStateCoreV1 } from "../src/pilot/types.js";
@@ -226,6 +230,142 @@ function readyDoctorOutput(): DoctorOutput {
     issues: [],
   };
 }
+
+test("pilot policy lint is state-free, device-free, and claim-limited", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-lint-"));
+  try {
+    const configPath = await writeFullPublisherProject(directory);
+    const linted = await lintPilotPolicy({ configPath });
+    assert.equal(linted.schemaVersion, 1);
+    assert.equal(linted.kind, "launchrig-pilot-policy-lint");
+    assert.equal(linted.status, "passed");
+    assert.equal(linted.staticPolicyValid, true);
+    assert.equal(linted.pilotStateChecked, false);
+    assert.equal(linted.deviceEnvironmentChecked, false);
+    assert.equal(linted.exitCode, 0);
+    assert.deepEqual(
+      linted.checks.map((check) => check.id),
+      ["pilot.project", "pilot.wallet", "pilot.device-policy", "pilot.flows", "pilot.mwa-coverage"],
+    );
+    assert.ok(linted.checks.every((check) => check.status === "pass"));
+    assert.equal(linted.externalGrantGate.status, "not-established");
+    assert.equal(linted.externalGrantGate.grantReady, false);
+    assert.equal(linted.grantReady, false);
+    assert.ok(linted.limitations.every((limitation) => limitation.length > 0));
+    const serialized = JSON.stringify(linted);
+    assert.doesNotMatch(serialized, /readyToRecord|Android Device Ready|Android\/MWA Ready/);
+    await assert.rejects(() => lstat(path.join(directory, ".launchrig")));
+
+    const jsonOutput: string[] = [];
+    const jsonErrors: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "lint", "--config", configPath, "--json"],
+        { out: (message) => jsonOutput.push(message), error: (message) => jsonErrors.push(message) },
+      ),
+      0,
+    );
+    assert.equal(jsonErrors.length, 0);
+    assert.equal(JSON.parse(jsonOutput.join("\n")).staticPolicyValid, true);
+    await assert.rejects(() => lstat(path.join(directory, ".launchrig")));
+
+    const humanOutput: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "lint", "--config", configPath],
+        { out: (message) => humanOutput.push(message), error: () => undefined },
+      ),
+      0,
+    );
+    assert.match(humanOutput.join("\n"), /Pilot policy lint: ready for an attended device check/);
+    assert.match(humanOutput.join("\n"), /device environment checked: no/);
+    assert.match(humanOutput.join("\n"), /external grant gate: not established/);
+    assert.doesNotMatch(humanOutput.join("\n"), /Android Device Ready|Android\/MWA Ready/);
+
+    const linkedConfigPath = path.join(directory, "linked-launchrig.yml");
+    await symlink(configPath, linkedConfigPath);
+    const linkedConfigErrors: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "lint", "--config", linkedConfigPath, "--json"],
+        { out: () => undefined, error: (message) => linkedConfigErrors.push(message) },
+      ),
+      2,
+    );
+    assert.match(linkedConfigErrors.join("\n"), /Configuration file cannot be read safely/);
+    assert.doesNotMatch(
+      linkedConfigErrors.join("\n"),
+      new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+
+    const cleanSource = await readFile(configPath, "utf8");
+    const linkedFlowPath = path.join(directory, "linked-reject.yaml");
+    await symlink(path.join(directory, "reject.yaml"), linkedFlowPath);
+    await writeFile(configPath, cleanSource.replace("./reject.yaml", "./linked-reject.yaml"), "utf8");
+    const linkedFlowOutput: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "lint", "--config", configPath, "--json"],
+        { out: (message) => linkedFlowOutput.push(message), error: () => undefined },
+      ),
+      2,
+    );
+    const linkedFlowResult = JSON.parse(linkedFlowOutput.join("\n")) as PilotPolicyLintOutput;
+    assert.ok(
+      linkedFlowResult.checks.some(
+        (check) => check.id === "pilot.flows" && check.summary.includes("Scenario reject flow cannot be read safely"),
+      ),
+    );
+    assert.doesNotMatch(
+      linkedFlowOutput.join("\n"),
+      new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+    await writeFile(configPath, cleanSource, "utf8");
+
+    for (const rejected of [
+      ["--pilot", "publisher-lint"],
+      ["--device", "private-serial"],
+      ["--device=private-equals-serial"],
+      ["--adb", "/test/adb"],
+      ["--adb=/private/equals-adb"],
+      ["--maestro", "/test/maestro"],
+      ["extra-position"],
+    ]) {
+      const errors: string[] = [];
+      assert.equal(
+        await runCli(
+          ["pilot", "lint", "--config", configPath, ...rejected],
+          { out: () => undefined, error: (message) => errors.push(message) },
+        ),
+        2,
+      );
+      assert.ok(errors.some((message) => message.includes("pilot lint does not accept")));
+      assert.doesNotMatch(errors.join("\n"), /private-serial|private-equals-serial|\/private\/equals-adb/);
+    }
+
+    const source = await readFile(configPath, "utf8");
+    await writeFile(
+      configPath,
+      source
+        .replace("./siws.yaml", "./authorize.yaml")
+        .replace("./sign-message.yaml", "./authorize.yaml")
+        .replace("./reject.yaml", "./authorize.yaml"),
+      "utf8",
+    );
+    const rejected = await lintPilotPolicy({ configPath });
+    assert.equal(rejected.status, "failed");
+    assert.equal(rejected.staticPolicyValid, false);
+    assert.equal(rejected.exitCode, 2);
+    assert.ok(
+      rejected.checks.some(
+        (check) => check.id === "pilot.mwa-coverage" && check.summary.includes("four distinct promoted flow files"),
+      ),
+    );
+    await assert.rejects(() => lstat(path.join(directory, ".launchrig")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("pilot preflight is read-only and separates policy, technical, and external gates", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-check-"));
@@ -553,6 +693,99 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
     assert.equal(verifiedExport.internalConsistencyValid, true);
     assert.equal(verifiedExport.reportedTechnicalTargetsMet, false);
     assert.equal(verifiedExport.grantReady, false);
+    const bindingReceipt = await createPublicPilotEvidenceBinding(exported.outputPath);
+    assert.deepEqual(bindingReceipt.binding, {
+      evidenceId: exported.evidence.evidenceId,
+      fileSha256: createHash("sha256").update(await readFile(exported.outputPath)).digest("hex"),
+      evidenceSha256: exported.evidence.evidenceSha256,
+      schemaVersion: 2,
+    });
+    assert.equal(bindingReceipt.receiptSchemaVersion, 1);
+    assert.equal(bindingReceipt.technicalStatus, "not-qualified-self-recorded");
+    assert.equal(bindingReceipt.externalGrantGate, "not-established");
+    assert.equal(bindingReceipt.grantReady, false);
+    assert.equal("fileIdentity" in bindingReceipt, false);
+    assert.doesNotMatch(JSON.stringify(bindingReceipt), new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    const bindingOutput: string[] = [];
+    const bindingErrors: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "binding", exported.outputPath, "--json"],
+        { out: (message) => bindingOutput.push(message), error: (message) => bindingErrors.push(message) },
+      ),
+      0,
+    );
+    assert.equal(bindingErrors.length, 0);
+    assert.deepEqual(JSON.parse(bindingOutput.join("\n")).binding, bindingReceipt.binding);
+    assert.doesNotMatch(bindingOutput.join("\n"), new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    const humanBindingOutput: string[] = [];
+    const humanBindingErrors: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "binding", exported.outputPath],
+        {
+          out: (message) => humanBindingOutput.push(message),
+          error: (message) => humanBindingErrors.push(message),
+        },
+      ),
+      0,
+    );
+    const humanBinding = humanBindingOutput.join("\n");
+    assert.equal(humanBindingErrors.length, 0);
+    assert.match(humanBinding, new RegExp("evidence ID: " + bindingReceipt.binding.evidenceId));
+    assert.match(humanBinding, new RegExp("file SHA-256: " + bindingReceipt.binding.fileSha256));
+    assert.match(
+      humanBinding,
+      new RegExp("internal evidence SHA-256: " + bindingReceipt.binding.evidenceSha256),
+    );
+    assert.match(humanBinding, /evidence schema: v2/);
+    assert.match(humanBinding, /technical status: not-qualified-self-recorded/);
+    assert.match(humanBinding, /claim status: self-recorded-unattested/);
+    assert.match(humanBinding, /external grant gate: not-established/);
+    assert.match(humanBinding, /grant ready: no/);
+    assert.match(humanBinding, /not a signature or publisher attestation/);
+    assert.doesNotMatch(humanBinding, /fileIdentity/);
+    assert.doesNotMatch(humanBinding, new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    const linkedEvidencePath = path.join(directory, "linked-public-evidence.json");
+    await symlink(exported.outputPath, linkedEvidencePath);
+    const linkedBindingOutput: string[] = [];
+    const linkedBindingErrors: string[] = [];
+    assert.equal(
+      await runCli(
+        ["pilot", "binding", linkedEvidencePath, "--json"],
+        {
+          out: (message) => linkedBindingOutput.push(message),
+          error: (message) => linkedBindingErrors.push(message),
+        },
+      ),
+      3,
+    );
+    assert.equal(linkedBindingOutput.length, 0);
+    assert.match(linkedBindingErrors.join("\n"), /Public evidence file cannot be read safely/);
+    assert.doesNotMatch(
+      linkedBindingErrors.join("\n"),
+      new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+    for (const rejected of [
+      ["--config", configPath],
+      ["--config=/private/binding-config.yml"],
+      ["--device=private-binding-serial"],
+      ["--pilot", pilotId],
+      ["extra-position"],
+    ]) {
+      const errors: string[] = [];
+      assert.equal(
+        await runCli(
+          ["pilot", "binding", exported.outputPath, ...rejected],
+          { out: () => undefined, error: (message) => errors.push(message) },
+        ),
+        2,
+      );
+      assert.ok(errors.some((message) => message.includes("pilot binding")));
+      assert.doesNotMatch(errors.join("\n"), /\/private\/binding-config|private-binding-serial/);
+    }
 
     await assert.rejects(
       () => exportPilotEvidence({ pilotId, configPath, outputPath: status.statePath, force: true }),
@@ -734,6 +967,10 @@ test("pilot evidence v2 exposes a recomputable technical gate with per-export ke
     const verified = await verifyPublicPilotEvidence(first.exported.outputPath);
     assert.equal(verified.reportedTechnicalTargetsMet, true);
     assert.equal(verified.grantReady, false);
+    assert.equal(
+      (await createPublicPilotEvidenceBinding(first.exported.outputPath)).technicalStatus,
+      "qualified-self-recorded",
+    );
 
     const reexported = await exportPilotEvidence({
       pilotId: "publisher-v2-first",

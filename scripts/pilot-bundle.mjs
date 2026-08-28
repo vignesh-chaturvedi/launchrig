@@ -148,6 +148,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     if (installedPackage.private !== true) throw new Error("Packed LaunchRig package must remain private.");
     for (const relativePath of [
       "dist/src/cli.js",
+      "dist/src/pilot/binding.js",
       "docs/cohort-audit.md",
       "docs/cohort-verification.md",
       "docs/config-v1-compatibility.md",
@@ -165,6 +166,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "schemas/fixtures/launchrig-config-v1.conformance.json",
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
+      "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
       "action.yml",
@@ -185,8 +187,10 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     const help = await run(executable, ["--help"], { cwd: installDirectory, env: rehearsalEnvironment });
     for (const command of [
       "launchrig rules [--json]",
+      "launchrig pilot lint",
       "launchrig pilot check --pilot ID",
       "launchrig pilot verify FILE",
+      "launchrig pilot binding FILE",
       "launchrig cohort verify FILE...",
       "launchrig cohort audit REGISTER [EVIDENCE...]",
     ]) {
@@ -228,6 +232,21 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     const preflightOutput = preflight.stdout + "\n" + preflight.stderr;
     if (!preflightOutput.includes("Required MWA coverage is missing") || !preflightOutput.includes('"status": "skip"')) {
       throw new Error("Clean consumer preflight did not safely refuse the unpromoted starter flows.");
+    }
+    const policyLint = await run(
+      executable,
+      ["pilot", "lint", "--config", "launchrig.yml", "--json"],
+      { cwd: installDirectory, env: rehearsalEnvironment, acceptedExitCodes: [2] },
+    );
+    const policyLintOutput = policyLint.stdout + "\n" + policyLint.stderr;
+    if (
+      !policyLintOutput.includes('"kind": "launchrig-pilot-policy-lint"') ||
+      !policyLintOutput.includes('"staticPolicyValid": false') ||
+      !policyLintOutput.includes("Required MWA coverage is missing") ||
+      policyLintOutput.includes("Android Device Ready") ||
+      policyLintOutput.includes("Android/MWA Ready")
+    ) {
+      throw new Error("Clean consumer pilot lint did not safely refuse the unpromoted starter flows.");
     }
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
