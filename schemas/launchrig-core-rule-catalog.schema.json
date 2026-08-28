@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-core-rule-catalog.schema.json",
+  "title": "LaunchRig core rule catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "catalogVersion",
+    "status",
+    "ruleCount",
+    "rules",
+    "catalogSha256",
+    "grantMilestoneComplete",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-core-rule-catalog" },
+    "catalogVersion": { "const": 1 },
+    "status": { "const": "pre-award-foundation" },
+    "ruleCount": { "const": 25 },
+    "rules": {
+      "type": "array",
+      "minItems": 25,
+      "maxItems": 25,
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "catalogSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "grantMilestoneComplete": { "const": false },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      }
+    }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "checkId",
+        "domain",
+        "title",
+        "description",
+        "requirement",
+        "resultKind",
+        "implementation",
+        "testContract"
+      ],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "pattern": "^LR0(?:0[1-9]|1[0-9]|2[0-5])$"
+        },
+        "checkId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z*][a-z0-9*-]*)+$",
+          "maxLength": 80
+        },
+        "domain": {
+          "enum": ["configuration", "runtime", "pilot"]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "requirement": {
+          "enum": ["always", "conditional"]
+        },
+        "resultKind": {
+          "enum": ["validation-issue", "report-check", "preflight-check"]
+        },
+        "implementation": {
+          "type": "string",
+          "pattern": "^src/[A-Za-z0-9._/-]+#[A-Za-z][A-Za-z0-9]*$",
+          "maxLength": 160
+        },
+        "testContract": {
+          "type": "string",
+          "pattern": "^test/[A-Za-z0-9._/-]+\\.test\\.ts$",
+          "maxLength": 160
+        }
+      }
+    }
+  }
+}

@@ -150,6 +150,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "dist/src/cli.js",
       "docs/cohort-audit.md",
       "docs/cohort-verification.md",
+      "docs/phase-3-foundation.md",
       "docs/publisher-pilot-quickstart.md",
       "docs/supported-environment.md",
       "docs/flows/mwa-authorize.md",
@@ -158,6 +159,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "docs/flows/mwa-siws.md",
       "schemas/launchrig-publisher-bundle.schema.json",
       "schemas/launchrig-cohort-verification.schema.json",
+      "schemas/launchrig-core-rule-catalog.schema.json",
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
       "templates/publisher-intake.md",
@@ -176,12 +178,25 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     if (version.stdout !== launchRigVersion) throw new Error("Installed LaunchRig binary reported the wrong version.");
     const help = await run(executable, ["--help"], { cwd: installDirectory, env: rehearsalEnvironment });
     for (const command of [
+      "launchrig rules [--json]",
       "launchrig pilot check --pilot ID",
       "launchrig pilot verify FILE",
       "launchrig cohort verify FILE...",
       "launchrig cohort audit REGISTER [EVIDENCE...]",
     ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
+    }
+    const catalog = JSON.parse(
+      (await run(executable, ["rules", "--json"], { cwd: installDirectory, env: rehearsalEnvironment })).stdout,
+    );
+    if (
+      catalog.kind !== "launchrig-core-rule-catalog" ||
+      catalog.status !== "pre-award-foundation" ||
+      catalog.ruleCount !== 25 ||
+      catalog.rules?.length !== 25 ||
+      catalog.grantMilestoneComplete !== false
+    ) {
+      throw new Error("Installed LaunchRig rule catalog does not preserve its pre-award contract.");
     }
 
     await run(executable, ["pilot", "start", "--pilot", "bundle-rehearsal", "--config", "launchrig.yml"], {

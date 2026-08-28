@@ -16,6 +16,7 @@ import {
 import type { ResolvedLaunchRigConfig } from "../types.js";
 import { loadConfig } from "../config/load.js";
 import { redactJsonValue } from "../security/redact.js";
+import { RUN_CHECK_IDS, scenarioCheckId } from "../rules/catalog.js";
 import { runProject } from "./run.js";
 import type { RunOptions, RunOutput } from "../runner/orchestrator.js";
 
@@ -898,14 +899,14 @@ function validateExecutionEvidence(
   }
 
   const requiredEvidenceChecks = [
-    "tool.adb",
-    "device.connected",
-    "device.api",
-    "app.install",
-    "app.installed",
-    "wallet.install",
-    "wallet.installed",
-    "tool.maestro",
+    RUN_CHECK_IDS.adb,
+    RUN_CHECK_IDS.deviceConnected,
+    RUN_CHECK_IDS.deviceApi,
+    RUN_CHECK_IDS.appInstall,
+    RUN_CHECK_IDS.appInstalled,
+    RUN_CHECK_IDS.walletInstall,
+    RUN_CHECK_IDS.walletInstalled,
+    RUN_CHECK_IDS.maestro,
   ];
   for (const checkId of requiredEvidenceChecks) {
     const matches = report.checks.filter((check) => check.id === checkId);
@@ -919,7 +920,7 @@ function validateExecutionEvidence(
     }
   }
   if (execution.variant === "broken") {
-    const target = report.checks.find((check) => check.id === "scenario." + execution.scenarioId);
+    const target = report.checks.find((check) => check.id === scenarioCheckId(execution.scenarioId));
     if (
       target?.status === "fail" &&
       (!target.details?.includes("Assertion is false") || !target.details.includes(contract.brokenFailureMarker))

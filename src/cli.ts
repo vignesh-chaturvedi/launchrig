@@ -33,6 +33,7 @@ import {
   type CohortRegisterAuditOutput,
 } from "./pilot/cohort-register.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
+import { getCoreRuleCatalog, type CoreRuleCatalog } from "./rules/catalog.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
 
 export interface CliIO {
@@ -61,6 +62,7 @@ const HELP = [
   "LaunchRig " + LAUNCHRIG_VERSION,
   "",
   "Usage:",
+  "  launchrig rules [--json]",
   "  launchrig init [--name NAME] [--package APP_ID] [--force]",
   "  launchrig validate [--config launchrig.yml] [--json]",
   "  launchrig doctor [--config launchrig.yml] [--device SERIAL] [--json]",
@@ -129,6 +131,29 @@ function humanDuration(milliseconds: number | null): string {
   if (milliseconds === null) return "not available";
   if (milliseconds < 60_000) return (milliseconds / 1000).toFixed(1) + " seconds";
   return (milliseconds / 60_000).toFixed(1) + " minutes";
+}
+
+function humanRuleCatalog(value: CoreRuleCatalog): string {
+  const domains = ["configuration", "runtime", "pilot"] as const;
+  const lines = [
+    "LaunchRig core rule catalog v" + value.catalogVersion,
+    "status: " + value.status,
+    "rules: " + value.ruleCount,
+  ];
+  for (const domain of domains) {
+    const rules = value.rules.filter((rule) => rule.domain === domain);
+    lines.push("", domain + " (" + rules.length + ")");
+    for (const rule of rules) {
+      lines.push(rule.ruleId + " " + rule.checkId + ": " + rule.title);
+    }
+  }
+  lines.push(
+    "",
+    "catalog SHA-256: " + value.catalogSha256,
+    "grant milestone complete: no",
+  );
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  return lines.join("\n");
 }
 
 function humanPilotCheck(value: Awaited<ReturnType<typeof checkPilot>>): string {
@@ -301,6 +326,24 @@ export async function runCli(
   const outputPath = typeof parsed.values.output === "string" ? parsed.values.output : undefined;
 
   try {
+    if (command === "rules") {
+      const rejectedOption = unsupportedOption(
+        argv,
+        new Set(["--json", "--help", "-h", "--version", "-v"]),
+      );
+      if (rejectedOption) {
+        io.error("rules does not accept " + rejectedOption);
+        return 2;
+      }
+      if (parsed.positionals.length !== 1) {
+        io.error("rules does not accept positional arguments");
+        return 2;
+      }
+      const catalog = getCoreRuleCatalog();
+      io.out(parsed.values.json ? JSON.stringify(catalog, null, 2) : humanRuleCatalog(catalog));
+      return 0;
+    }
+
     if (command === "init") {
       const files = await initProject({
         cwd: process.cwd(),

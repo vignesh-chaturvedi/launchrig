@@ -40,6 +40,12 @@ import type {
 } from "../pilot/types.js";
 import type { LaunchRigReport, ResolvedLaunchRigConfig } from "../types.js";
 import type { RunOptions, RunOutput } from "../runner/orchestrator.js";
+import {
+  PILOT_PREFLIGHT_CHECK_IDS,
+  RUN_CHECK_IDS,
+  scenarioCheckId,
+  type PilotPreflightCheckId,
+} from "../rules/catalog.js";
 import { readBoundedRegularFile, readBoundedUtf8File } from "../security/file.js";
 import { validatePilotFlowReadiness } from "../security/flow.js";
 import { redactJsonValue } from "../security/redact.js";
@@ -536,7 +542,7 @@ function parseReportValue(
     const everyConfiguredMwaCheckPassed = config.scenarios
       .filter((scenario) => scenario.kind.startsWith("mwa-"))
       .every((scenario) => {
-        const check = checks.find((entry) => entry.id === "scenario." + scenario.id);
+        const check = checks.find((entry) => entry.id === scenarioCheckId(scenario.id));
         return check?.required === scenario.required && check.status === "pass";
       });
     if (!configuredMwaCoverageComplete || !everyConfiguredMwaCheckPassed) {
@@ -544,14 +550,14 @@ function parseReportValue(
     }
   }
   const expectedRequiredChecks = [
-    "tool.adb",
-    "device.connected",
-    "device.api",
-    "app.installed",
-    "app.binary",
-    "tool.maestro",
-    ...(config.wallet.packageName ? ["wallet.installed", "wallet.binary"] : []),
-    ...config.scenarios.filter((scenario) => scenario.required).map((scenario) => "scenario." + scenario.id),
+    RUN_CHECK_IDS.adb,
+    RUN_CHECK_IDS.deviceConnected,
+    RUN_CHECK_IDS.deviceApi,
+    RUN_CHECK_IDS.appInstalled,
+    RUN_CHECK_IDS.appBinary,
+    RUN_CHECK_IDS.maestro,
+    ...(config.wallet.packageName ? [RUN_CHECK_IDS.walletInstalled, RUN_CHECK_IDS.walletBinary] : []),
+    ...config.scenarios.filter((scenario) => scenario.required).map((scenario) => scenarioCheckId(scenario.id)),
   ];
   const everyExpectedCheckPassed = expectedRequiredChecks.every((id) => {
     const check = checks.find((entry) => entry.id === id);
@@ -718,14 +724,7 @@ export async function startPilot(options: StartPilotOptions): Promise<{ statePat
 }
 
 export interface PilotPreflightCheck {
-  id:
-    | "pilot.state"
-    | "pilot.project"
-    | "pilot.wallet"
-    | "pilot.device-policy"
-    | "pilot.flows"
-    | "pilot.mwa-coverage"
-    | "pilot.environment";
+  id: PilotPreflightCheckId;
   status: "pass" | "fail" | "skip";
   summary: string;
 }
@@ -758,26 +757,26 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
   const walletIssues = pilotWalletIssues(config);
   const checks: PilotPreflightCheck[] = [
     {
-      id: "pilot.state",
+      id: PILOT_PREFLIGHT_CHECK_IDS.state,
       status: "pass",
       summary: "Private pilot state exists and its integrity check passed",
     },
     {
-      id: "pilot.project",
+      id: PILOT_PREFLIGHT_CHECK_IDS.project,
       status: projectIssues.length === 0 ? "pass" : "fail",
       summary: projectIssues.length === 0
         ? "Publisher project identity is not a generated or controlled fixture identity"
         : projectIssues.join("; "),
     },
     {
-      id: "pilot.wallet",
+      id: PILOT_PREFLIGHT_CHECK_IDS.wallet,
       status: walletIssues.length === 0 ? "pass" : "fail",
       summary: walletIssues.length === 0
         ? "Pilot automation uses the allowlisted " + config.wallet.mode + " development-wallet profile"
         : walletIssues.join("; "),
     },
     {
-      id: "pilot.device-policy",
+      id: PILOT_PREFLIGHT_CHECK_IDS.devicePolicy,
       status: config.device.requirePhysical ? "pass" : "fail",
       summary: config.device.requirePhysical
         ? "Pilot configuration requires a physical Android device"
@@ -787,13 +786,13 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
 
   const flowIssues = await pilotFlowPromotionIssues(config);
   checks.push({
-    id: "pilot.flows",
+    id: PILOT_PREFLIGHT_CHECK_IDS.flows,
     status: flowIssues.length === 0 ? "pass" : "fail",
     summary: flowIssues.length === 0 ? "Every configured flow is promoted and has no reserved selector" : flowIssues.join("; "),
   });
   const coverageIssues = await pilotMwaCoverageIssues(config);
   checks.push({
-    id: "pilot.mwa-coverage",
+    id: PILOT_PREFLIGHT_CHECK_IDS.mwaCoverage,
     status: coverageIssues.length === 0 ? "pass" : "fail",
     summary:
       coverageIssues.length === 0
@@ -813,7 +812,7 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
       verifyInstalledArtifactHashes: true,
     });
     checks.push({
-      id: "pilot.environment",
+      id: PILOT_PREFLIGHT_CHECK_IDS.environment,
       status: doctorOutput.ok ? "pass" : "fail",
       summary: doctorOutput.ok
         ? "Physical Android device, invoked tools, and exact package binaries are ready"
@@ -821,7 +820,7 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
     });
   } else {
     checks.push({
-      id: "pilot.environment",
+      id: PILOT_PREFLIGHT_CHECK_IDS.environment,
       status: "skip",
       summary: "Environment checks were skipped until the pilot policy issues are fixed",
     });

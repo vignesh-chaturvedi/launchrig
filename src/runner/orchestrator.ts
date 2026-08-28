@@ -16,6 +16,7 @@ import { pruneReportDirectories } from "../report/retention.js";
 import { writeReportArtifacts, type WrittenArtifacts } from "../report/write.js";
 import { redactText } from "../security/redact.js";
 import { validateMaestroFlowSafety } from "../security/flow.js";
+import { RUN_CHECK_IDS, scenarioCheckId } from "../rules/catalog.js";
 import {
   managedWalletExpectedSha256,
   sha256File,
@@ -152,7 +153,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   if (!adbPath) {
     checks.push(
       result({
-        id: "tool.adb",
+        id: RUN_CHECK_IDS.adb,
         name: "ADB available",
         status: "fail",
         required: true,
@@ -168,7 +169,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     const version = await adb.version();
     checks.push(
       result({
-        id: "tool.adb",
+        id: RUN_CHECK_IDS.adb,
         name: "ADB available",
         status: "pass",
         required: true,
@@ -179,7 +180,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   } catch (error) {
     checks.push(
       result({
-        id: "tool.adb",
+        id: RUN_CHECK_IDS.adb,
         name: "ADB available",
         status: "fail",
         required: true,
@@ -205,7 +206,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     deviceSnapshot = await adb.snapshot(selected);
     checks.push(
       result({
-        id: "device.connected",
+        id: RUN_CHECK_IDS.deviceConnected,
         name: "Authorized physical Android device",
         status: deviceSnapshot.isEmulator && config.device.requirePhysical ? "fail" : "pass",
         required: true,
@@ -216,7 +217,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   } catch (error) {
     checks.push(
       result({
-        id: "device.connected",
+        id: RUN_CHECK_IDS.deviceConnected,
         name: "Authorized physical Android device",
         status: "fail",
         required: true,
@@ -235,7 +236,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   const apiPass = deviceSnapshot.apiLevel >= config.device.minimumApiLevel;
   checks.push(
     result({
-      id: "device.api",
+      id: RUN_CHECK_IDS.deviceApi,
       name: "Android API compatibility",
       status: apiPass ? "pass" : "fail",
       required: true,
@@ -252,7 +253,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     if (appPresentBeforeInstall && config.project.installPolicy === "if-missing") {
       checks.push(
         result({
-          id: "app.install",
+          id: RUN_CHECK_IDS.appInstall,
           name: "Install app APK",
           status: "pass",
           required: true,
@@ -265,7 +266,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       const installDetails = safeDetails(install.stdout, install.stderr, config.privacy.redactPatterns, [serial]);
       checks.push(
         result({
-          id: "app.install",
+          id: RUN_CHECK_IDS.appInstall,
           name: "Install app APK",
           status: install.exitCode === 0 ? "pass" : "fail",
           required: true,
@@ -282,7 +283,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   if (appInstalled) appSnapshot = await adb.packageSnapshot(serial, config.project.packageName);
   checks.push(
     result({
-      id: "app.installed",
+      id: RUN_CHECK_IDS.appInstalled,
       name: "App under test installed",
       status: appInstalled ? "pass" : "fail",
       required: true,
@@ -308,7 +309,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     );
     checks.push(
       result({
-        id: "app.binary",
+        id: RUN_CHECK_IDS.appBinary,
         name: "Installed app binary identity",
         status: appBinaryMatches ? "pass" : "fail",
         required: true,
@@ -331,7 +332,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       if (walletPresentBeforeInstall && config.wallet.installPolicy === "if-missing") {
         checks.push(
           result({
-            id: "wallet.install",
+            id: RUN_CHECK_IDS.walletInstall,
             name: "Install allowlisted test wallet APK",
             status: "pass",
             required: true,
@@ -347,7 +348,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         if (!stagedWallet.valid || !stagedWallet.apkPath) {
           checks.push(
             result({
-              id: "wallet.install",
+              id: RUN_CHECK_IDS.walletInstall,
               name: "Install allowlisted test wallet APK",
               status: "fail",
               required: true,
@@ -370,7 +371,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
             );
             checks.push(
               result({
-                id: "wallet.install",
+                id: RUN_CHECK_IDS.walletInstall,
                 name: "Install allowlisted test wallet APK",
                 status: walletInstall.exitCode === 0 ? "pass" : "fail",
                 required: true,
@@ -393,7 +394,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     if (walletInstalled) walletSnapshot = await adb.packageSnapshot(serial, config.wallet.packageName);
     checks.push(
       result({
-        id: "wallet.installed",
+        id: RUN_CHECK_IDS.walletInstalled,
         name:
           config.wallet.mode === "mock-mwa"
             ? "Mock MWA Wallet installed"
@@ -416,7 +417,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       );
       checks.push(
         result({
-          id: "wallet.binary",
+          id: RUN_CHECK_IDS.walletBinary,
           name: "Installed test-wallet binary identity",
           status: walletBinaryMatches ? "pass" : "fail",
           required: true,
@@ -435,7 +436,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     if (scenarios.length === 0) {
       checks.push(
         result({
-          id: "scenario.selection",
+          id: RUN_CHECK_IDS.scenarioSelection,
           name: "Scenario selection",
           status: "fail",
           required: true,
@@ -449,7 +450,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   if (scenarios.length === 0 && !options.scenarioId) {
     checks.push(
       result({
-        id: "scenario.none",
+        id: RUN_CHECK_IDS.scenarioNone,
         name: "MWA scenarios configured",
         status: "warn",
         required: false,
@@ -470,7 +471,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     if (!maestroPath) {
       checks.push(
         result({
-          id: "tool.maestro",
+          id: RUN_CHECK_IDS.maestro,
           name: "Maestro available",
           status: "fail",
           required: true,
@@ -495,7 +496,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     const maestroVersion = await maestro.version(maestroEnv);
     checks.push(
       result({
-        id: "tool.maestro",
+        id: RUN_CHECK_IDS.maestro,
         name: "Maestro available",
         status: maestroVersion.exitCode === 0 ? "pass" : "fail",
         required: true,
@@ -516,7 +517,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           const resetDetails = safeDetails(reset.stdout, reset.stderr, config.privacy.redactPatterns, [serial]);
           checks.push(
             result({
-              id: "scenario." + scenario.id,
+              id: scenarioCheckId(scenario.id),
               name: scenario.name,
               status: "fail",
               required: scenario.required,
@@ -539,7 +540,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       } catch {
         checks.push(
           result({
-            id: "scenario." + scenario.id,
+            id: scenarioCheckId(scenario.id),
             name: scenario.name,
             status: "fail",
             required: scenario.required,
@@ -553,7 +554,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       if (flowSafetyIssues.length > 0) {
         checks.push(
           result({
-            id: "scenario." + scenario.id,
+            id: scenarioCheckId(scenario.id),
             name: scenario.name,
             status: "fail",
             required: scenario.required,
@@ -601,7 +602,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         : undefined;
       checks.push(
         result({
-          id: "scenario." + scenario.id,
+          id: scenarioCheckId(scenario.id),
           name: scenario.name,
           status: failed ? "fail" : "pass",
           required: scenario.required,
@@ -633,18 +634,24 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     mwaCoverageComplete:
       Boolean(
         walletSnapshot &&
-          checks.some((check) => check.id === "wallet.installed" && check.required && check.status === "pass"),
+          checks.some(
+            (check) =>
+              check.id === RUN_CHECK_IDS.walletInstalled && check.required && check.status === "pass",
+          ),
       ) &&
       scenarios
         .filter((scenario) => scenario.kind.startsWith("mwa-"))
-        .every((scenario) => checks.some((check) => check.id === "scenario." + scenario.id && check.status === "pass")) &&
+        .every((scenario) =>
+          checks.some((check) => check.id === scenarioCheckId(scenario.id) && check.status === "pass"),
+        ) &&
       ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"].every((kind) =>
         scenarios.some(
           (scenario) =>
             scenario.kind === kind &&
             scenario.required &&
             checks.some(
-              (check) => check.id === "scenario." + scenario.id && check.required && check.status === "pass",
+              (check) =>
+                check.id === scenarioCheckId(scenario.id) && check.required && check.status === "pass",
             ),
         ),
       ),

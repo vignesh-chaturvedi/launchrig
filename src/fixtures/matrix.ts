@@ -1,4 +1,5 @@
 import type { CheckResult, LaunchRigReport } from "../types.js";
+import { scenarioCheckId } from "../rules/catalog.js";
 
 export const FIXTURE_MATRIX_SCHEMA_VERSION = 1 as const;
 
@@ -457,7 +458,7 @@ function evaluateVariant(
     );
   }
 
-  const targetCheckId = "scenario." + matrixCase.scenarioId;
+  const targetCheckId = scenarioCheckId(matrixCase.scenarioId);
   const targetChecks = run.checks.filter((check) => check.id === targetCheckId);
   if (targetChecks.length === 0) {
     issues.push(

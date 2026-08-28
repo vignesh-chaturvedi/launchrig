@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json",
-  "title": "LaunchRig Phase 2 publisher bundle manifest",
+  "title": "LaunchRig publisher bundle manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,7 +27,8 @@
       "enum": [
         "phase-2a-publisher-rc-v1",
         "phase-2b-publisher-rc-v2",
-        "phase-2c-publisher-rc-v3"
+        "phase-2c-publisher-rc-v3",
+        "phase-3-foundation-rc-v4"
       ]
     },
     "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },

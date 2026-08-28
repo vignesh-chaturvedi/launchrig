@@ -106,6 +106,9 @@ try {
   if (!installedFiles.includes("schemas/launchrig-cohort-verification.schema.json")) {
     throw new Error("Packed cohort verification schema is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-core-rule-catalog.schema.json")) {
+    throw new Error("Packed core rule catalog schema is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-private-cohort-register.schema.json")) {
     throw new Error("Packed private cohort register schema is missing.");
   }
@@ -124,6 +127,7 @@ try {
         "phase-2a-publisher-rc-v1",
         "phase-2b-publisher-rc-v2",
         "phase-2c-publisher-rc-v3",
+        "phase-3-foundation-rc-v4",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
@@ -166,6 +170,21 @@ try {
   const privateAuditSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-private-cohort-audit.schema.json"), "utf8"),
   );
+  const coreRuleCatalogSchema = JSON.parse(
+    await readFile(path.join(installedDirectory, "schemas", "launchrig-core-rule-catalog.schema.json"), "utf8"),
+  );
+  if (
+    coreRuleCatalogSchema.$id !== "https://launchrig.dev/schemas/launchrig-core-rule-catalog.schema.json" ||
+    coreRuleCatalogSchema.additionalProperties !== false ||
+    coreRuleCatalogSchema.properties?.kind?.const !== "launchrig-core-rule-catalog" ||
+    coreRuleCatalogSchema.properties?.status?.const !== "pre-award-foundation" ||
+    coreRuleCatalogSchema.properties?.ruleCount?.const !== 25 ||
+    coreRuleCatalogSchema.properties?.rules?.minItems !== 25 ||
+    coreRuleCatalogSchema.properties?.rules?.maxItems !== 25 ||
+    coreRuleCatalogSchema.properties?.grantMilestoneComplete?.const !== false
+  ) {
+    throw new Error("Packed core rule catalog schema does not preserve the pre-award contract.");
+  }
   if (
     privateRegisterSchema.$id !==
       "https://launchrig.dev/schemas/launchrig-private-cohort-register.schema.json" ||
@@ -192,6 +211,7 @@ try {
     "docs/cohort-verification.md",
     "docs/phase-1.md",
     "docs/phase-2.md",
+    "docs/phase-3-foundation.md",
     "docs/physical-device.md",
     "docs/publisher-bundle-readme.md",
     "docs/publisher-pilot-quickstart.md",
@@ -216,6 +236,7 @@ try {
   }
   const expectedSchemas = [
     "schemas/launchrig-cohort-verification.schema.json",
+    "schemas/launchrig-core-rule-catalog.schema.json",
     "schemas/launchrig-pilot-evidence-v1.schema.json",
     "schemas/launchrig-pilot-evidence-v2.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
@@ -305,6 +326,25 @@ try {
   }
   if (!help.stdout.includes("launchrig cohort audit REGISTER [EVIDENCE...]")) {
     throw new Error("Installed CLI help is missing the Phase 2C private cohort audit.");
+  }
+  if (!help.stdout.includes("launchrig rules [--json]")) {
+    throw new Error("Installed CLI help is missing the core rule catalog.");
+  }
+
+  const coreRuleCatalog = JSON.parse(
+    (await run(executable, ["rules", "--json"], { cwd: installDirectory })).stdout,
+  );
+  const { catalogSha256, ...coreRuleCatalogCore } = coreRuleCatalog;
+  if (
+    coreRuleCatalog.kind !== "launchrig-core-rule-catalog" ||
+    coreRuleCatalog.status !== "pre-award-foundation" ||
+    coreRuleCatalog.ruleCount !== 25 ||
+    coreRuleCatalog.rules?.length !== 25 ||
+    new Set(coreRuleCatalog.rules?.map((rule) => rule.ruleId)).size !== 25 ||
+    coreRuleCatalog.grantMilestoneComplete !== false ||
+    catalogSha256 !== sha256Value(coreRuleCatalogCore)
+  ) {
+    throw new Error("Installed core rule catalog does not preserve its deterministic pre-award contract.");
   }
 
   const privateRegisterCore = {
