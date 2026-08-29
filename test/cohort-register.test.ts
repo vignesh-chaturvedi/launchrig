@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { runCli } from "../src/cli.js";
 import { createPublicPilotEvidenceBinding } from "../src/pilot/binding.js";
+import { createPilotSessionScopeReceipt } from "../src/pilot/session-scope.js";
 import {
   auditPrivateCohortRegister,
   CohortRegisterError,
@@ -314,6 +315,74 @@ test("private cohort audit counts three governed qualified bindings without elev
     assert.equal(output.defects[0]?.qualifiedReproductionBindings, 2);
     assert.equal(output.externalGrantGate.status, "not-established");
     assert.equal(output.externalGrantGate.confirmedDefectAcrossTwoProjects, "not-established");
+    assert.equal(output.grantReady, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("session scope receipt binding feeds the private register without elevating consent claims", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-register-session-scope-"));
+  try {
+    const evidence = await writeEvidence(directory, 41);
+    const evidenceBinding = (await createPublicPilotEvidenceBinding(evidence.path)).binding;
+    const scopeInput = {
+      schemaVersion: 1,
+      kind: "launchrig-pilot-session-scope",
+      profile: "external-mwa-pilot-scope-v1",
+      scopeRef: ref("scope", 41),
+      operatorRef: ref("operator", 41),
+      pilotRef: ref("pilot", 41),
+      deviceRef: ref("device", 41),
+      bundle: {
+        bundleId: "sha256:" + digest("scope-bundle-41"),
+        manifestSha256: digest("scope-manifest-41"),
+        sha256SumsSha256: digest("scope-sums-41"),
+        packageSha256: digest("scope-package-41"),
+      },
+      inputs: {
+        configSha256: digest("scope-config-41"),
+        appBuildSha256: digest("scope-app-41"),
+        walletArtifactSha256: digest("scope-wallet-41"),
+        flows: [
+          { kind: "mwa-reject", scenarioId: "reject", fileSha256: digest("scope-reject-41") },
+          { kind: "mwa-siws", scenarioId: "siws", fileSha256: digest("scope-siws-41") },
+          { kind: "mwa-authorize", scenarioId: "authorize", fileSha256: digest("scope-authorize-41") },
+          { kind: "mwa-sign-message", scenarioId: "sign-message", fileSha256: digest("scope-sign-message-41") },
+        ],
+      },
+      policy: {
+        network: "devnet",
+        walletMode: "mock-mwa",
+        physicalAndroidRequired: true,
+        attendedExecutionRequired: true,
+        manualWalletActionsRequired: true,
+        valuableAssetsAllowed: false,
+        capture: { screenshots: "failure", includeLogcat: false, logcatLines: 200 },
+        retention: { maxRuns: 5, expiresOn: "2026-12-31", deletionMethod: "standard-delete" },
+        sharing: {
+          publicEvidenceJson: true,
+          sanitizedReports: false,
+          publisherName: false,
+          publisherLogo: false,
+          approvedQuote: false,
+          confirmedDefectRecord: false,
+        },
+      },
+    };
+    const scopePath = path.join(directory, "private-session-scope.json");
+    await writeFile(scopePath, JSON.stringify(scopeInput, null, 2) + "\n", { mode: 0o600 });
+    await chmod(scopePath, 0o600);
+    const scopeReceipt = await createPilotSessionScopeReceipt(scopePath);
+    const candidate = makeCandidate(41, evidenceBinding);
+    candidate.consent.scopeSha256 = scopeReceipt.binding.scopeSha256;
+    candidate.session.binding = scopeReceipt.binding;
+    const registerPath = await writeRegister(directory, sealedRegister([candidate]));
+    const output = await auditPrivateCohortRegister(registerPath, [evidence.path]);
+
+    assert.equal(output.entries[0]?.governanceStatus, "recorded-ready");
+    assert.equal(output.summary.recordedIncludedWithQualifiedV2, 1);
+    assert.equal(output.externalGrantGate.status, "not-established");
     assert.equal(output.grantReady, false);
   } finally {
     await rm(directory, { recursive: true, force: true });

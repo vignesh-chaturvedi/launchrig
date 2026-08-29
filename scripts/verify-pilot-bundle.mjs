@@ -33,6 +33,10 @@ const REHEARSAL_CHECKS_V7 = [
   ...LEGACY_REHEARSAL_CHECKS,
   "device-free-pilot-policy-lint-refusal",
 ];
+const REHEARSAL_CHECKS_V8 = [
+  ...REHEARSAL_CHECKS_V7,
+  "device-free-session-scope-receipt",
+];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
   "frozen-offline-dependency-restore",
@@ -52,6 +56,7 @@ const BUNDLE_PROFILE_V4 = "phase-3-foundation-rc-v4";
 const BUNDLE_PROFILE_V5 = "phase-3-config-parity-rc-v5";
 const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
 const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
+const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -191,6 +196,11 @@ const PACKED_SCHEMAS_V7 = [
   ...PACKED_SCHEMAS_V5,
   "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V8 = [
+  ...PACKED_SCHEMAS_V7,
+  "schemas/launchrig-pilot-session-scope-receipt.schema.json",
+  "schemas/launchrig-pilot-session-scope.schema.json",
+].sort();
 const PACKED_ACTION_FILES_V6 = [
   "action.yml",
   "action/run-validation.mjs",
@@ -200,6 +210,15 @@ const PACKED_COMPILED_ADDITIONS_V7 = [
   "package/dist/src/pilot/binding.d.ts",
   "package/dist/src/pilot/binding.js",
   "package/dist/src/pilot/binding.js.map",
+];
+const PACKED_COMPILED_ADDITIONS_V8_ONLY = [
+  "package/dist/src/pilot/session-scope.d.ts",
+  "package/dist/src/pilot/session-scope.js",
+  "package/dist/src/pilot/session-scope.js.map",
+];
+const PACKED_COMPILED_ADDITIONS_V8 = [
+  ...PACKED_COMPILED_ADDITIONS_V7,
+  ...PACKED_COMPILED_ADDITIONS_V8_ONLY,
 ];
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
@@ -236,6 +255,13 @@ function packedInventory(profile) {
     return {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V7,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    };
+  }
+  if (profile === BUNDLE_PROFILE_V8) {
+    return {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V8,
       actionFiles: PACKED_ACTION_FILES_V6,
     };
   }
@@ -506,16 +532,26 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
-  if (manifest.profile === BUNDLE_PROFILE_V7) {
+  if (manifest.profile === BUNDLE_PROFILE_V8) {
+    for (const required of PACKED_COMPILED_ADDITIONS_V8) {
+      if (!entries.has(required)) {
+        throw new Error("LaunchRig package RC8 is missing " + required + ".");
+      }
+    }
+  } else if (manifest.profile === BUNDLE_PROFILE_V7) {
     for (const required of PACKED_COMPILED_ADDITIONS_V7) {
       if (!entries.has(required)) {
         throw new Error("LaunchRig package RC7 is missing " + required + ".");
       }
     }
-  } else {
-    const unexpected = PACKED_COMPILED_ADDITIONS_V7.find((entry) => entries.has(entry));
+    const unexpected = PACKED_COMPILED_ADDITIONS_V8_ONLY.find((entry) => entries.has(entry));
     if (unexpected) {
-      throw new Error("LaunchRig package contains an RC7 file outside its historical profile: " + unexpected);
+      throw new Error("LaunchRig package contains an RC8 file outside its historical profile: " + unexpected);
+    }
+  } else {
+    const unexpected = PACKED_COMPILED_ADDITIONS_V8.find((entry) => entries.has(entry));
+    if (unexpected) {
+      throw new Error("LaunchRig package contains a newer release file outside its historical profile: " + unexpected);
     }
   }
 
@@ -624,7 +660,11 @@ function validateManifest(manifest) {
     "Bundle manifest",
   );
   const expectedRehearsalChecks =
-    manifest.profile === BUNDLE_PROFILE_V7 ? REHEARSAL_CHECKS_V7 : LEGACY_REHEARSAL_CHECKS;
+    manifest.profile === BUNDLE_PROFILE_V8
+      ? REHEARSAL_CHECKS_V8
+      : manifest.profile === BUNDLE_PROFILE_V7
+        ? REHEARSAL_CHECKS_V7
+        : LEGACY_REHEARSAL_CHECKS;
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
@@ -636,6 +676,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V5,
       BUNDLE_PROFILE_V6,
       BUNDLE_PROFILE_V7,
+      BUNDLE_PROFILE_V8,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");

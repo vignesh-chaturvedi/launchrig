@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-pilot-session-scope-receipt.schema.json",
+  "title": "LaunchRig pilot session scope receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receiptSchemaVersion",
+    "kind",
+    "profile",
+    "binding",
+    "bundleVerification",
+    "scopeFileSha256",
+    "policyValid",
+    "claimStatus",
+    "publisherIdentity",
+    "consentAuthenticity",
+    "deviceEnvironment",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "receiptSchemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-pilot-session-scope-receipt" },
+    "profile": { "const": "external-mwa-pilot-scope-v1" },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundleId",
+        "packageSha256",
+        "appBuildSha256",
+        "walletArtifactSha256",
+        "flowReviewSha256",
+        "scopeSha256"
+      ],
+      "properties": {
+        "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "packageSha256": { "$ref": "#/$defs/sha256" },
+        "appBuildSha256": { "$ref": "#/$defs/sha256" },
+        "walletArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "flowReviewSha256": { "$ref": "#/$defs/sha256" },
+        "scopeSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "bundleVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestSha256", "sha256SumsSha256"],
+      "properties": {
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "sha256SumsSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "scopeFileSha256": { "$ref": "#/$defs/sha256" },
+    "policyValid": { "const": true },
+    "claimStatus": { "const": "operator-prepared-unattested" },
+    "publisherIdentity": { "const": "not-established" },
+    "consentAuthenticity": { "const": "not-established" },
+    "deviceEnvironment": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "The receipt is derived from an operator-prepared private scope file and is not a signature, publisher attestation, or proof of consent.",
+        "Declared digests bind the scope document but do not independently verify the bundle, app, wallet, flow artifacts, publisher identity, operator authority, or device environment.",
+        "Policy validity does not establish an external publisher, a completed pilot, a confirmed defect, Seeker hardware, production-wallet behavior, Seed Vault behavior, or grant readiness."
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

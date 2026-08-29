@@ -104,6 +104,12 @@ try {
   if (!installedFiles.includes("schemas/launchrig-pilot-evidence-binding-receipt.schema.json")) {
     throw new Error("Packed pilot evidence binding receipt schema is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-pilot-session-scope.schema.json")) {
+    throw new Error("Packed pilot session scope schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-pilot-session-scope-receipt.schema.json")) {
+    throw new Error("Packed pilot session scope receipt schema is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
   }
@@ -152,6 +158,10 @@ try {
     ...legacyRehearsalChecks,
     "device-free-pilot-policy-lint-refusal",
   ];
+  const v8RehearsalChecks = [
+    ...v7RehearsalChecks,
+    "device-free-session-scope-receipt",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -165,14 +175,18 @@ try {
         "phase-3-config-parity-rc-v5",
         "phase-3-validation-action-rc-v6",
         "phase-2d-publisher-readiness-rc-v7",
+        "phase-2e-consent-scope-rc-v8",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v8RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.properties?.consumerRehearsal?.properties?.checks?.const,
+      publisherBundleSchema.allOf?.[0]?.else?.else?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
       JSON.stringify([
@@ -222,6 +236,32 @@ try {
     validateBindingReceipt({ ...sampleBindingReceipt, technicalStatus: "qualified-self-recorded" })
   ) {
     throw new Error("Packed binding receipt schema does not preserve the claim-limited contract.");
+  }
+  const sessionScopeSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-pilot-session-scope.schema.json"),
+      "utf8",
+    ),
+  );
+  const sessionScopeReceiptSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-pilot-session-scope-receipt.schema.json"),
+      "utf8",
+    ),
+  );
+  const validateSessionScope = new Ajv2020({ strict: true }).compile(sessionScopeSchema);
+  const validateSessionScopeReceipt = new Ajv2020({ strict: true }).compile(sessionScopeReceiptSchema);
+  if (
+    sessionScopeSchema.properties?.kind?.const !== "launchrig-pilot-session-scope" ||
+    sessionScopeSchema.properties?.policy?.properties?.physicalAndroidRequired?.const !== true ||
+    sessionScopeSchema.properties?.policy?.properties?.valuableAssetsAllowed?.const !== false ||
+    sessionScopeReceiptSchema.properties?.kind?.const !== "launchrig-pilot-session-scope-receipt" ||
+    sessionScopeReceiptSchema.properties?.publisherIdentity?.const !== "not-established" ||
+    sessionScopeReceiptSchema.properties?.consentAuthenticity?.const !== "not-established" ||
+    sessionScopeReceiptSchema.properties?.externalGrantGate?.const !== "not-established" ||
+    sessionScopeReceiptSchema.properties?.grantReady?.const !== false
+  ) {
+    throw new Error("Packed session scope schemas do not preserve the private claim-limited contract.");
   }
   const cohortSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-cohort-verification.schema.json"), "utf8"),
@@ -371,6 +411,8 @@ try {
     "schemas/launchrig-pilot-evidence-v2.schema.json",
     "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
+    "schemas/launchrig-pilot-session-scope-receipt.schema.json",
+    "schemas/launchrig-pilot-session-scope.schema.json",
     "schemas/launchrig-private-cohort-audit.schema.json",
     "schemas/launchrig-private-cohort-register.schema.json",
     "schemas/launchrig-publisher-bundle.schema.json",
@@ -463,6 +505,9 @@ try {
   }
   if (!help.stdout.includes("launchrig pilot binding FILE")) {
     throw new Error("Installed CLI help is missing the public evidence binding receipt.");
+  }
+  if (!help.stdout.includes("launchrig pilot scope FILE")) {
+    throw new Error("Installed CLI help is missing the private session scope receipt.");
   }
   if (!help.stdout.includes("launchrig pilot lint")) {
     throw new Error("Installed CLI help is missing the device-free pilot policy lint.");
@@ -683,6 +728,84 @@ try {
     JSON.stringify(policyLint).includes("Android/MWA Ready")
   ) {
     throw new Error("Installed pilot lint did not accept the promoted static policy contract.");
+  }
+
+  const sessionScopePath = path.join(publisherDirectory, "private-session-scope.json");
+  const sessionScopeInput = {
+    schemaVersion: 1,
+    kind: "launchrig-pilot-session-scope",
+    profile: "external-mwa-pilot-scope-v1",
+    scopeRef: "urn:launchrig:scope:123e4567-e89b-42d3-a456-426614174000",
+    operatorRef: "urn:launchrig:operator:223e4567-e89b-42d3-a456-426614174000",
+    pilotRef: "urn:launchrig:pilot:323e4567-e89b-42d3-a456-426614174000",
+    deviceRef: "urn:launchrig:device:423e4567-e89b-42d3-a456-426614174000",
+    bundle: {
+      bundleId: "sha256:" + "a".repeat(64),
+      manifestSha256: "b".repeat(64),
+      sha256SumsSha256: "c".repeat(64),
+      packageSha256: "d".repeat(64),
+    },
+    inputs: {
+      configSha256: createHash("sha256").update(promotedConfig).digest("hex"),
+      appBuildSha256: "e".repeat(64),
+      walletArtifactSha256: "f".repeat(64),
+      flows: await Promise.all(
+        promotedScenarios.map(async ([id, kind]) => ({
+          kind,
+          scenarioId: id,
+          fileSha256: createHash("sha256")
+            .update(await readFile(path.join(publisherDirectory, "launchrig-flows", id + ".yaml")))
+            .digest("hex"),
+        })),
+      ),
+    },
+    policy: {
+      network: "devnet",
+      walletMode: "mock-mwa",
+      physicalAndroidRequired: true,
+      attendedExecutionRequired: true,
+      manualWalletActionsRequired: true,
+      valuableAssetsAllowed: false,
+      capture: { screenshots: "failure", includeLogcat: false, logcatLines: 200 },
+      retention: { maxRuns: 5, expiresOn: "2030-12-31", deletionMethod: "standard-delete" },
+      sharing: {
+        publicEvidenceJson: true,
+        sanitizedReports: false,
+        publisherName: false,
+        publisherLogo: false,
+        approvedQuote: false,
+        confirmedDefectRecord: false,
+      },
+    },
+  };
+  if (!validateSessionScope(sessionScopeInput)) {
+    throw new Error("Package smoke session scope input does not satisfy its schema.");
+  }
+  const sessionScopeBytes = Buffer.from(JSON.stringify(sessionScopeInput, null, 2) + "\n", "utf8");
+  await writeFile(sessionScopePath, sessionScopeBytes, { flag: "wx", mode: 0o600 });
+  await chmod(sessionScopePath, 0o600);
+  const sessionScopeReceipt = JSON.parse(
+    (await run(executable, ["pilot", "scope", sessionScopePath, "--json"], {
+      cwd: publisherDirectory,
+    })).stdout,
+  );
+  if (
+    !validateSessionScopeReceipt(sessionScopeReceipt) ||
+    sessionScopeReceipt.binding?.bundleId !== sessionScopeInput.bundle.bundleId ||
+    sessionScopeReceipt.binding?.packageSha256 !== sessionScopeInput.bundle.packageSha256 ||
+    sessionScopeReceipt.bundleVerification?.manifestSha256 !== sessionScopeInput.bundle.manifestSha256 ||
+    sessionScopeReceipt.bundleVerification?.sha256SumsSha256 !== sessionScopeInput.bundle.sha256SumsSha256 ||
+    sessionScopeReceipt.scopeFileSha256 !== createHash("sha256").update(sessionScopeBytes).digest("hex") ||
+    sessionScopeReceipt.policyValid !== true ||
+    sessionScopeReceipt.publisherIdentity !== "not-established" ||
+    sessionScopeReceipt.consentAuthenticity !== "not-established" ||
+    sessionScopeReceipt.deviceEnvironment !== "not-established" ||
+    sessionScopeReceipt.externalGrantGate !== "not-established" ||
+    sessionScopeReceipt.grantReady !== false ||
+    JSON.stringify(sessionScopeReceipt).includes(sessionScopePath) ||
+    JSON.stringify(sessionScopeReceipt).includes("urn:launchrig:")
+  ) {
+    throw new Error("Installed pilot scope did not preserve its private claim-limited receipt contract.");
   }
 
   const claims = {

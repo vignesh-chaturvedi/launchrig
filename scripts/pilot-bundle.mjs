@@ -149,6 +149,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     for (const relativePath of [
       "dist/src/cli.js",
       "dist/src/pilot/binding.js",
+      "dist/src/pilot/session-scope.js",
       "docs/cohort-audit.md",
       "docs/cohort-verification.md",
       "docs/config-v1-compatibility.md",
@@ -167,6 +168,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
+      "schemas/launchrig-pilot-session-scope-receipt.schema.json",
+      "schemas/launchrig-pilot-session-scope.schema.json",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
       "action.yml",
@@ -191,6 +194,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "launchrig pilot check --pilot ID",
       "launchrig pilot verify FILE",
       "launchrig pilot binding FILE",
+      "launchrig pilot scope FILE",
       "launchrig cohort verify FILE...",
       "launchrig cohort audit REGISTER [EVIDENCE...]",
     ]) {
@@ -247,6 +251,77 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       policyLintOutput.includes("Android/MWA Ready")
     ) {
       throw new Error("Clean consumer pilot lint did not safely refuse the unpromoted starter flows.");
+    }
+
+    const scopePath = path.join(installDirectory, "private-session-scope.json");
+    const scopeInput = {
+      schemaVersion: 1,
+      kind: "launchrig-pilot-session-scope",
+      profile: "external-mwa-pilot-scope-v1",
+      scopeRef: "urn:launchrig:scope:123e4567-e89b-42d3-a456-426614174000",
+      operatorRef: "urn:launchrig:operator:223e4567-e89b-42d3-a456-426614174000",
+      pilotRef: "urn:launchrig:pilot:323e4567-e89b-42d3-a456-426614174000",
+      deviceRef: "urn:launchrig:device:423e4567-e89b-42d3-a456-426614174000",
+      bundle: {
+        bundleId: "sha256:" + "a".repeat(64),
+        manifestSha256: "b".repeat(64),
+        sha256SumsSha256: "c".repeat(64),
+        packageSha256: "d".repeat(64),
+      },
+      inputs: {
+        configSha256: "e".repeat(64),
+        appBuildSha256: "f".repeat(64),
+        walletArtifactSha256: "0".repeat(64),
+        flows: [
+          { kind: "mwa-authorize", scenarioId: "authorize", fileSha256: "1".repeat(64) },
+          { kind: "mwa-siws", scenarioId: "siws", fileSha256: "2".repeat(64) },
+          { kind: "mwa-sign-message", scenarioId: "sign-message", fileSha256: "3".repeat(64) },
+          { kind: "mwa-reject", scenarioId: "reject", fileSha256: "4".repeat(64) },
+        ],
+      },
+      policy: {
+        network: "devnet",
+        walletMode: "mock-mwa",
+        physicalAndroidRequired: true,
+        attendedExecutionRequired: true,
+        manualWalletActionsRequired: true,
+        valuableAssetsAllowed: false,
+        capture: { screenshots: "failure", includeLogcat: false, logcatLines: 200 },
+        retention: { maxRuns: 5, expiresOn: "2030-12-31", deletionMethod: "standard-delete" },
+        sharing: {
+          publicEvidenceJson: true,
+          sanitizedReports: false,
+          publisherName: false,
+          publisherLogo: false,
+          approvedQuote: false,
+          confirmedDefectRecord: false,
+        },
+      },
+    };
+    const scopeBytes = Buffer.from(JSON.stringify(scopeInput, null, 2) + "\n", "utf8");
+    await writeFile(scopePath, scopeBytes, { flag: "wx", mode: 0o600 });
+    await chmod(scopePath, 0o600);
+    const scopeReceipt = JSON.parse(
+      (await run(executable, ["pilot", "scope", scopePath, "--json"], {
+        cwd: installDirectory,
+        env: rehearsalEnvironment,
+      })).stdout,
+    );
+    if (
+      scopeReceipt.kind !== "launchrig-pilot-session-scope-receipt" ||
+      scopeReceipt.binding?.bundleId !== scopeInput.bundle.bundleId ||
+      scopeReceipt.binding?.packageSha256 !== scopeInput.bundle.packageSha256 ||
+      scopeReceipt.bundleVerification?.manifestSha256 !== scopeInput.bundle.manifestSha256 ||
+      scopeReceipt.bundleVerification?.sha256SumsSha256 !== scopeInput.bundle.sha256SumsSha256 ||
+      scopeReceipt.scopeFileSha256 !== createHash("sha256").update(scopeBytes).digest("hex") ||
+      scopeReceipt.policyValid !== true ||
+      scopeReceipt.claimStatus !== "operator-prepared-unattested" ||
+      scopeReceipt.externalGrantGate !== "not-established" ||
+      scopeReceipt.grantReady !== false ||
+      JSON.stringify(scopeReceipt).includes(scopePath) ||
+      JSON.stringify(scopeReceipt).includes("urn:launchrig:")
+    ) {
+      throw new Error("Clean consumer session scope receipt did not preserve its private claim-limited contract.");
     }
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });

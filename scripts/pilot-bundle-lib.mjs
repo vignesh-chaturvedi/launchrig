@@ -13,7 +13,8 @@ import { createHash } from "node:crypto";
 export const BUNDLE_SCHEMA_VERSION = 1;
 export const BUNDLE_KIND = "launchrig-publisher-bundle";
 const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
-export const BUNDLE_PROFILE = BUNDLE_PROFILE_V7;
+const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
+export const BUNDLE_PROFILE = BUNDLE_PROFILE_V8;
 const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-2a-publisher-rc-v1",
   "phase-2b-publisher-rc-v2",
@@ -22,6 +23,7 @@ const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-3-config-parity-rc-v5",
   "phase-3-validation-action-rc-v6",
   BUNDLE_PROFILE_V7,
+  BUNDLE_PROFILE_V8,
 ]);
 export const LEGACY_REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",
@@ -32,9 +34,13 @@ export const LEGACY_REHEARSAL_CHECKS = Object.freeze([
   "starter-validation",
   "device-free-preflight-refusal",
 ]);
-export const REHEARSAL_CHECKS = Object.freeze([
+export const V7_REHEARSAL_CHECKS = Object.freeze([
   ...LEGACY_REHEARSAL_CHECKS,
   "device-free-pilot-policy-lint-refusal",
+]);
+export const REHEARSAL_CHECKS = Object.freeze([
+  ...V7_REHEARSAL_CHECKS,
+  "device-free-session-scope-receipt",
 ]);
 export const SOURCE_VERIFICATION_CHECKS = Object.freeze([
   "package-manager-version",
@@ -214,7 +220,12 @@ export function createPublisherManifest({
   const packageFile = sortedFiles.find((entry) => entry.path === packagePath);
   if (!packageFile) throw new Error("Packed LaunchRig archive is missing from the bundle payload.");
   const payloadSha256 = sha256Value(sortedFiles);
-  const rehearsalChecks = profile === BUNDLE_PROFILE_V7 ? REHEARSAL_CHECKS : LEGACY_REHEARSAL_CHECKS;
+  const rehearsalChecks =
+    profile === BUNDLE_PROFILE_V8
+      ? REHEARSAL_CHECKS
+      : profile === BUNDLE_PROFILE_V7
+        ? V7_REHEARSAL_CHECKS
+        : LEGACY_REHEARSAL_CHECKS;
   const manifestCore = {
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     kind: BUNDLE_KIND,

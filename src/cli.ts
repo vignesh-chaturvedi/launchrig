@@ -25,6 +25,10 @@ import { validateProject } from "./commands/validate.js";
 import { FixtureMatrixValidationError } from "./fixtures/matrix.js";
 import { createPublicPilotEvidenceBinding } from "./pilot/binding.js";
 import {
+  createPilotSessionScopeReceipt,
+  PilotSessionScopeError,
+} from "./pilot/session-scope.js";
+import {
   CohortError,
   verifyCohortEvidence,
   type CohortVerificationOutput,
@@ -52,6 +56,7 @@ export interface CliDependencies {
   getPilotStatus?: typeof getPilotStatus;
   exportPilotEvidence?: typeof exportPilotEvidence;
   createPublicPilotEvidenceBinding?: typeof createPublicPilotEvidenceBinding;
+  createPilotSessionScopeReceipt?: typeof createPilotSessionScopeReceipt;
   verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
   verifyCohortEvidence?: typeof verifyCohortEvidence;
   auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
@@ -80,6 +85,7 @@ const HELP = [
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
   "  launchrig pilot verify FILE [--json]",
   "  launchrig pilot binding FILE [--json]",
+  "  launchrig pilot scope FILE [--json]",
   "  launchrig cohort verify FILE... [--json]",
   "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
   "",
@@ -220,6 +226,30 @@ function humanPilotEvidenceBinding(value: Awaited<ReturnType<typeof createPublic
   return lines.join("\n");
 }
 
+function humanPilotSessionScope(value: Awaited<ReturnType<typeof createPilotSessionScopeReceipt>>): string {
+  const lines = [
+    "Pilot session scope receipt",
+    "scope file SHA-256: " + value.scopeFileSha256,
+    "bundle ID: " + value.binding.bundleId,
+    "manifest SHA-256: " + value.bundleVerification.manifestSha256,
+    "SHA256SUMS SHA-256: " + value.bundleVerification.sha256SumsSha256,
+    "package SHA-256: " + value.binding.packageSha256,
+    "app build SHA-256: " + value.binding.appBuildSha256,
+    "wallet artifact SHA-256: " + value.binding.walletArtifactSha256,
+    "flow review SHA-256: " + value.binding.flowReviewSha256,
+    "scope SHA-256: " + value.binding.scopeSha256,
+    "policy valid: yes",
+    "claim status: " + value.claimStatus,
+    "publisher identity: not established",
+    "consent authenticity: not established",
+    "device environment: not established",
+    "external grant gate: not established",
+    "grant ready: no",
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  return lines.join("\n");
+}
+
 function humanCohortVerification(value: CohortVerificationOutput): string {
   const lines = [
     "Cohort evidence verification: internally consistent",
@@ -310,7 +340,11 @@ function unsupportedOption(argv: string[], allowed: ReadonlySet<string>): string
   for (const argument of argv) {
     if (!argument.startsWith("-")) continue;
     const separator = argument.indexOf("=");
-    const name = separator >= 0 ? argument.slice(0, separator) : argument;
+    const name = argument.startsWith("--")
+      ? separator >= 0
+        ? argument.slice(0, separator)
+        : argument
+      : argument.slice(0, 2);
     if (!allowed.has(name)) return name;
   }
   return undefined;
@@ -563,6 +597,25 @@ export async function runCli(
         return 0;
       }
 
+      if (subcommand === "scope") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--json", "--help", "-h", "--version", "-v"]),
+        );
+        if (rejectedOption) {
+          throw new PilotSessionScopeError("pilot scope does not accept " + rejectedOption);
+        }
+        const scopePath = parsed.positionals[2];
+        if (!scopePath || parsed.positionals.length !== 3) {
+          throw new PilotSessionScopeError("pilot scope requires exactly one private scope file");
+        }
+        const createScope =
+          dependencies.createPilotSessionScopeReceipt ?? createPilotSessionScopeReceipt;
+        const output = await createScope(scopePath);
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanPilotSessionScope(output));
+        return 0;
+      }
+
       if (!pilotId) throw new PilotError("pilot commands require --pilot ID");
 
       if (subcommand === "start") {
@@ -693,7 +746,9 @@ export async function runCli(
         return 0;
       }
 
-      throw new PilotError("pilot command must be lint, start, check, run, status, export, verify, or binding");
+      throw new PilotError(
+        "pilot command must be lint, start, check, run, status, export, verify, binding, or scope",
+      );
     }
 
     io.error("Unknown command: " + command);
@@ -714,6 +769,10 @@ export async function runCli(
     }
     if (error instanceof PilotError) {
       io.error("Pilot error: " + error.message);
+      return error.exitCode;
+    }
+    if (error instanceof PilotSessionScopeError) {
+      io.error("Pilot session scope error: " + error.message);
       return error.exitCode;
     }
     if (error instanceof CohortError) {
