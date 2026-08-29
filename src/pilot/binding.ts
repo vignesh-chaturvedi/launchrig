@@ -12,7 +12,7 @@ export interface PublicPilotEvidenceBindingReceipt {
     evidenceId: string;
     fileSha256: string;
     evidenceSha256: string;
-    schemaVersion: 1 | 2;
+    schemaVersion: 1 | 2 | 3;
   };
   integrityValid: true;
   internalConsistencyValid: true;

@@ -116,6 +116,9 @@ function parseRun(value: unknown): PilotRunEvidenceV1 {
       "launchRigVersion",
       "appSnapshotSha256",
       "walletSnapshotSha256",
+      "sessionScopeSha256",
+      "sessionScopeFileSha256",
+      "scopeInputsMatched",
       "physicalDevice",
       "requiredChecksPassed",
       "qualifying",
@@ -132,8 +135,31 @@ function parseRun(value: unknown): PilotRunEvidenceV1 {
   }
   const physicalDevice = requiredBoolean(value.physicalDevice, "Pilot run physicalDevice");
   const requiredChecksPassed = requiredBoolean(value.requiredChecksPassed, "Pilot run requiredChecksPassed");
+  const scopeFields = [
+    value.sessionScopeSha256 !== undefined,
+    value.sessionScopeFileSha256 !== undefined,
+    value.scopeInputsMatched !== undefined,
+  ];
+  if (scopeFields.some(Boolean) && !scopeFields.every(Boolean)) {
+    throw new PilotError("Pilot run scope fields must be recorded together");
+  }
+  const sessionScopeSha256 = scopeFields[0]
+    ? strictHash(value.sessionScopeSha256, "Pilot run session scope")
+    : undefined;
+  const sessionScopeFileSha256 = scopeFields[0]
+    ? strictHash(value.sessionScopeFileSha256, "Pilot run session scope file")
+    : undefined;
+  const scopeInputsMatched = scopeFields[0]
+    ? requiredBoolean(value.scopeInputsMatched, "Pilot run scopeInputsMatched")
+    : undefined;
   const qualifying = requiredBoolean(value.qualifying, "Pilot run qualifying");
-  if (qualifying !== (outcome === "passed" && physicalDevice && requiredChecksPassed)) {
+  if (
+    qualifying !==
+    (outcome === "passed" &&
+      physicalDevice &&
+      requiredChecksPassed &&
+      (scopeInputsMatched === undefined || scopeInputsMatched))
+  ) {
     throw new PilotError("Pilot run qualifying state is inconsistent");
   }
   const runId = requiredString(value.runId, "Pilot run ID");
@@ -154,6 +180,9 @@ function parseRun(value: unknown): PilotRunEvidenceV1 {
     durationMs: requiredInteger(value.durationMs, "Pilot run durationMs"),
     configSha256: strictHash(value.configSha256, "Pilot run configSha256"),
     flowSha256: parseFlowHashes(value.flowSha256),
+    ...(sessionScopeSha256
+      ? { sessionScopeSha256, sessionScopeFileSha256: sessionScopeFileSha256!, scopeInputsMatched: scopeInputsMatched! }
+      : {}),
     physicalDevice,
     requiredChecksPassed,
     qualifying,
@@ -162,7 +191,8 @@ function parseRun(value: unknown): PilotRunEvidenceV1 {
     if (
       value.failureKind !== "runner-error" &&
       value.failureKind !== "input-mutation" &&
-      value.failureKind !== "report-invalid"
+      value.failureKind !== "report-invalid" &&
+      value.failureKind !== "scope-mismatch"
     ) {
       throw new PilotError("Pilot run failureKind is invalid");
     }
@@ -170,6 +200,25 @@ function parseRun(value: unknown): PilotRunEvidenceV1 {
     if (outcome !== "setup-error" || readiness !== "Not Ready" || physicalDevice || requiredChecksPassed || qualifying) {
       throw new PilotError("Pilot failed-attempt state is inconsistent");
     }
+    if (value.failureKind === "scope-mismatch" && scopeInputsMatched !== false) {
+      throw new PilotError("Pilot scope-mismatch attempt must record unmatched scope inputs");
+    }
+    if (
+      sessionScopeSha256 &&
+      (value.failureKind === "runner-error" || value.failureKind === "report-invalid") &&
+      scopeInputsMatched !== true
+    ) {
+      throw new PilotError("Pilot post-scope failed attempt must record matched scope inputs");
+    }
+    if (value.failureKind === "input-mutation" && scopeInputsMatched === true) {
+      throw new PilotError("Pilot input-mutation attempt cannot retain a matched scope result");
+    }
+  }
+  if (value.failureKind === "scope-mismatch" && !sessionScopeSha256) {
+    throw new PilotError("Pilot scope-mismatch attempt must bind the approved scope");
+  }
+  if (!run.failureKind && scopeInputsMatched === false) {
+    throw new PilotError("Pilot completed run must match its approved scope inputs");
   }
   if (value.reportSha256 !== undefined) {
     run.reportSha256 = strictHash(value.reportSha256, "Pilot run reportSha256");
@@ -210,6 +259,16 @@ function parseState(value: unknown): PilotStateV1 {
   if (!Array.isArray(value.runs) || value.runs.length > 100) throw new PilotError("Pilot state runs must contain at most 100 entries");
   const runs = value.runs.map(parseRun);
   if (new Set(runs.map((run) => run.runId)).size !== runs.length) throw new PilotError("Pilot state contains duplicate run IDs");
+  const scopedRuns = runs.filter((run) => run.sessionScopeSha256 !== undefined);
+  if (scopedRuns.length > 0 && scopedRuns.length !== runs.length) {
+    throw new PilotError("Pilot state cannot mix legacy and scope-enforced attempts");
+  }
+  if (
+    new Set(scopedRuns.map((run) => run.sessionScopeSha256)).size > 1 ||
+    new Set(scopedRuns.map((run) => run.sessionScopeFileSha256)).size > 1
+  ) {
+    throw new PilotError("Pilot state attempts must bind one approved scope file");
+  }
   const startedAt = strictTimestamp(value.startedAt, "Pilot startedAt");
   let previousTimestamp = startedAt;
   for (const run of runs) {

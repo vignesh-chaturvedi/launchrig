@@ -124,6 +124,7 @@ export const COHORT_REGISTER_LIMITATIONS = [
   "The audit verifies internal consistency of private operator-recorded metadata and supplied self-recorded evidence only.",
   "Opaque references and digests do not authenticate people, organizations, projects, authority, consent, or independence.",
   "Technical qualification is recomputed from self-recorded evidence fields and is not an external attestation.",
+  "Evidence v1 and v2 can be verified historically but cannot satisfy the scope-linked governance threshold.",
   "Relationship truth, defect causality, Seeker hardware, and public-release readiness still require permissioned human evidence.",
   "File ownership and mode checks do not prove ACL, backup, sync, or cloud-storage privacy.",
   "The audit does not grant publication permission or grant readiness.",
@@ -142,6 +143,9 @@ export const COHORT_REGISTER_BLOCKERS = [
   "evidence-not-supplied",
   "evidence-v1-not-recomputable",
   "evidence-v2-not-qualified",
+  "evidence-scope-unavailable",
+  "evidence-scope-mismatch",
+  "evidence-v3-not-qualified",
   "sharing-not-approved",
   "closeout-not-complete",
   "count-decision-not-include",
@@ -222,7 +226,7 @@ interface EvidenceBinding {
   evidenceId: string;
   fileSha256: string;
   evidenceSha256: string;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
 }
 
 interface RecordedEvidence {
@@ -314,7 +318,10 @@ export interface CohortRegisterAuditOutput {
       | "not-supplied"
       | "matched-v1-not-recomputable"
       | "matched-v2-qualified"
-      | "matched-v2-not-qualified";
+      | "matched-v2-not-qualified"
+      | "matched-v3-scope-qualified"
+      | "matched-v3-scope-mismatch"
+      | "matched-v3-not-qualified";
     blockers: CohortRegisterBlocker[];
   }>;
   defects: Array<{
@@ -334,7 +341,9 @@ export interface CohortRegisterAuditOutput {
     suppliedEvidenceFiles: number;
     matchedEvidenceBindings: number;
     recomputedQualifiedV2Bindings: number;
+    recomputedQualifiedV3Bindings: number;
     recordedIncludedWithQualifiedV2: number;
+    recordedIncludedWithScopeQualifiedV3: number;
     distinctRecordedPublishersForQualifiedIncluded: number;
     distinctRecordedProjectsForQualifiedIncluded: number;
     requiredPublisherProjects: 3;
@@ -533,7 +542,7 @@ function parseEvidenceBinding(value: unknown, index: number): EvidenceBinding | 
   if (typeof record.evidenceId !== "string" || !EVIDENCE_ID.test(record.evidenceId)) {
     throw new CohortRegisterError(label + " evidence ID is invalid");
   }
-  if (record.schemaVersion !== 1 && record.schemaVersion !== 2) {
+  if (record.schemaVersion !== 1 && record.schemaVersion !== 2 && record.schemaVersion !== 3) {
     throw new CohortRegisterError(label + " schema version is invalid");
   }
   return {
@@ -1009,22 +1018,49 @@ function auditCandidate(
     } else if (evidence.schemaVersion === 1) {
       evidenceStatus = "matched-v1-not-recomputable";
       blockers.add("evidence-v1-not-recomputable");
-    } else if (evidence.reportedTechnicalTargetsMet) {
-      evidenceStatus = "matched-v2-qualified";
+    } else if (evidence.schemaVersion === 2) {
+      blockers.add("evidence-scope-unavailable");
+      if (evidence.reportedTechnicalTargetsMet) {
+        evidenceStatus = "matched-v2-qualified";
+      } else {
+        evidenceStatus = "matched-v2-not-qualified";
+        blockers.add("evidence-v2-not-qualified");
+      }
     } else {
-      evidenceStatus = "matched-v2-not-qualified";
-      blockers.add("evidence-v2-not-qualified");
+      const scopeMatches = Boolean(
+        evidence.sessionScopeSha256 &&
+        evidence.sessionScopeSha256 === candidate.session.binding?.scopeSha256 &&
+        evidence.sessionScopeSha256 === candidate.consent.scopeSha256,
+      );
+      if (!scopeMatches) {
+        evidenceStatus = "matched-v3-scope-mismatch";
+        blockers.add("evidence-scope-mismatch");
+      } else if (!evidence.reportedTechnicalTargetsMet) {
+        evidenceStatus = "matched-v3-not-qualified";
+        blockers.add("evidence-v3-not-qualified");
+      } else {
+        evidenceStatus = "matched-v3-scope-qualified";
+      }
     }
   }
   const blockerList = COHORT_REGISTER_BLOCKERS.filter((code) => blockers.has(code));
   const selected = candidate.countDecision.status === "operator-recorded-include";
   const governanceBlockers = blockerList.filter(
-    (code) => !["evidence-not-supplied", "evidence-v1-not-recomputable", "evidence-v2-not-qualified"].includes(code),
+    (code) =>
+      ![
+        "evidence-not-supplied",
+        "evidence-v1-not-recomputable",
+        "evidence-v2-not-qualified",
+        "evidence-scope-unavailable",
+        "evidence-scope-mismatch",
+        "evidence-v3-not-qualified",
+      ].includes(code),
   );
   return {
     candidate,
     evidence,
-    fullyQualified: selected && blockerList.length === 0 && evidenceStatus === "matched-v2-qualified",
+    fullyQualified:
+      selected && blockerList.length === 0 && evidenceStatus === "matched-v3-scope-qualified",
     output: {
       index,
       recordedCountDecision: candidate.countDecision.status,
@@ -1176,6 +1212,12 @@ export async function auditPrivateCohortRegister(
     auditDefect(defect, index + 1, auditedByRef, parsed.register.asOfDate),
   );
   const fullyQualified = auditedCandidates.filter((entry) => entry.fullyQualified);
+  const qualifiedV2Included = auditedCandidates.filter(
+    (entry) =>
+      entry.candidate.countDecision.status === "operator-recorded-include" &&
+      entry.evidence?.schemaVersion === 2 &&
+      entry.evidence.reportedTechnicalTargetsMet,
+  );
   const thresholdMet =
     parsed.register.integritySha256 !== null &&
     fullyQualified.length >= 3 &&
@@ -1220,7 +1262,11 @@ export async function auditPrivateCohortRegister(
       recomputedQualifiedV2Bindings: [...suppliedByEvidenceId.values()].filter(
         (entry) => entry.schemaVersion === 2 && entry.reportedTechnicalTargetsMet,
       ).length,
-      recordedIncludedWithQualifiedV2: fullyQualified.length,
+      recomputedQualifiedV3Bindings: [...suppliedByEvidenceId.values()].filter(
+        (entry) => entry.schemaVersion === 3 && entry.reportedTechnicalTargetsMet,
+      ).length,
+      recordedIncludedWithQualifiedV2: qualifiedV2Included.length,
+      recordedIncludedWithScopeQualifiedV3: fullyQualified.length,
       distinctRecordedPublishersForQualifiedIncluded: new Set(
         fullyQualified.map((entry) => entry.candidate.publisherRef),
       ).size,

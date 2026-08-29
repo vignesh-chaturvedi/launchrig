@@ -32,7 +32,7 @@ export type CohortTechnicalStatus = "qualified" | "not-qualified" | "not-recompu
 export interface CohortEvidenceVerification {
   index: number;
   evidenceId: string;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   claimStatus: "self-recorded-unattested";
   internalConsistencyValid: true;
   technicalStatus: CohortTechnicalStatus;
@@ -51,6 +51,7 @@ export interface CohortVerificationOutput {
     submittedEvidenceFiles: number;
     uniqueEvidenceIds: number;
     recomputableV2Files: number;
+    scopeEnforcedV3Files: number;
     technicallyQualifiedFiles: number;
     requiredTechnicallyQualifiedFiles: 3;
     selfRecordedTechnicalThresholdMet: boolean;
@@ -132,12 +133,12 @@ function cohortEvidenceEntry(
     };
   }
   if (!verified.technicalPilot) {
-    throw new Error("Verified evidence v2 is missing its technical pilot result.");
+    throw new Error("Verified recomputable evidence is missing its technical pilot result.");
   }
   return {
     index,
     evidenceId: verified.evidenceId,
-    schemaVersion: 2,
+    schemaVersion: verified.schemaVersion,
     claimStatus: "self-recorded-unattested",
     internalConsistencyValid: true,
     technicalStatus: verified.reportedTechnicalTargetsMet ? "qualified" : "not-qualified",
@@ -195,6 +196,7 @@ export async function verifyCohortEvidence(
   }
 
   const recomputableV2Files = evidence.filter((entry) => entry.schemaVersion === 2).length;
+  const scopeEnforcedV3Files = evidence.filter((entry) => entry.schemaVersion === 3).length;
   const technicallyQualifiedFiles = evidence.filter((entry) => entry.technicalStatus === "qualified").length;
   return {
     schemaVersion: 1,
@@ -205,6 +207,7 @@ export async function verifyCohortEvidence(
       submittedEvidenceFiles: evidence.length,
       uniqueEvidenceIds: evidenceIds.size,
       recomputableV2Files,
+      scopeEnforcedV3Files,
       technicallyQualifiedFiles,
       requiredTechnicallyQualifiedFiles: REQUIRED_TECHNICAL_EVIDENCE_FILES,
       selfRecordedTechnicalThresholdMet:

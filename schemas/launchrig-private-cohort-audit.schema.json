@@ -63,7 +63,9 @@
         "suppliedEvidenceFiles",
         "matchedEvidenceBindings",
         "recomputedQualifiedV2Bindings",
+        "recomputedQualifiedV3Bindings",
         "recordedIncludedWithQualifiedV2",
+        "recordedIncludedWithScopeQualifiedV3",
         "distinctRecordedPublishersForQualifiedIncluded",
         "distinctRecordedProjectsForQualifiedIncluded",
         "requiredPublisherProjects",
@@ -82,7 +84,9 @@
         "suppliedEvidenceFiles": { "$ref": "#/$defs/count" },
         "matchedEvidenceBindings": { "$ref": "#/$defs/count" },
         "recomputedQualifiedV2Bindings": { "$ref": "#/$defs/count" },
+        "recomputedQualifiedV3Bindings": { "$ref": "#/$defs/count" },
         "recordedIncludedWithQualifiedV2": { "$ref": "#/$defs/count" },
+        "recordedIncludedWithScopeQualifiedV3": { "$ref": "#/$defs/count" },
         "distinctRecordedPublishersForQualifiedIncluded": { "$ref": "#/$defs/count" },
         "distinctRecordedProjectsForQualifiedIncluded": { "$ref": "#/$defs/count" },
         "requiredPublisherProjects": { "const": 3 },
@@ -122,6 +126,7 @@
         "The audit verifies internal consistency of private operator-recorded metadata and supplied self-recorded evidence only.",
         "Opaque references and digests do not authenticate people, organizations, projects, authority, consent, or independence.",
         "Technical qualification is recomputed from self-recorded evidence fields and is not an external attestation.",
+        "Evidence v1 and v2 can be verified historically but cannot satisfy the scope-linked governance threshold.",
         "Relationship truth, defect causality, Seeker hardware, and public-release readiness still require permissioned human evidence.",
         "File ownership and mode checks do not prove ACL, backup, sync, or cloud-storage privacy.",
         "The audit does not grant publication permission or grant readiness."
@@ -145,6 +150,9 @@
         "evidence-not-supplied",
         "evidence-v1-not-recomputable",
         "evidence-v2-not-qualified",
+        "evidence-scope-unavailable",
+        "evidence-scope-mismatch",
+        "evidence-v3-not-qualified",
         "sharing-not-approved",
         "closeout-not-complete",
         "count-decision-not-include",
@@ -172,12 +180,15 @@
             "not-supplied",
             "matched-v1-not-recomputable",
             "matched-v2-qualified",
-            "matched-v2-not-qualified"
+            "matched-v2-not-qualified",
+            "matched-v3-scope-qualified",
+            "matched-v3-scope-mismatch",
+            "matched-v3-not-qualified"
           ]
         },
         "blockers": {
           "type": "array",
-          "maxItems": 21,
+          "maxItems": 24,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/entryBlocker" }
         }

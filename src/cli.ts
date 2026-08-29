@@ -79,8 +79,8 @@ const HELP = [
   "  launchrig matrix [--device SERIAL] [--json]  (source checkout only)",
   "  launchrig pilot lint [--config launchrig.yml] [--json]",
   "  launchrig pilot start --pilot ID [--config launchrig.yml] [--force]",
-  "  launchrig pilot check --pilot ID [--config launchrig.yml] [--device SERIAL] [--json]",
-  "  launchrig pilot run --pilot ID [--config launchrig.yml] [--device SERIAL] [--repeat N]",
+  "  launchrig pilot check --pilot ID --scope FILE [--config launchrig.yml] [--device SERIAL] [--json]",
+  "  launchrig pilot run --pilot ID --scope FILE [--config launchrig.yml] [--device SERIAL] [--repeat N]",
   "  launchrig pilot status --pilot ID [--config launchrig.yml] [--json]",
   "  launchrig pilot export --pilot ID [--config launchrig.yml] [--output FILE] [--force] [--json]",
   "  launchrig pilot verify FILE [--json]",
@@ -256,6 +256,7 @@ function humanCohortVerification(value: CohortVerificationOutput): string {
     "evidence files: " + value.summary.submittedEvidenceFiles,
     "unique evidence IDs: " + value.summary.uniqueEvidenceIds,
     "recomputable evidence v2 files: " + value.summary.recomputableV2Files,
+    "scope-enforced evidence v3 files: " + value.summary.scopeEnforcedV3Files,
     "self-recorded technical files qualified: " +
       value.summary.technicallyQualifiedFiles +
       "/" +
@@ -265,7 +266,7 @@ function humanCohortVerification(value: CohortVerificationOutput): string {
     const detail =
       entry.technicalStatus === "not-recomputable"
         ? "evidence v1, technical gate not recomputable"
-        : "evidence v2, technical gate " + entry.technicalStatus;
+        : "evidence v" + entry.schemaVersion + ", technical gate " + entry.technicalStatus;
     lines.push("evidence " + entry.index + " " + entry.evidenceId + ": " + detail);
   }
   lines.push(
@@ -292,6 +293,10 @@ function humanCohortRegisterAudit(value: CohortRegisterAuditOutput): string {
     "recorded included candidates: " + value.summary.recordedIncludedCandidates,
     "included candidates with recomputed qualified evidence v2: " +
       value.summary.recordedIncludedWithQualifiedV2 +
+      "/" +
+      value.summary.requiredPublisherProjects,
+    "included candidates with scope-linked qualified evidence v3: " +
+      value.summary.recordedIncludedWithScopeQualifiedV3 +
       "/" +
       value.summary.requiredPublisherProjects,
     "distinct recorded publishers for qualified included candidates: " +
@@ -372,6 +377,7 @@ export async function runCli(
         name: { type: "string" },
         package: { type: "string" },
         pilot: { type: "string" },
+        scope: { type: "string" },
         repeat: { type: "string" },
         output: { type: "string" },
         help: { type: "boolean", short: "h", default: false },
@@ -401,6 +407,7 @@ export async function runCli(
   const projectName = typeof parsed.values.name === "string" ? parsed.values.name : undefined;
   const packageName = typeof parsed.values.package === "string" ? parsed.values.package : undefined;
   const pilotId = typeof parsed.values.pilot === "string" ? parsed.values.pilot : undefined;
+  const scopePath = typeof parsed.values.scope === "string" ? parsed.values.scope : undefined;
   const repeatValue = typeof parsed.values.repeat === "string" ? Number(parsed.values.repeat) : undefined;
   const outputPath = typeof parsed.values.output === "string" ? parsed.values.output : undefined;
 
@@ -566,7 +573,7 @@ export async function runCli(
                 "Integrity valid. Evidence remains self-recorded and unattested.",
                 "evidence schema: v" + output.schemaVersion,
                 "evidence-qualifying runs: " + output.metrics.qualifyingRuns + "/" + output.metrics.runAttempts,
-                output.schemaVersion === 2
+                output.schemaVersion >= 2
                   ? "technical pilot gate (recomputed from self-recorded fields): " +
                     (output.reportedTechnicalTargetsMet ? "met" : "not met")
                   : "technical pilot gate: not independently recomputable from evidence v1",
@@ -619,6 +626,14 @@ export async function runCli(
       if (!pilotId) throw new PilotError("pilot commands require --pilot ID");
 
       if (subcommand === "start") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--pilot", "--config", "-c", "--force", "--json", "--help", "-h", "--version", "-v"]),
+        );
+        if (rejectedOption) throw new PilotError("pilot start does not accept " + rejectedOption);
+        if (parsed.positionals.length !== 2) {
+          throw new PilotError("pilot start does not accept positional arguments");
+        }
         const start = dependencies.startPilot ?? startPilot;
         const output = await start({ pilotId, configPath, force: parsed.values.force === true });
         const rendered = { ...output, statePath: path.relative(process.cwd(), output.statePath) };
@@ -638,6 +653,7 @@ export async function runCli(
           argv,
           new Set([
             "--pilot",
+            "--scope",
             "--config",
             "-c",
             "--device",
@@ -655,10 +671,12 @@ export async function runCli(
         if (parsed.positionals.length !== 2) {
           throw new PilotError("pilot check does not accept positional arguments");
         }
+        if (!scopePath) throw new PilotError("pilot check requires --scope FILE");
         const check = dependencies.checkPilot ?? checkPilot;
         const output = await check({
           pilotId,
           configPath,
+          scopePath,
           ...(device ? { deviceSerial: device } : {}),
           ...(adb ? { adbPath: adb } : {}),
           ...(maestro ? { maestroPath: maestro } : {}),
@@ -669,6 +687,30 @@ export async function runCli(
       }
 
       if (subcommand === "run") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set([
+            "--pilot",
+            "--scope",
+            "--config",
+            "-c",
+            "--device",
+            "-d",
+            "--adb",
+            "--maestro",
+            "--repeat",
+            "--json",
+            "--help",
+            "-h",
+            "--version",
+            "-v",
+          ]),
+        );
+        if (rejectedOption) throw new PilotError("pilot run does not accept " + rejectedOption);
+        if (parsed.positionals.length !== 2) {
+          throw new PilotError("pilot run does not accept positional arguments");
+        }
+        if (!scopePath) throw new PilotError("pilot run requires --scope FILE");
         if (repeatValue !== undefined && !Number.isSafeInteger(repeatValue)) {
           throw new PilotError("--repeat must be an integer from 1 to 10");
         }
@@ -676,6 +718,7 @@ export async function runCli(
         const output = await run({
           pilotId,
           configPath,
+          scopePath,
           ...(repeatValue !== undefined ? { repeat: repeatValue } : {}),
           runOptions: {
             ...(device ? { deviceSerial: device } : {}),
@@ -703,6 +746,14 @@ export async function runCli(
       }
 
       if (subcommand === "status") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--pilot", "--config", "-c", "--json", "--help", "-h", "--version", "-v"]),
+        );
+        if (rejectedOption) throw new PilotError("pilot status does not accept " + rejectedOption);
+        if (parsed.positionals.length !== 2) {
+          throw new PilotError("pilot status does not accept positional arguments");
+        }
         const status = dependencies.getPilotStatus ?? getPilotStatus;
         const output = await status({ pilotId, configPath });
         const rendered = { ...output, statePath: path.relative(process.cwd(), output.statePath) };
@@ -727,6 +778,25 @@ export async function runCli(
       }
 
       if (subcommand === "export") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set([
+            "--pilot",
+            "--config",
+            "-c",
+            "--output",
+            "--force",
+            "--json",
+            "--help",
+            "-h",
+            "--version",
+            "-v",
+          ]),
+        );
+        if (rejectedOption) throw new PilotError("pilot export does not accept " + rejectedOption);
+        if (parsed.positionals.length !== 2) {
+          throw new PilotError("pilot export does not accept positional arguments");
+        }
         const exportEvidence = dependencies.exportPilotEvidence ?? exportPilotEvidence;
         const output = await exportEvidence({
           pilotId,
@@ -739,7 +809,7 @@ export async function runCli(
           parsed.values.json
             ? JSON.stringify({ outputPath: renderedPath, evidence: output.evidence }, null, 2)
             : [
-                "Self-recorded, unattested pilot evidence v2 exported: " + renderedPath,
+                "Self-recorded, unattested pilot evidence v" + output.evidence.schemaVersion + " exported: " + renderedPath,
                 "Next: run launchrig pilot verify on that file before sharing it.",
               ].join("\n"),
         );

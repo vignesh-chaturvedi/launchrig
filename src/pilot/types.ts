@@ -7,7 +7,7 @@ export interface PilotRunEvidenceV1 {
   readiness: "Android Device Ready" | "Android/MWA Ready" | "Not Ready";
   durationMs: number;
   reportSha256?: string;
-  failureKind?: "runner-error" | "input-mutation" | "report-invalid";
+  failureKind?: "runner-error" | "input-mutation" | "report-invalid" | "scope-mismatch";
   configSha256: string;
   flowSha256: Record<string, string>;
   appArtifactSha256?: string;
@@ -15,6 +15,9 @@ export interface PilotRunEvidenceV1 {
   launchRigVersion?: string;
   appSnapshotSha256?: string;
   walletSnapshotSha256?: string;
+  sessionScopeSha256?: string;
+  sessionScopeFileSha256?: string;
+  scopeInputsMatched?: boolean;
   physicalDevice: boolean;
   requiredChecksPassed: boolean;
   qualifying: boolean;
@@ -117,6 +120,28 @@ export interface PublicPilotEvidenceV2 {
   evidenceSha256: string;
 }
 
-export type PublicPilotEvidence = PublicPilotEvidenceV1 | PublicPilotEvidenceV2;
+export interface PublicPilotRunV3 extends PublicPilotRunV2 {
+  sessionScopeSha256: string;
+  scopeInputsMatched: boolean;
+}
+
+export interface PublicPilotEvidenceV3 {
+  schemaVersion: 3;
+  kind: "launchrig-pilot-evidence";
+  evidenceId: string;
+  claimStatus: "self-recorded-unattested";
+  sessionScope: {
+    profile: "external-mwa-pilot-scope-v1";
+    scopeSha256: string;
+    claimStatus: "operator-prepared-unattested";
+  };
+  metrics: PilotMetricsV1;
+  technicalPilot: PilotTechnicalGate;
+  runs: PublicPilotRunV3[];
+  claims: PublicPilotClaims;
+  evidenceSha256: string;
+}
+
+export type PublicPilotEvidence = PublicPilotEvidenceV1 | PublicPilotEvidenceV2 | PublicPilotEvidenceV3;
 
 export type PilotProjectRunner = (configPath: string, options?: RunOptions) => Promise<RunOutput>;

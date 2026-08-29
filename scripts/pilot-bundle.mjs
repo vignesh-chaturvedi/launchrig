@@ -191,7 +191,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     for (const command of [
       "launchrig rules [--json]",
       "launchrig pilot lint",
-      "launchrig pilot check --pilot ID",
+      "launchrig pilot check --pilot ID --scope FILE",
+      "launchrig pilot run --pilot ID --scope FILE",
       "launchrig pilot verify FILE",
       "launchrig pilot binding FILE",
       "launchrig pilot scope FILE",
@@ -234,8 +235,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       { cwd: installDirectory, env: rehearsalEnvironment, acceptedExitCodes: [2] },
     );
     const preflightOutput = preflight.stdout + "\n" + preflight.stderr;
-    if (!preflightOutput.includes("Required MWA coverage is missing") || !preflightOutput.includes('"status": "skip"')) {
-      throw new Error("Clean consumer preflight did not safely refuse the unpromoted starter flows.");
+    if (!preflightOutput.includes("pilot check requires --scope FILE")) {
+      throw new Error("Clean consumer preflight did not require an approved private scope.");
     }
     const policyLint = await run(
       executable,
@@ -322,6 +323,29 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       JSON.stringify(scopeReceipt).includes("urn:launchrig:")
     ) {
       throw new Error("Clean consumer session scope receipt did not preserve its private claim-limited contract.");
+    }
+    const scopedPreflight = await run(
+      executable,
+      [
+        "pilot",
+        "check",
+        "--pilot",
+        "bundle-rehearsal",
+        "--scope",
+        scopePath,
+        "--config",
+        "launchrig.yml",
+        "--json",
+      ],
+      { cwd: installDirectory, env: rehearsalEnvironment, acceptedExitCodes: [2] },
+    );
+    const scopedPreflightOutput = scopedPreflight.stdout + "\n" + scopedPreflight.stderr;
+    if (
+      !scopedPreflightOutput.includes("Required MWA coverage is missing") ||
+      !scopedPreflightOutput.includes("Configuration bytes do not match the approved scope") ||
+      !scopedPreflightOutput.includes('"status": "skip"')
+    ) {
+      throw new Error("Clean consumer scoped preflight did not refuse mismatched inputs before device checks.");
     }
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });

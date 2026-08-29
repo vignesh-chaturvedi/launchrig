@@ -10,8 +10,10 @@ import type {
   PublicPilotEvidence,
   PublicPilotEvidenceV1,
   PublicPilotEvidenceV2,
+  PublicPilotEvidenceV3,
   PublicPilotRunV1,
   PublicPilotRunV2,
+  PublicPilotRunV3,
 } from "./types.js";
 import { PilotError, sha256Value } from "./store.js";
 
@@ -40,16 +42,28 @@ export const PUBLIC_EVIDENCE_V2_LIMITATIONS = [
   "Publisher independence, Seeker hardware, production wallets, Seed Vault, and confirmed defects remain not established.",
 ] as const;
 
+export const PUBLIC_EVIDENCE_V3_LIMITATIONS = [
+  "The integrity digest is not a signature or proof of publisher identity.",
+  "Scope equality is recomputed from self-recorded fields and does not authenticate consent, the bundle delivery, the operator, the publisher, the device, or artifact provenance beyond recorded byte equality.",
+  "The opaque scope digest is stable across reexports and can link public evidence to private records if either digest is disclosed.",
+  "Relative run timing reveals cadence, and reexports of the same pilot remain linkable through their stable evidence ID.",
+  "A fresh export key prevents direct execution-token comparison, but visible timing and group patterns can still support correlation.",
+  "Physical-device and required-check flags are self-recorded values, not device attestations.",
+  "Publisher consent, publisher usability, and external critical-defect status remain not established.",
+  "Publisher independence, Seeker hardware, production wallets, Seed Vault, and confirmed defects remain not established.",
+] as const;
+
 export const PUBLIC_EVIDENCE_LIMITATIONS = PUBLIC_EVIDENCE_V1_LIMITATIONS;
 
 export interface VerifiedPublicPilotEvidence {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   evidenceId: string;
   integrityValid: true;
   internalConsistencyValid: true;
   claimStatus: "self-recorded-unattested";
   metrics: PilotMetricsV1;
   technicalPilot: PilotTechnicalGate | null;
+  sessionScopeSha256: string | null;
   reportedTechnicalTargetsMet: boolean;
   grantReady: false;
   limitations: string[];
@@ -187,11 +201,13 @@ const RUN_V1_KEYS = [
 ] as const;
 
 const RUN_V2_KEYS = [...RUN_V1_KEYS, "elapsedSinceStartMs", "executionFingerprintSha256"] as const;
+const RUN_V3_KEYS = [...RUN_V2_KEYS, "sessionScopeSha256", "scopeInputsMatched"] as const;
 
 function parseRunCore(
   value: unknown,
   index: number,
   allowedKeys: readonly string[],
+  scopeInputsMatched?: boolean,
 ): { source: Record<string, unknown>; run: PublicPilotRunV1 } {
   const source = assertRecord(value, "Public evidence run");
   assertKeys(source, allowedKeys, "Public evidence run");
@@ -211,7 +227,13 @@ function parseRunCore(
     "Public evidence requiredChecksPassed",
   );
   const qualifying = requiredBoolean(source.qualifying, "Public evidence qualifying");
-  if (qualifying !== (outcome === "passed" && physicalDevice && requiredChecksPassed)) {
+  if (
+    qualifying !==
+    (outcome === "passed" &&
+      physicalDevice &&
+      requiredChecksPassed &&
+      (scopeInputsMatched === undefined || scopeInputsMatched))
+  ) {
     throw new PilotError("Public evidence qualifying state is inconsistent");
   }
   const run: PublicPilotRunV1 = {
@@ -225,19 +247,40 @@ function parseRunCore(
   };
   if (source.failureKind !== undefined) {
     const failureKind = source.failureKind;
-    if (failureKind !== "runner-error" && failureKind !== "input-mutation" && failureKind !== "report-invalid") {
+    if (
+      failureKind !== "runner-error" &&
+      failureKind !== "input-mutation" &&
+      failureKind !== "report-invalid" &&
+      !(scopeInputsMatched !== undefined && failureKind === "scope-mismatch")
+    ) {
       throw new PilotError("Public evidence failureKind is invalid");
     }
     if (outcome !== "setup-error" || readiness !== "Not Ready" || physicalDevice || requiredChecksPassed || qualifying) {
       throw new PilotError("Public evidence failed attempt is inconsistent");
     }
     run.failureKind = failureKind;
+    if (failureKind === "scope-mismatch" && scopeInputsMatched !== false) {
+      throw new PilotError("Public evidence scope mismatch must record unmatched scope inputs");
+    }
+    if (
+      (failureKind === "runner-error" || failureKind === "report-invalid") &&
+      scopeInputsMatched !== undefined &&
+      scopeInputsMatched !== true
+    ) {
+      throw new PilotError("Public evidence post-scope failure must record matched scope inputs");
+    }
+    if (failureKind === "input-mutation" && scopeInputsMatched === true) {
+      throw new PilotError("Public evidence input mutation cannot retain a matched scope result");
+    }
   }
   if (source.launchRigVersion !== undefined) {
     run.launchRigVersion = requiredString(source.launchRigVersion, "Public evidence LaunchRig version", 64);
   }
   if (run.failureKind === undefined && run.launchRigVersion === undefined) {
     throw new PilotError("Public evidence completed run must include a LaunchRig version");
+  }
+  if (scopeInputsMatched === false && run.failureKind === undefined) {
+    throw new PilotError("Public evidence completed run must match its approved scope inputs");
   }
   return { source, run };
 }
@@ -261,6 +304,37 @@ function parseRunV2(value: unknown, index: number): PublicPilotRunV2 {
     throw new PilotError("Public evidence run execution fingerprint is inconsistent");
   }
   return { ...run, elapsedSinceStartMs, executionFingerprintSha256 };
+}
+
+function parseRunV3(value: unknown, index: number): PublicPilotRunV3 {
+  const source = assertRecord(value, "Public evidence run");
+  const sessionScopeSha256 = strictSha256(source.sessionScopeSha256, "Public evidence run session scope");
+  const scopeInputsMatched = requiredBoolean(source.scopeInputsMatched, "Public evidence scopeInputsMatched");
+  const { source: parsedSource, run } = parseRunCore(
+    value,
+    index,
+    RUN_V3_KEYS,
+    scopeInputsMatched,
+  );
+  const elapsedSinceStartMs = requiredInteger(
+    parsedSource.elapsedSinceStartMs,
+    "Public evidence elapsedSinceStartMs",
+    Number.MAX_SAFE_INTEGER,
+  );
+  const executionFingerprintSha256 =
+    parsedSource.executionFingerprintSha256 === null
+      ? null
+      : strictSha256(parsedSource.executionFingerprintSha256, "Public evidence run execution fingerprint");
+  if ((run.failureKind !== undefined) !== (executionFingerprintSha256 === null)) {
+    throw new PilotError("Public evidence run execution fingerprint is inconsistent");
+  }
+  return {
+    ...run,
+    elapsedSinceStartMs,
+    executionFingerprintSha256,
+    sessionScopeSha256,
+    scopeInputsMatched,
+  };
 }
 
 function parseClaims(value: unknown): PublicPilotClaims {
@@ -505,7 +579,7 @@ function assertSequentialOffsets(runs: readonly PublicPilotRunV2[]): void {
 
 function parseCommonHeader(
   evidence: Record<string, unknown>,
-  schemaVersion: 1 | 2,
+  schemaVersion: 1 | 2 | 3,
 ): { evidenceId: string; claims: PublicPilotClaims; evidenceSha256: string } {
   if (evidence.schemaVersion !== schemaVersion || evidence.kind !== "launchrig-pilot-evidence") {
     throw new PilotError("Public evidence schema identity is invalid");
@@ -598,10 +672,74 @@ function parsePublicEvidenceV2(value: Record<string, unknown>): PublicPilotEvide
   return parsed;
 }
 
+function parsePublicEvidenceV3(value: Record<string, unknown>): PublicPilotEvidenceV3 {
+  assertKeys(
+    value,
+    [
+      "schemaVersion",
+      "kind",
+      "evidenceId",
+      "claimStatus",
+      "sessionScope",
+      "metrics",
+      "technicalPilot",
+      "runs",
+      "claims",
+      "evidenceSha256",
+    ],
+    "Public evidence",
+  );
+  assertRunArray(value.runs);
+  if (value.runs.length === 0) throw new PilotError("Public evidence v3 requires at least one scoped attempt");
+  const common = parseCommonHeader(value, 3);
+  const sessionScope = assertRecord(value.sessionScope, "Public evidence session scope");
+  assertKeys(sessionScope, ["profile", "scopeSha256", "claimStatus"], "Public evidence session scope");
+  if (
+    sessionScope.profile !== "external-mwa-pilot-scope-v1" ||
+    sessionScope.claimStatus !== "operator-prepared-unattested"
+  ) {
+    throw new PilotError("Public evidence session scope identity is invalid");
+  }
+  const scopeSha256 = strictSha256(sessionScope.scopeSha256, "Public evidence session scope digest");
+  const metrics = parseMetrics(value.metrics);
+  const technicalPilot = parseTechnicalPilot(value.technicalPilot);
+  const runs = value.runs.map(parseRunV3);
+  if (runs.some((run) => run.sessionScopeSha256 !== scopeSha256)) {
+    throw new PilotError("Public evidence runs do not bind the declared session scope");
+  }
+  assertSequentialOffsets(runs);
+  if (sha256Value(metrics) !== sha256Value(metricsFromV2Runs(runs))) {
+    throw new PilotError("Public evidence v3 metrics do not match the visible runs");
+  }
+  if (sha256Value(technicalPilot) !== sha256Value(technicalPilotFromV2Runs(runs))) {
+    throw new PilotError("Public evidence v3 technical pilot does not match the visible runs");
+  }
+  const parsed: PublicPilotEvidenceV3 = {
+    schemaVersion: 3,
+    kind: "launchrig-pilot-evidence",
+    evidenceId: common.evidenceId,
+    claimStatus: "self-recorded-unattested",
+    sessionScope: {
+      profile: "external-mwa-pilot-scope-v1",
+      scopeSha256,
+      claimStatus: "operator-prepared-unattested",
+    },
+    metrics,
+    technicalPilot,
+    runs,
+    claims: common.claims,
+    evidenceSha256: common.evidenceSha256,
+  };
+  const { evidenceSha256, ...core } = parsed;
+  if (sha256Value(core) !== evidenceSha256) throw new PilotError("Public evidence integrity check failed");
+  return parsed;
+}
+
 function parsePublicEvidence(value: unknown): PublicPilotEvidence {
   const evidence = assertRecord(value, "Public evidence");
   if (evidence.schemaVersion === 1) return parsePublicEvidenceV1(evidence);
   if (evidence.schemaVersion === 2) return parsePublicEvidenceV2(evidence);
+  if (evidence.schemaVersion === 3) return parsePublicEvidenceV3(evidence);
   throw new PilotError("Public evidence schema identity is invalid");
 }
 
@@ -701,12 +839,13 @@ function verificationFromEvidence(evidence: PublicPilotEvidence): VerifiedPublic
       claimStatus: "self-recorded-unattested",
       metrics: evidence.metrics,
       technicalPilot: null,
+      sessionScopeSha256: null,
       reportedTechnicalTargetsMet: false,
       grantReady: false,
       limitations: [...PUBLIC_EVIDENCE_V1_LIMITATIONS],
     };
   }
-  return {
+  if (evidence.schemaVersion === 2) return {
     schemaVersion: 2,
     evidenceId: evidence.evidenceId,
     integrityValid: true,
@@ -714,9 +853,23 @@ function verificationFromEvidence(evidence: PublicPilotEvidence): VerifiedPublic
     claimStatus: "self-recorded-unattested",
     metrics: evidence.metrics,
     technicalPilot: evidence.technicalPilot,
+    sessionScopeSha256: null,
     reportedTechnicalTargetsMet: evidence.technicalPilot.qualified,
     grantReady: false,
     limitations: [...PUBLIC_EVIDENCE_V2_LIMITATIONS],
+  };
+  return {
+    schemaVersion: 3,
+    evidenceId: evidence.evidenceId,
+    integrityValid: true,
+    internalConsistencyValid: true,
+    claimStatus: "self-recorded-unattested",
+    metrics: evidence.metrics,
+    technicalPilot: evidence.technicalPilot,
+    sessionScopeSha256: evidence.sessionScope.scopeSha256,
+    reportedTechnicalTargetsMet: evidence.technicalPilot.qualified,
+    grantReady: false,
+    limitations: [...PUBLIC_EVIDENCE_V3_LIMITATIONS],
   };
 }
 

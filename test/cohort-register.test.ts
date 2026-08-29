@@ -12,22 +12,28 @@ import {
   CohortRegisterError,
 } from "../src/pilot/cohort-register.js";
 import { sha256Value } from "../src/pilot/store.js";
-import type { PublicPilotEvidenceV1, PublicPilotEvidenceV2 } from "../src/pilot/types.js";
+import type {
+  PublicPilotEvidenceV1,
+  PublicPilotEvidenceV2,
+  PublicPilotEvidenceV3,
+} from "../src/pilot/types.js";
 
 interface EvidenceFile {
   path: string;
   evidenceId: string;
   fileSha256: string;
   evidenceSha256: string;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
 }
 
 interface EvidenceBinding {
   evidenceId: string;
   fileSha256: string;
   evidenceSha256: string;
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
 }
+
+const evidenceScopeById = new Map<string, string>();
 
 function uuid(index: number): string {
   const hex = index.toString(16);
@@ -100,6 +106,30 @@ function v2Evidence(index: number, runCount = 3): PublicPilotEvidenceV2 {
   return { ...core, evidenceSha256: sha256Value(core) };
 }
 
+function v3Evidence(
+  index: number,
+  runCount = 3,
+  scopeSha256 = digest("scope-" + index),
+): PublicPilotEvidenceV3 {
+  const legacy = v2Evidence(index, runCount);
+  const { evidenceSha256: _legacyDigest, schemaVersion: _legacyVersion, runs: legacyRuns, ...shared } = legacy;
+  const core: Omit<PublicPilotEvidenceV3, "evidenceSha256"> = {
+    schemaVersion: 3,
+    ...shared,
+    sessionScope: {
+      profile: "external-mwa-pilot-scope-v1",
+      scopeSha256,
+      claimStatus: "operator-prepared-unattested",
+    },
+    runs: legacyRuns.map((run) => ({
+      ...run,
+      sessionScopeSha256: scopeSha256,
+      scopeInputsMatched: true,
+    })),
+  };
+  return { ...core, evidenceSha256: sha256Value(core) };
+}
+
 function v1Evidence(index: number): PublicPilotEvidenceV1 {
   const durationMs = 5 * 60_000;
   const fingerprint = digest("legacy-fingerprint-" + index);
@@ -145,11 +175,14 @@ function v1Evidence(index: number): PublicPilotEvidenceV1 {
 async function writeEvidence(
   directory: string,
   index: number,
-  evidence: PublicPilotEvidenceV1 | PublicPilotEvidenceV2 = v2Evidence(index),
+  evidence: PublicPilotEvidenceV1 | PublicPilotEvidenceV2 | PublicPilotEvidenceV3 = v3Evidence(index),
 ): Promise<EvidenceFile> {
   const target = path.join(directory, "evidence-" + index + ".json");
   const bytes = Buffer.from(JSON.stringify(evidence, null, 2) + "\n", "utf8");
   await writeFile(target, bytes);
+  if (evidence.schemaVersion === 3) {
+    evidenceScopeById.set(evidence.evidenceId, evidence.sessionScope.scopeSha256);
+  }
   return {
     path: target,
     evidenceId: evidence.evidenceId,
@@ -160,7 +193,9 @@ async function writeEvidence(
 }
 
 function makeCandidate(index: number, evidence: EvidenceBinding | null) {
-  const scopeSha256 = digest("scope-" + index);
+  const scopeSha256 = evidence
+    ? (evidenceScopeById.get(evidence.evidenceId) ?? digest("scope-" + index))
+    : digest("scope-" + index);
   return {
     candidateRef: ref("candidate", 100 + index),
     publisherRef: ref("publisher", 200 + index),
@@ -289,7 +324,7 @@ function binding(evidence: EvidenceFile): EvidenceBinding {
   };
 }
 
-test("private cohort audit counts three governed qualified bindings without elevating external claims", async () => {
+test("private cohort audit counts three scope-linked governed bindings without elevating external claims", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-register-qualified-"));
   try {
     const evidence = await Promise.all([1, 2, 3].map((index) => writeEvidence(directory, index)));
@@ -304,13 +339,15 @@ test("private cohort audit counts three governed qualified bindings without elev
     assert.equal(output.register.integrityRecorded, true);
     assert.equal(output.summary.candidateRecords, 3);
     assert.equal(output.summary.matchedEvidenceBindings, 3);
-    assert.equal(output.summary.recomputedQualifiedV2Bindings, 3);
-    assert.equal(output.summary.recordedIncludedWithQualifiedV2, 3);
+    assert.equal(output.summary.recomputedQualifiedV2Bindings, 0);
+    assert.equal(output.summary.recomputedQualifiedV3Bindings, 3);
+    assert.equal(output.summary.recordedIncludedWithQualifiedV2, 0);
+    assert.equal(output.summary.recordedIncludedWithScopeQualifiedV3, 3);
     assert.equal(output.summary.distinctRecordedPublishersForQualifiedIncluded, 3);
     assert.equal(output.summary.distinctRecordedProjectsForQualifiedIncluded, 3);
     assert.equal(output.summary.recordedGovernanceAndTechnicalThresholdMet, true);
     assert.ok(output.entries.every((entry) => entry.governanceStatus === "recorded-ready"));
-    assert.ok(output.entries.every((entry) => entry.evidenceStatus === "matched-v2-qualified"));
+    assert.ok(output.entries.every((entry) => entry.evidenceStatus === "matched-v3-scope-qualified"));
     assert.equal(output.defects[0]?.structuralStatus, "consistent");
     assert.equal(output.defects[0]?.qualifiedReproductionBindings, 2);
     assert.equal(output.externalGrantGate.status, "not-established");
@@ -324,8 +361,6 @@ test("private cohort audit counts three governed qualified bindings without elev
 test("session scope receipt binding feeds the private register without elevating consent claims", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-register-session-scope-"));
   try {
-    const evidence = await writeEvidence(directory, 41);
-    const evidenceBinding = (await createPublicPilotEvidenceBinding(evidence.path)).binding;
     const scopeInput = {
       schemaVersion: 1,
       kind: "launchrig-pilot-session-scope",
@@ -374,6 +409,12 @@ test("session scope receipt binding feeds the private register without elevating
     await writeFile(scopePath, JSON.stringify(scopeInput, null, 2) + "\n", { mode: 0o600 });
     await chmod(scopePath, 0o600);
     const scopeReceipt = await createPilotSessionScopeReceipt(scopePath);
+    const evidence = await writeEvidence(
+      directory,
+      41,
+      v3Evidence(41, 3, scopeReceipt.binding.scopeSha256),
+    );
+    const evidenceBinding = (await createPublicPilotEvidenceBinding(evidence.path)).binding;
     const candidate = makeCandidate(41, evidenceBinding);
     candidate.consent.scopeSha256 = scopeReceipt.binding.scopeSha256;
     candidate.session.binding = scopeReceipt.binding;
@@ -381,7 +422,8 @@ test("session scope receipt binding feeds the private register without elevating
     const output = await auditPrivateCohortRegister(registerPath, [evidence.path]);
 
     assert.equal(output.entries[0]?.governanceStatus, "recorded-ready");
-    assert.equal(output.summary.recordedIncludedWithQualifiedV2, 1);
+    assert.equal(output.summary.recordedIncludedWithQualifiedV2, 0);
+    assert.equal(output.summary.recordedIncludedWithScopeQualifiedV3, 1);
     assert.equal(output.externalGrantGate.status, "not-established");
     assert.equal(output.grantReady, false);
   } finally {
@@ -394,7 +436,7 @@ test("private cohort audit excludes incomplete, expired, withdrawn, legacy, and 
   try {
     const qualified = await writeEvidence(directory, 11);
     const legacy = await writeEvidence(directory, 12, v1Evidence(12));
-    const unqualified = await writeEvidence(directory, 13, v2Evidence(13, 2));
+    const unqualified = await writeEvidence(directory, 13, v3Evidence(13, 2));
     const missing = makeCandidate(4, null) as any;
     missing.recruitment.status = "screening";
     missing.intakeReview.status = "needs-review";
@@ -420,14 +462,35 @@ test("private cohort audit excludes incomplete, expired, withdrawn, legacy, and 
 
     assert.deepEqual(
       output.entries.map((entry) => entry.evidenceStatus),
-      ["matched-v2-qualified", "matched-v1-not-recomputable", "matched-v2-not-qualified", "not-bound"],
+      ["matched-v3-scope-qualified", "matched-v1-not-recomputable", "matched-v3-not-qualified", "not-bound"],
     );
     assert.ok(output.entries[1]?.blockers.includes("evidence-v1-not-recomputable"));
-    assert.ok(output.entries[2]?.blockers.includes("evidence-v2-not-qualified"));
+    assert.ok(output.entries[2]?.blockers.includes("evidence-v3-not-qualified"));
     assert.ok(output.entries[3]?.blockers.includes("withdrawal-recorded"));
     assert.ok(output.entries[3]?.blockers.includes("consent-not-current"));
     assert.ok(output.entries[3]?.blockers.includes("lifecycle-date-inconsistent"));
+    assert.equal(output.summary.recordedIncludedWithQualifiedV2, 0);
+    assert.equal(output.summary.recordedIncludedWithScopeQualifiedV3, 1);
+    assert.equal(output.summary.recordedGovernanceAndTechnicalThresholdMet, false);
+    assert.equal(output.grantReady, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("qualified evidence v2 remains verifiable but cannot satisfy scope-linked governance", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-register-unscoped-v2-"));
+  try {
+    const evidence = await writeEvidence(directory, 17, v2Evidence(17));
+    const candidate = makeCandidate(17, binding(evidence));
+    const registerPath = await writeRegister(directory, sealedRegister([candidate]));
+    const output = await auditPrivateCohortRegister(registerPath, [evidence.path]);
+    assert.equal(output.entries[0]?.governanceStatus, "recorded-ready");
+    assert.equal(output.entries[0]?.evidenceStatus, "matched-v2-qualified");
+    assert.ok(output.entries[0]?.blockers.includes("evidence-scope-unavailable"));
+    assert.equal(output.summary.recomputedQualifiedV2Bindings, 1);
     assert.equal(output.summary.recordedIncludedWithQualifiedV2, 1);
+    assert.equal(output.summary.recordedIncludedWithScopeQualifiedV3, 0);
     assert.equal(output.summary.recordedGovernanceAndTechnicalThresholdMet, false);
     assert.equal(output.grantReady, false);
   } finally {
@@ -623,7 +686,8 @@ test("private cohort integrity can be bootstrapped without turning the draft int
     const draftPath = await writeRegister(directory, draft, "draft.json");
     const draftOutput = await auditPrivateCohortRegister(draftPath, evidence.map((entry) => entry.path));
     assert.equal(draftOutput.register.integrityRecorded, false);
-    assert.equal(draftOutput.summary.recordedIncludedWithQualifiedV2, 3);
+    assert.equal(draftOutput.summary.recordedIncludedWithQualifiedV2, 0);
+    assert.equal(draftOutput.summary.recordedIncludedWithScopeQualifiedV3, 3);
     assert.equal(draftOutput.summary.recordedGovernanceAndTechnicalThresholdMet, false);
     assert.equal(draftOutput.grantReady, false);
 

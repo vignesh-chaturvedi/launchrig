@@ -222,6 +222,7 @@ test("cohort verifier rejects a file changed around its verified read", async ()
             claimStatus: "self-recorded-unattested",
             metrics: v2Evidence(9).metrics,
             technicalPilot: v2Evidence(9).technicalPilot,
+            sessionScopeSha256: null,
             reportedTechnicalTargetsMet: true,
             grantReady: false,
             limitations: [],

@@ -30,7 +30,7 @@
         },
         "fileSha256": { "$ref": "#/$defs/sha256" },
         "evidenceSha256": { "$ref": "#/$defs/sha256" },
-        "schemaVersion": { "enum": [1, 2] }
+        "schemaVersion": { "enum": [1, 2, 3] }
       }
     },
     "integrityValid": { "const": true },
@@ -71,7 +71,7 @@
         "properties": {
           "binding": {
             "type": "object",
-            "properties": { "schemaVersion": { "const": 2 } },
+            "properties": { "schemaVersion": { "enum": [2, 3] } },
             "required": ["schemaVersion"]
           }
         },

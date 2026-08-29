@@ -37,7 +37,14 @@ import type {
   PilotStateV1,
   PilotTechnicalGate,
   PublicPilotEvidenceV2,
+  PublicPilotEvidenceV3,
 } from "../pilot/types.js";
+import {
+  loadPilotSessionScope,
+  pilotSessionFlowReviewSha256,
+  type LoadedPilotSessionScopeV1,
+  type PilotSessionScopeFlow,
+} from "../pilot/session-scope.js";
 import type { LaunchRigReport, ResolvedLaunchRigConfig } from "../types.js";
 import type { RunOptions, RunOutput } from "../runner/orchestrator.js";
 import {
@@ -233,7 +240,11 @@ async function inputHashes(config: ResolvedLaunchRigConfig) {
     configSha256: await sha256File(config.configPath),
     flowSha256: Object.fromEntries(flowEntries) as Record<string, string>,
     ...(config.resolvedApk ? { appArtifactSha256: await sha256File(config.resolvedApk) } : {}),
-    ...(config.resolvedWalletApk ? { walletArtifactSha256: await sha256File(config.resolvedWalletApk) } : {}),
+    ...(config.resolvedWalletApk
+      ? { walletArtifactSha256: await sha256File(config.resolvedWalletApk) }
+      : config.wallet.packageName && managedWalletExpectedSha256(config.wallet.packageName)
+        ? { walletArtifactSha256: managedWalletExpectedSha256(config.wallet.packageName)! }
+        : {}),
   };
 }
 
@@ -274,7 +285,9 @@ async function stagePilotInputs(config: ResolvedLaunchRigConfig): Promise<Staged
       appArtifactSha256 = await sha256File(stagedApp);
     }
     let stagedWallet: string | undefined;
-    let walletArtifactSha256: string | undefined;
+    let walletArtifactSha256 = config.wallet.packageName
+      ? managedWalletExpectedSha256(config.wallet.packageName)
+      : undefined;
     if (config.resolvedWalletApk) {
       stagedWallet = path.join(directory, "wallet.apk");
       await copyFile(config.resolvedWalletApk, stagedWallet);
@@ -331,6 +344,101 @@ function hashesEqual(left: InputHashes, right: InputHashes): boolean {
   return sha256Value(left) === sha256Value(right);
 }
 
+interface PilotScopeEvaluation extends LoadedPilotSessionScopeV1 {
+  inputsMatched: boolean;
+  issues: string[];
+}
+
+function scopeDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function evaluatePilotScope(
+  config: ResolvedLaunchRigConfig,
+  hashes: InputHashes,
+  scopePath: string,
+): Promise<PilotScopeEvaluation> {
+  const loaded = await loadPilotSessionScope(scopePath);
+  const issues: string[] = [];
+  const coreScenarios = CORE_MWA_KINDS.flatMap((kind) => {
+    const scenario = config.scenarios.find((entry) => entry.kind === kind && entry.required);
+    return scenario ? [scenario] : [];
+  });
+  if (config.scenarios.length !== CORE_MWA_KINDS.length || coreScenarios.length !== CORE_MWA_KINDS.length) {
+    issues.push("Approved scope requires exactly four required core MWA scenarios");
+  }
+  const actualFlows: PilotSessionScopeFlow[] = coreScenarios.flatMap((scenario) => {
+    const fileSha256 = hashes.flowSha256[scenario.id];
+    return fileSha256
+      ? [{ kind: scenario.kind as PilotSessionScopeFlow["kind"], scenarioId: scenario.id, fileSha256 }]
+      : [];
+  });
+  if (
+    actualFlows.length !== CORE_MWA_KINDS.length ||
+    pilotSessionFlowReviewSha256(actualFlows) !== loaded.receipt.binding.flowReviewSha256
+  ) {
+    issues.push("Configured MWA flow bytes or scenario bindings do not match the approved scope");
+  }
+  if (hashes.configSha256 !== loaded.scope.inputs.configSha256) {
+    issues.push("Configuration bytes do not match the approved scope");
+  }
+  if (!hashes.appArtifactSha256 || hashes.appArtifactSha256 !== loaded.scope.inputs.appBuildSha256) {
+    issues.push("Configured app APK bytes do not match the approved scope");
+  }
+  if (
+    !hashes.walletArtifactSha256 ||
+    hashes.walletArtifactSha256 !== loaded.scope.inputs.walletArtifactSha256
+  ) {
+    issues.push("Configured development-wallet artifact digest does not match the approved scope");
+  }
+  if (config.target.network !== loaded.scope.policy.network) {
+    issues.push("Configured network does not match the approved scope");
+  }
+  if (config.wallet.mode !== loaded.scope.policy.walletMode) {
+    issues.push("Configured development-wallet mode does not match the approved scope");
+  }
+  if (config.device.requirePhysical !== loaded.scope.policy.physicalAndroidRequired) {
+    issues.push("Configured physical-device policy does not match the approved scope");
+  }
+  if (config.artifacts.screenshots !== loaded.scope.policy.capture.screenshots) {
+    issues.push("Configured screenshot policy does not match the approved scope");
+  }
+  if (
+    config.privacy.includeLogcat !== loaded.scope.policy.capture.includeLogcat ||
+    config.privacy.logcatLines !== loaded.scope.policy.capture.logcatLines
+  ) {
+    issues.push("Configured logcat policy does not match the approved scope");
+  }
+  if (config.artifacts.retention !== loaded.scope.policy.retention.maxRuns) {
+    issues.push("Configured retained-run limit does not match the approved scope");
+  }
+  if (loaded.scope.policy.retention.expiresOn < scopeDate()) {
+    issues.push("Approved scope retention window has expired");
+  }
+  return { ...loaded, inputsMatched: issues.length === 0, issues };
+}
+
+function approvedScopeFromRun(run: PilotRunEvidenceV1 | undefined): {
+  sessionScopeSha256: string;
+  sessionScopeFileSha256: string;
+} | null {
+  if (!run?.sessionScopeSha256 || !run.sessionScopeFileSha256) return null;
+  return {
+    sessionScopeSha256: run.sessionScopeSha256,
+    sessionScopeFileSha256: run.sessionScopeFileSha256,
+  };
+}
+
+function sameApprovedScope(
+  approved: { sessionScopeSha256: string; sessionScopeFileSha256: string },
+  evaluation: PilotScopeEvaluation,
+): boolean {
+  return (
+    approved.sessionScopeSha256 === evaluation.receipt.binding.scopeSha256 &&
+    approved.sessionScopeFileSha256 === evaluation.receipt.scopeFileSha256
+  );
+}
+
 function executionFingerprint(run: PilotRunEvidenceV1): string {
   return sha256Value({
     configSha256: run.configSha256,
@@ -340,6 +448,12 @@ function executionFingerprint(run: PilotRunEvidenceV1): string {
     launchRigVersion: run.launchRigVersion ?? null,
     appSnapshotSha256: run.appSnapshotSha256 ?? null,
     walletSnapshotSha256: run.walletSnapshotSha256 ?? null,
+    ...(run.sessionScopeSha256
+      ? {
+          sessionScopeSha256: run.sessionScopeSha256,
+          scopeInputsMatched: run.scopeInputsMatched,
+        }
+      : {}),
   });
 }
 
@@ -694,6 +808,11 @@ function recordedAt(options: RunPilotOptions, state: PilotStateV1): string {
 function failedAttempt(input: {
   kind: AttemptFailure;
   hashes: InputHashes;
+  approvedScope: {
+    sessionScopeSha256: string;
+    sessionScopeFileSha256: string;
+    scopeInputsMatched: boolean;
+  };
   timestamp: string;
   durationMs: number;
 }): PilotRunEvidenceV1 {
@@ -705,6 +824,7 @@ function failedAttempt(input: {
     durationMs: Math.max(0, Math.floor(input.durationMs)),
     failureKind: input.kind,
     ...input.hashes,
+    ...input.approvedScope,
     physicalDevice: false,
     requiredChecksPassed: false,
     qualifying: false,
@@ -850,6 +970,7 @@ export async function lintPilotPolicy(options: LintPilotPolicyOptions = {}): Pro
 }
 
 export interface CheckPilotOptions extends PilotBaseOptions {
+  scopePath: string;
   deviceSerial?: string;
   adbPath?: string;
   maestroPath?: string;
@@ -872,6 +993,7 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
   const statePath = await readOnlyPilotStatePath(config.configDirectory, options.pilotId);
   const state = await readPilotState(statePath);
   if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
+  const scope = await evaluatePilotScope(config, await inputHashes(config), options.scopePath);
 
   const checks: PilotPreflightCheck[] = [
     {
@@ -881,6 +1003,21 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
     },
     ...(await pilotPolicyChecks(config)),
   ];
+  const scopeIssues = [...scope.issues];
+  const existingScope = approvedScopeFromRun(state.runs[0]);
+  if (state.runs.length > 0 && !existingScope) {
+    scopeIssues.push("Existing pilot state contains legacy unscoped attempts; start a new pilot ID");
+  } else if (existingScope && !sameApprovedScope(existingScope, scope)) {
+    scopeIssues.push("Private scope file does not match the scope already bound to this pilot state");
+  }
+  const projectCheck = checks.find((entry) => entry.id === PILOT_PREFLIGHT_CHECK_IDS.project);
+  if (!projectCheck) throw new PilotError("Pilot project preflight check is missing", 3);
+  if (scopeIssues.length > 0) {
+    projectCheck.status = "fail";
+    projectCheck.summary = scopeIssues.join("; ");
+  } else {
+    projectCheck.summary += "; exact config, APK, four-flow, and enforceable policy inputs match the private scope";
+  }
 
   const policyReady = checks.every((check) => check.status === "pass");
   let doctorOutput: DoctorOutput | undefined;
@@ -921,6 +1058,7 @@ export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheck
 }
 
 export interface RunPilotOptions extends PilotBaseOptions {
+  scopePath: string;
   repeat?: number;
   runOptions?: RunOptions;
   projectRunner?: PilotProjectRunner;
@@ -948,16 +1086,61 @@ export async function runPilot(
   const config = await loadEligibleConfig(options.configPath ?? "launchrig.yml");
   await assertPilotFlowPolicy(config);
   let lastKnownHashes = await inputHashes(config);
+  const initialScope = await evaluatePilotScope(config, lastKnownHashes, options.scopePath);
   const statePath = await pilotStatePath(config.configDirectory, options.pilotId);
   const runner = options.projectRunner ?? runProject;
 
   return await withPilotLock(statePath, async () => {
     let state = await readPilotState(statePath);
     if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
-    if (state.runs.length + repeat > 100) {
-      throw new PilotError("Pilot repeat would exceed the maximum 100 recorded attempts");
+    if (state.runs.length > 0 && !approvedScopeFromRun(state.runs[0])) {
+      throw new PilotError("Existing pilot state contains legacy unscoped attempts; start a new pilot ID");
+    }
+    const approvedScope = approvedScopeFromRun(state.runs[0]) ?? {
+      sessionScopeSha256: initialScope.receipt.binding.scopeSha256,
+      sessionScopeFileSha256: initialScope.receipt.scopeFileSha256,
+    };
+    const retainedRunLimit = Math.min(100, initialScope.scope.policy.retention.maxRuns);
+    if (state.runs.length + repeat > retainedRunLimit) {
+      throw new PilotError("Pilot repeat would exceed the approved retained-run limit");
     }
     const recorded: PilotRunEvidenceV1[] = [];
+    const finish = () => {
+      const exitCode: 0 | 1 | 3 = recorded.some((run) => run.outcome === "setup-error")
+        ? 3
+        : recorded.every((run) => run.qualifying)
+          ? 0
+          : 1;
+      return {
+        statePath,
+        runs: recorded,
+        metrics: pilotMetrics(state),
+        technicalPilot: pilotTechnicalGate(state),
+        externalGrantGate: externalGrantGateStatus(),
+        exitCode,
+      };
+    };
+    const appendFailedAttempt = async (
+      kind: AttemptFailure,
+      hashes: InputHashes,
+      scopeInputsMatched: boolean,
+      attemptStartedAt: number,
+    ): Promise<void> => {
+      const run = failedAttempt({
+        kind,
+        hashes,
+        approvedScope: { ...approvedScope, scopeInputsMatched },
+        timestamp: recordedAt(options, state),
+        durationMs: Date.now() - attemptStartedAt,
+      });
+      state = await writePilotState(statePath, stateCoreWithRun(state, run), true);
+      recorded.push(run);
+    };
+
+    if (!initialScope.inputsMatched || !sameApprovedScope(approvedScope, initialScope)) {
+      await appendFailedAttempt("scope-mismatch", lastKnownHashes, false, Date.now());
+      return finish();
+    }
 
     for (let index = 0; index < repeat; index += 1) {
       const attemptStartedAt = Date.now();
@@ -973,18 +1156,22 @@ export async function runPilot(
           throw new Error("Pilot configuration changed while it was being loaded");
         }
       } catch {
-        const run = failedAttempt({
-          kind: "input-mutation",
-          hashes: lastKnownHashes,
-          timestamp: recordedAt(options, state),
-          durationMs: Date.now() - attemptStartedAt,
-        });
-        state = await writePilotState(statePath, stateCoreWithRun(state, run), true);
-        recorded.push(run);
+        await appendFailedAttempt("input-mutation", lastKnownHashes, false, attemptStartedAt);
         break;
       }
       const before = staged.hashes;
       lastKnownHashes = before;
+      let beforeScope: PilotScopeEvaluation | undefined;
+      try {
+        beforeScope = await evaluatePilotScope(attemptConfig, before, options.scopePath);
+      } catch {
+        beforeScope = undefined;
+      }
+      if (!beforeScope || !beforeScope.inputsMatched || !sameApprovedScope(approvedScope, beforeScope)) {
+        await staged.dispose();
+        await appendFailedAttempt("scope-mismatch", before, false, attemptStartedAt);
+        break;
+      }
       let output: RunOutput;
       try {
         output = await runner(staged.configPath, {
@@ -993,34 +1180,35 @@ export async function runPilot(
         });
       } catch {
         await staged.dispose();
-        const run = failedAttempt({
-          kind: "runner-error",
-          hashes: before,
-          timestamp: recordedAt(options, state),
-          durationMs: Date.now() - attemptStartedAt,
-        });
-        state = await writePilotState(statePath, stateCoreWithRun(state, run), true);
-        recorded.push(run);
+        await appendFailedAttempt("runner-error", before, true, attemptStartedAt);
         break;
       }
 
       let after: InputHashes | undefined;
+      let afterScope: PilotScopeEvaluation | undefined;
       try {
         after = await inputHashes(attemptConfig);
       } catch {
         after = undefined;
-      } finally {
+      }
+      if (after) {
+        try {
+          afterScope = await evaluatePilotScope(attemptConfig, after, options.scopePath);
+        } catch {
+          afterScope = undefined;
+        }
+      }
+      try {
         await staged.dispose();
+      } catch {
+        throw new PilotError("Pilot staged inputs cannot be removed safely", 3);
       }
       if (!after || !hashesEqual(before, after)) {
-        const run = failedAttempt({
-          kind: "input-mutation",
-          hashes: before,
-          timestamp: recordedAt(options, state),
-          durationMs: Date.now() - attemptStartedAt,
-        });
-        state = await writePilotState(statePath, stateCoreWithRun(state, run), true);
-        recorded.push(run);
+        await appendFailedAttempt("input-mutation", before, false, attemptStartedAt);
+        break;
+      }
+      if (!afterScope || !afterScope.inputsMatched || !sameApprovedScope(approvedScope, afterScope)) {
+        await appendFailedAttempt("scope-mismatch", before, false, attemptStartedAt);
         break;
       }
 
@@ -1028,18 +1216,12 @@ export async function runPilot(
       try {
         parsed = await readPilotReport(output, attemptConfig, before);
       } catch {
-        const run = failedAttempt({
-          kind: "report-invalid",
-          hashes: before,
-          timestamp: recordedAt(options, state),
-          durationMs: Date.now() - attemptStartedAt,
-        });
-        state = await writePilotState(statePath, stateCoreWithRun(state, run), true);
-        recorded.push(run);
+        await appendFailedAttempt("report-invalid", before, true, attemptStartedAt);
         break;
       }
       const timestamp = recordedAt(options, state);
-      const qualifying = parsed.outcome === "passed" && parsed.requiredChecksPassed && parsed.physicalDevice;
+      const qualifying =
+        parsed.outcome === "passed" && parsed.requiredChecksPassed && parsed.physicalDevice;
       const run: PilotRunEvidenceV1 = {
         runId: parsed.runId,
         recordedAt: timestamp,
@@ -1051,6 +1233,8 @@ export async function runPilot(
         launchRigVersion: parsed.launchRigVersion,
         appSnapshotSha256: parsed.appSnapshotSha256,
         ...(parsed.walletSnapshotSha256 ? { walletSnapshotSha256: parsed.walletSnapshotSha256 } : {}),
+        ...approvedScope,
+        scopeInputsMatched: true,
         physicalDevice: parsed.physicalDevice,
         requiredChecksPassed: parsed.requiredChecksPassed,
         qualifying,
@@ -1059,20 +1243,7 @@ export async function runPilot(
       recorded.push(run);
       if (run.outcome === "setup-error") break;
     }
-
-    const exitCode: 0 | 1 | 3 = recorded.some((run) => run.outcome === "setup-error")
-      ? 3
-      : recorded.every((run) => run.qualifying)
-        ? 0
-        : 1;
-    return {
-      statePath,
-      runs: recorded,
-      metrics: pilotMetrics(state),
-      technicalPilot: pilotTechnicalGate(state),
-      externalGrantGate: externalGrantGateStatus(),
-      exitCode,
-    };
+    return finish();
   });
 }
 
@@ -1164,7 +1335,7 @@ async function assertSafePublicExportDestination(configDirectory: string, output
 
 export async function exportPilotEvidence(
   options: ExportPilotOptions,
-): Promise<{ outputPath: string; evidence: PublicPilotEvidenceV2 }> {
+): Promise<{ outputPath: string; evidence: PublicPilotEvidenceV2 | PublicPilotEvidenceV3 }> {
   assertPilotId(options.pilotId);
   const config = await loadEligibleConfig(options.configPath ?? "launchrig.yml");
   const statePath = await pilotStatePath(config.configDirectory, options.pilotId);
@@ -1180,6 +1351,9 @@ export async function exportPilotEvidence(
   };
   const technicalPilot = pilotTechnicalGate(state);
   let previousElapsedSinceStartMs = 0;
+  const scopeEnforced = state.runs.length > 0 && state.runs.every((run) => run.sessionScopeSha256 !== undefined);
+  const sessionScopeSha256 = scopeEnforced ? state.runs[0]?.sessionScopeSha256 : undefined;
+  if (scopeEnforced && !sessionScopeSha256) throw new PilotError("Scoped pilot state is missing its scope digest", 3);
   const publicRuns = state.runs.map((run, index) => {
     const elapsedSinceStartMs = Date.parse(run.recordedAt) - Date.parse(state.startedAt);
     if (
@@ -1200,13 +1374,18 @@ export async function exportPilotEvidence(
         : publicExecutionFingerprint(publicFingerprintKey, executionFingerprint(run)),
       ...(run.failureKind ? { failureKind: run.failureKind } : {}),
       ...(run.launchRigVersion ? { launchRigVersion: run.launchRigVersion } : {}),
+      ...(scopeEnforced
+        ? {
+            sessionScopeSha256: run.sessionScopeSha256!,
+            scopeInputsMatched: run.scopeInputsMatched!,
+          }
+        : {}),
       physicalDevice: run.physicalDevice,
       requiredChecksPassed: run.requiredChecksPassed,
       qualifying: run.qualifying,
     };
   });
-  const core = {
-    schemaVersion: 2 as const,
+  const common = {
     kind: "launchrig-pilot-evidence" as const,
     evidenceId: state.evidenceId,
     claimStatus: "self-recorded-unattested" as const,
@@ -1222,7 +1401,28 @@ export async function exportPilotEvidence(
     },
   };
   publicFingerprintKey.fill(0);
-  const evidence: PublicPilotEvidenceV2 = { ...core, evidenceSha256: sha256Value(core) };
+  const evidence: PublicPilotEvidenceV2 | PublicPilotEvidenceV3 = scopeEnforced
+    ? (() => {
+        const core: Omit<PublicPilotEvidenceV3, "evidenceSha256"> = {
+          schemaVersion: 3,
+          ...common,
+          sessionScope: {
+            profile: "external-mwa-pilot-scope-v1",
+            scopeSha256: sessionScopeSha256!,
+            claimStatus: "operator-prepared-unattested",
+          },
+          runs: publicRuns as PublicPilotEvidenceV3["runs"],
+        };
+        return { ...core, evidenceSha256: sha256Value(core) };
+      })()
+    : (() => {
+        const core: Omit<PublicPilotEvidenceV2, "evidenceSha256"> = {
+          schemaVersion: 2,
+          ...common,
+          runs: publicRuns,
+        };
+        return { ...core, evidenceSha256: sha256Value(core) };
+      })();
   const outputPath = path.resolve(
     config.configDirectory,
     options.outputPath ?? path.join(path.dirname(statePath), "public-evidence.json"),

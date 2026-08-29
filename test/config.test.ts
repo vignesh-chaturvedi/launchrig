@@ -355,6 +355,9 @@ test("published schemas stay synchronized with lifecycle and privacy rules", asy
   const pilotV2Schema = JSON.parse(
     await readFile(path.join(process.cwd(), "schemas", "launchrig-pilot-evidence-v2.schema.json"), "utf8"),
   ) as Record<string, any>;
+  const pilotV3Schema = JSON.parse(
+    await readFile(path.join(process.cwd(), "schemas", "launchrig-pilot-evidence-v3.schema.json"), "utf8"),
+  ) as Record<string, any>;
   assert.equal(pilotSchema.properties.schemaVersion.const, 1);
   assert.equal(pilotSchema.properties.claimStatus.const, "self-recorded-unattested");
   assert.equal(pilotSchema.properties.claims.properties.seekerHardware.const, "not-established");
@@ -368,6 +371,12 @@ test("published schemas stay synchronized with lifecycle and privacy rules", asy
   for (const claim of Object.values(pilotV2Schema.$defs.claims.properties) as Array<Record<string, unknown>>) {
     assert.equal(claim.const, "not-established");
   }
+  assert.equal(pilotV3Schema.properties.schemaVersion.const, 3);
+  assert.equal(pilotV3Schema.properties.sessionScope.$ref, "#/$defs/sessionScope");
+  assert.equal(pilotV3Schema.$defs.sessionScope.properties.profile.const, "external-mwa-pilot-scope-v1");
+  assert.ok(pilotV3Schema.$defs.run.required.includes("sessionScopeSha256"));
+  assert.ok(pilotV3Schema.$defs.run.required.includes("scopeInputsMatched"));
+  assert.ok(pilotV3Schema.$defs.run.properties.failureKind.enum.includes("scope-mismatch"));
 
   const privateRegisterSchema = JSON.parse(
     await readFile(path.join(process.cwd(), "schemas", "launchrig-private-cohort-register.schema.json"), "utf8"),
@@ -381,12 +390,14 @@ test("published schemas stay synchronized with lifecycle and privacy rules", asy
   assert.equal(privateRegisterSchema.properties.candidates.maxItems, 25);
   assert.equal(privateRegisterSchema.$defs.candidate.additionalProperties, false);
   assert.equal(privateRegisterSchema.$defs.evidenceBinding.additionalProperties, false);
-  assert.deepEqual(privateRegisterSchema.$defs.evidenceBinding.properties.schemaVersion.enum, [1, 2]);
+  assert.deepEqual(privateRegisterSchema.$defs.evidenceBinding.properties.schemaVersion.enum, [1, 2, 3]);
   assert.equal(privateAuditSchema.additionalProperties, false);
   assert.equal(privateAuditSchema.properties.profile.const, "phase-2c-publisher-governance-v1");
   assert.equal(privateAuditSchema.properties.externalGrantGate.properties.status.const, "not-established");
   assert.equal(privateAuditSchema.properties.grantReady.const, false);
   assert.equal(privateAuditSchema.properties.entries.maxItems, 25);
+  assert.ok(privateAuditSchema.$defs.entryBlocker.enum.includes("evidence-scope-unavailable"));
+  assert.ok(privateAuditSchema.$defs.entryBlocker.enum.includes("evidence-scope-mismatch"));
 });
 
 test("config caps scenario count at the pilot evidence limit", () => {

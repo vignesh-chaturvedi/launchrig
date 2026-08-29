@@ -5,14 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  checkPilot,
+  checkPilot as checkPilotCommand,
   exportPilotEvidence,
   getPilotStatus,
   lintPilotPolicy,
   pilotMetrics,
   pilotTechnicalGate,
   PilotError,
-  runPilot,
+  runPilot as runPilotCommand,
   startPilot,
   type PilotPolicyLintOutput,
 } from "../src/commands/pilot.js";
@@ -25,7 +25,16 @@ import { readPilotState, sha256Value } from "../src/pilot/store.js";
 import type { PilotProjectRunner, PilotRunEvidenceV1, PilotStateCoreV1 } from "../src/pilot/types.js";
 import type { LaunchRigReport } from "../src/types.js";
 
+const TEST_APP_BYTES = Buffer.from("launchrig publisher test app apk\n", "utf8");
+const TEST_APP_SHA256 = createHash("sha256").update(TEST_APP_BYTES).digest("hex");
+const TEST_WALLET_SHA256 = "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b";
+
+function fileDigest(value: Buffer | string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 async function writePublisherProject(directory: string, packageName = "com.publisher.mobile"): Promise<string> {
+  await writeFile(path.join(directory, "publisher-app.apk"), TEST_APP_BYTES);
   await writeFile(
     path.join(directory, "authorize.yaml"),
     [
@@ -46,6 +55,7 @@ async function writePublisherProject(directory: string, packageName = "com.publi
       "project:",
       "  name: Publisher Mobile",
       "  packageName: " + packageName,
+      "  apk: ./publisher-app.apk",
       "  install: false",
       "target:",
       "  network: devnet",
@@ -75,6 +85,103 @@ async function writePublisherProject(directory: string, packageName = "com.publi
     "utf8",
   );
   return configPath;
+}
+
+async function writeMatchingPilotScope(
+  directory: string,
+  configPath: string,
+  name = "pilot-session-scope.json",
+): Promise<string> {
+  const config = await loadConfig(configPath);
+  if (!config.resolvedApk) throw new Error("test project must configure an app APK");
+  const kinds = ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject"] as const;
+  const flows = await Promise.all(
+    kinds.map(async (kind) => {
+      const scenario = config.scenarios.find((entry) => entry.kind === kind && entry.required);
+      if (!scenario) {
+        return {
+          kind,
+          scenarioId: "scope-" + kind.slice(4),
+          fileSha256: fileDigest("missing test flow " + kind),
+        };
+      }
+      return {
+        kind,
+        scenarioId: scenario.id,
+        fileSha256: fileDigest(await readFile(scenario.resolvedFlow)),
+      };
+    }),
+  );
+  const value = {
+    schemaVersion: 1,
+    kind: "launchrig-pilot-session-scope",
+    profile: "external-mwa-pilot-scope-v1",
+    scopeRef: "urn:launchrig:scope:123e4567-e89b-42d3-a456-426614174000",
+    operatorRef: "urn:launchrig:operator:223e4567-e89b-42d3-a456-426614174000",
+    pilotRef: "urn:launchrig:pilot:323e4567-e89b-42d3-a456-426614174000",
+    deviceRef: "urn:launchrig:device:423e4567-e89b-42d3-a456-426614174000",
+    bundle: {
+      bundleId: "sha256:" + fileDigest("test bundle"),
+      manifestSha256: fileDigest("test manifest"),
+      sha256SumsSha256: fileDigest("test sums"),
+      packageSha256: fileDigest("test package"),
+    },
+    inputs: {
+      configSha256: fileDigest(await readFile(config.configPath)),
+      appBuildSha256: fileDigest(await readFile(config.resolvedApk)),
+      walletArtifactSha256: TEST_WALLET_SHA256,
+      flows,
+    },
+    policy: {
+      network: config.target.network,
+      walletMode: config.wallet.mode,
+      physicalAndroidRequired: true,
+      attendedExecutionRequired: true,
+      manualWalletActionsRequired: true,
+      valuableAssetsAllowed: false,
+      capture: {
+        screenshots: config.artifacts.screenshots,
+        includeLogcat: config.privacy.includeLogcat,
+        logcatLines: config.privacy.logcatLines,
+      },
+      retention: {
+        maxRuns: config.artifacts.retention,
+        expiresOn: "2099-12-31",
+        deletionMethod: "standard-delete",
+      },
+      sharing: {
+        publicEvidenceJson: true,
+        sanitizedReports: false,
+        publisherName: false,
+        publisherLogo: false,
+        approvedQuote: false,
+        confirmedDefectRecord: false,
+      },
+    },
+  };
+  const target = path.join(directory, name);
+  await writeFile(target, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
+  return target;
+}
+
+type TestCheckPilotOptions = Omit<Parameters<typeof checkPilotCommand>[0], "scopePath"> & {
+  scopePath?: string;
+};
+
+async function checkPilot(options: TestCheckPilotOptions) {
+  const configPath = options.configPath ?? "launchrig.yml";
+  const scopePath = options.scopePath ?? await writeMatchingPilotScope(path.dirname(configPath), configPath);
+  return await checkPilotCommand({ ...options, scopePath });
+}
+
+type TestRunPilotOptions = Omit<Parameters<typeof runPilotCommand>[0], "scopePath"> & {
+  scopePath?: string;
+};
+
+async function runPilot(options: TestRunPilotOptions) {
+  const configPath = options.configPath ?? "launchrig.yml";
+  const scopePath = options.scopePath ?? await writeMatchingPilotScope(path.dirname(configPath), configPath);
+  return await runPilotCommand({ ...options, scopePath });
 }
 
 async function writeFullPublisherProject(directory: string): Promise<string> {
@@ -113,8 +220,8 @@ async function writeFullPublisherProject(directory: string): Promise<string> {
 function passingRunner(
   directory: string,
   fixedRunId?: string,
-  readiness: LaunchRigReport["readiness"] = "Android Device Ready",
-  scenarioIds: readonly string[] = ["authorize"],
+  readiness: LaunchRigReport["readiness"] = "Android/MWA Ready",
+  scenarioIds: readonly string[] = ["authorize", "siws", "sign-message", "reject"],
 ): PilotProjectRunner {
   let index = 0;
   return async () => {
@@ -132,10 +239,10 @@ function passingRunner(
       durationMs: 5 * 60 * 1000,
       outcome: "passed",
       readiness,
-      app: { packageName: "com.publisher.mobile", versionName: "1.0.0", apkSha256: "a".repeat(64) },
+      app: { packageName: "com.publisher.mobile", versionName: "1.0.0", apkSha256: TEST_APP_SHA256 },
       wallet: {
         packageName: "com.solana.mwallet",
-        apkSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
+        apkSha256: TEST_WALLET_SHA256,
       },
       device: {
         serial: "***",
@@ -214,7 +321,7 @@ function readyDoctorOutput(): DoctorOutput {
         installed: true,
         willInstall: false,
         role: "app",
-        installedSha256: "a".repeat(64),
+        installedSha256: TEST_APP_SHA256,
         binaryReady: true,
       },
       {
@@ -222,8 +329,8 @@ function readyDoctorOutput(): DoctorOutput {
         installed: true,
         willInstall: false,
         role: "wallet",
-        installedSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
-        expectedSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
+        installedSha256: TEST_WALLET_SHA256,
+        expectedSha256: TEST_WALLET_SHA256,
         binaryReady: true,
       },
     ],
@@ -371,6 +478,7 @@ test("pilot preflight is read-only and separates policy, technical, and external
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-check-"));
   try {
     const configPath = await writeFullPublisherProject(directory);
+    const scopePath = await writeMatchingPilotScope(directory, configPath);
     const pilotId = "publisher-preflight";
     const started = await startPilot({
       pilotId,
@@ -420,7 +528,7 @@ test("pilot preflight is read-only and separates policy, technical, and external
     const cliErrors: string[] = [];
     assert.equal(
       await runCli(
-        ["pilot", "check", "--pilot", pilotId, "--config", configPath, "--json"],
+        ["pilot", "check", "--pilot", pilotId, "--scope", scopePath, "--config", configPath, "--json"],
         { out: (message) => cliOutput.push(message), error: (message) => cliErrors.push(message) },
         {
           checkPilot: async (options) =>
@@ -490,6 +598,7 @@ test("pilot preflight reports policy gaps without calling device tools", async (
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-policy-"));
   try {
     const configPath = await writePublisherProject(directory);
+    const scopePath = await writeMatchingPilotScope(directory, configPath);
     const pilotId = "publisher-policy";
     const started = await startPilot({ pilotId, configPath });
     const stateBefore = await readFile(started.statePath, "utf8");
@@ -497,6 +606,7 @@ test("pilot preflight reports policy gaps without calling device tools", async (
     const checked = await checkPilot({
       pilotId,
       configPath,
+      scopePath,
       doctorRunner: async () => {
         doctorCalled = true;
         return readyDoctorOutput();
@@ -531,6 +641,7 @@ test("pilot preflight reports policy gaps without calling device tools", async (
     const duplicateCoverage = await checkPilot({
       pilotId,
       configPath,
+      scopePath,
       doctorRunner: async () => {
         doctorCalled = true;
         return readyDoctorOutput();
@@ -621,7 +732,7 @@ test("pilot run refuses init templates and reserved selectors before recording a
 test("pilot workflow records repeatability metrics and exports privacy-limited evidence", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-"));
   try {
-    const configPath = await writePublisherProject(directory);
+    const configPath = await writeFullPublisherProject(directory);
     const pilotId = "publisher-alpha";
     await startPilot({
       pilotId,
@@ -654,9 +765,9 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
       runtimeTargetMet: true,
       repeatabilityTargetMet: true,
     });
-    assert.equal(output.technicalPilot.qualified, false);
-    assert.equal(output.technicalPilot.trailingMwaPasses, 0);
-    assert.equal(output.technicalPilot.latestReadiness, "Android Device Ready");
+    assert.equal(output.technicalPilot.qualified, true);
+    assert.equal(output.technicalPilot.trailingMwaPasses, 3);
+    assert.equal(output.technicalPilot.latestReadiness, "Android/MWA Ready");
 
     const status = await getPilotStatus({ pilotId, configPath });
     assert.deepEqual(status.metrics, output.metrics);
@@ -691,17 +802,17 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
     const verifiedExport = await verifyPublicPilotEvidence(exported.outputPath);
     assert.equal(verifiedExport.integrityValid, true);
     assert.equal(verifiedExport.internalConsistencyValid, true);
-    assert.equal(verifiedExport.reportedTechnicalTargetsMet, false);
+    assert.equal(verifiedExport.reportedTechnicalTargetsMet, true);
     assert.equal(verifiedExport.grantReady, false);
     const bindingReceipt = await createPublicPilotEvidenceBinding(exported.outputPath);
     assert.deepEqual(bindingReceipt.binding, {
       evidenceId: exported.evidence.evidenceId,
       fileSha256: createHash("sha256").update(await readFile(exported.outputPath)).digest("hex"),
       evidenceSha256: exported.evidence.evidenceSha256,
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
     assert.equal(bindingReceipt.receiptSchemaVersion, 1);
-    assert.equal(bindingReceipt.technicalStatus, "not-qualified-self-recorded");
+    assert.equal(bindingReceipt.technicalStatus, "qualified-self-recorded");
     assert.equal(bindingReceipt.externalGrantGate, "not-established");
     assert.equal(bindingReceipt.grantReady, false);
     assert.equal("fileIdentity" in bindingReceipt, false);
@@ -739,8 +850,8 @@ test("pilot workflow records repeatability metrics and exports privacy-limited e
       humanBinding,
       new RegExp("internal evidence SHA-256: " + bindingReceipt.binding.evidenceSha256),
     );
-    assert.match(humanBinding, /evidence schema: v2/);
-    assert.match(humanBinding, /technical status: not-qualified-self-recorded/);
+    assert.match(humanBinding, /evidence schema: v3/);
+    assert.match(humanBinding, /technical status: qualified-self-recorded/);
     assert.match(humanBinding, /claim status: self-recorded-unattested/);
     assert.match(humanBinding, /external grant gate: not-established/);
     assert.match(humanBinding, /grant ready: no/);
@@ -915,8 +1026,8 @@ test("pilot repeatability resets when the execution fingerprint changes", () => 
   assert.equal(completedTechnical.medianRunDurationMs, 360_000);
 });
 
-test("pilot evidence v2 exposes a recomputable technical gate with per-export keyed fingerprints", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-v2-export-"));
+test("pilot evidence v3 binds approved scope and exposes a recomputable technical gate", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-v3-export-"));
   try {
     const configPath = await writeFullPublisherProject(directory);
     const scenarioIds = ["authorize", "siws", "sign-message", "reject"];
@@ -945,8 +1056,17 @@ test("pilot evidence v2 exposes a recomputable technical gate with per-export ke
       };
     };
 
-    const first = await runOnePilot("publisher-v2-first", "./exports/first-v2.json");
-    assert.equal(first.exported.evidence.schemaVersion, 2);
+    const first = await runOnePilot("publisher-v3-first", "./exports/first-v3.json");
+    assert.equal(first.exported.evidence.schemaVersion, 3);
+    if (first.exported.evidence.schemaVersion !== 3) throw new Error("expected scoped evidence v3");
+    const firstEvidence = first.exported.evidence;
+    assert.match(firstEvidence.sessionScope.scopeSha256, /^[a-f0-9]{64}$/);
+    assert.ok(firstEvidence.runs.every((run) => run.scopeInputsMatched));
+    assert.ok(
+      firstEvidence.runs.every(
+        (run) => run.sessionScopeSha256 === firstEvidence.sessionScope.scopeSha256,
+      ),
+    );
     assert.equal(first.exported.evidence.technicalPilot.qualified, true);
     assert.deepEqual(
       first.exported.evidence.runs.map((run) => run.elapsedSinceStartMs),
@@ -972,10 +1092,29 @@ test("pilot evidence v2 exposes a recomputable technical gate with per-export ke
       "qualified-self-recorded",
     );
 
+    const cliExportOutput: string[] = [];
+    assert.equal(
+      await runCli(
+        [
+          "pilot",
+          "export",
+          "--pilot",
+          "publisher-v3-first",
+          "--config",
+          configPath,
+          "--output",
+          "./exports/first-v3-cli.json",
+        ],
+        { out: (message) => cliExportOutput.push(message), error: () => undefined },
+      ),
+      0,
+    );
+    assert.match(cliExportOutput.join("\n"), /evidence v3 exported/);
+
     const reexported = await exportPilotEvidence({
-      pilotId: "publisher-v2-first",
+      pilotId: "publisher-v3-first",
       configPath,
-      outputPath: "./exports/first-v2-reexport.json",
+      outputPath: "./exports/first-v3-reexport.json",
     });
     assert.equal(reexported.evidence.evidenceId, first.exported.evidence.evidenceId);
     assert.notEqual(
@@ -984,7 +1123,7 @@ test("pilot evidence v2 exposes a recomputable technical gate with per-export ke
     );
     assert.equal((await verifyPublicPilotEvidence(reexported.outputPath)).reportedTechnicalTargetsMet, true);
 
-    const second = await runOnePilot("publisher-v2-second", "./exports/second-v2.json");
+    const second = await runOnePilot("publisher-v3-second", "./exports/second-v3.json");
     assert.notEqual(first.exported.evidence.evidenceId, second.exported.evidence.evidenceId);
     assert.notEqual(
       first.exported.evidence.runs[0]?.executionFingerprintSha256,
@@ -1003,21 +1142,130 @@ test("pilot evidence v2 exposes a recomputable technical gate with per-export ke
     await assert.rejects(
       () =>
         exportPilotEvidence({
-          pilotId: "publisher-v2-first",
+          pilotId: "publisher-v3-first",
           configPath,
-          outputPath: "./exports/impossible-v2.json",
+          outputPath: "./exports/impossible-v3.json",
         }),
       (error: unknown) => error instanceof PilotError && error.message.includes("sequential run durations"),
     );
 
     const publicSource = await readFile(first.exported.outputPath, "utf8");
-    assert.doesNotMatch(publicSource, /recordedAt|startedAt|publisher-v2-first|com\.publisher|authorize/);
+    assert.doesNotMatch(publicSource, /recordedAt|startedAt|publisher-v3-first|com\.publisher|authorize/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("optional MWA failure downgrades readiness without invalidating a passed pilot report", async () => {
+test("pilot scope matching fails closed before device execution and binds exact scope bytes", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-scope-enforcement-"));
+  try {
+    const configPath = await writeFullPublisherProject(directory);
+    const configSource = await readFile(configPath, "utf8");
+    const scopePath = await writeMatchingPilotScope(directory, configPath);
+    const pilotId = "publisher-scope-enforcement";
+    const started = await startPilot({ pilotId, configPath });
+    const stateBefore = await readFile(started.statePath, "utf8");
+
+    for (const subcommand of ["check", "run"] as const) {
+      const errors: string[] = [];
+      assert.equal(
+        await runCli(["pilot", subcommand, "--pilot", pilotId, "--config", configPath], {
+          out: () => undefined,
+          error: (message) => errors.push(message),
+        }),
+        2,
+      );
+      assert.ok(errors.some((message) => message.includes("requires --scope FILE")));
+    }
+
+    for (const subcommand of ["start", "status", "export"] as const) {
+      const errors: string[] = [];
+      assert.equal(
+        await runCli(
+          ["pilot", subcommand, "--pilot", pilotId, "--config", configPath, "--scope", scopePath],
+          { out: () => undefined, error: (message) => errors.push(message) },
+        ),
+        2,
+      );
+      assert.ok(errors.some((message) => message.includes("pilot " + subcommand + " does not accept --scope")));
+    }
+
+    await writeFile(configPath, configSource + "\n", "utf8");
+    let doctorCalls = 0;
+    const checked = await checkPilotCommand({
+      pilotId,
+      configPath,
+      scopePath,
+      doctorRunner: async () => {
+        doctorCalls += 1;
+        return readyDoctorOutput();
+      },
+    });
+    assert.equal(checked.exitCode, 2);
+    assert.equal(checked.readyToRecord, false);
+    assert.equal(doctorCalls, 0);
+    assert.ok(
+      checked.checks.some(
+        (check) => check.id === "pilot.project" && check.summary.includes("Configuration bytes"),
+      ),
+    );
+    assert.equal(await readFile(started.statePath, "utf8"), stateBefore);
+
+    let runnerCalls = 0;
+    const mismatched = await runPilotCommand({
+      pilotId,
+      configPath,
+      scopePath,
+      projectRunner: async (...args) => {
+        runnerCalls += 1;
+        return await passingRunner(directory)(...args);
+      },
+    });
+    assert.equal(mismatched.exitCode, 3);
+    assert.equal(runnerCalls, 0);
+    assert.equal(mismatched.runs[0]?.failureKind, "scope-mismatch");
+    assert.equal(mismatched.runs[0]?.scopeInputsMatched, false);
+    assert.match(mismatched.runs[0]?.sessionScopeSha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.match(mismatched.runs[0]?.sessionScopeFileSha256 ?? "", /^[a-f0-9]{64}$/);
+
+    await writeFile(configPath, configSource, "utf8");
+    const exactPilotId = "publisher-exact-scope-file";
+    await startPilot({
+      pilotId: exactPilotId,
+      configPath,
+      now: () => new Date("2026-08-29T10:00:00.000Z"),
+    });
+    let exactRunnerCalls = 0;
+    const exactRunner: PilotProjectRunner = async (...args) => {
+      exactRunnerCalls += 1;
+      return await passingRunner(directory)(...args);
+    };
+    const first = await runPilotCommand({
+      pilotId: exactPilotId,
+      configPath,
+      scopePath,
+      projectRunner: exactRunner,
+      now: () => new Date("2026-08-29T10:20:00.000Z"),
+    });
+    assert.equal(first.exitCode, 0);
+    const scopeValue = JSON.parse(await readFile(scopePath, "utf8")) as unknown;
+    await writeFile(scopePath, JSON.stringify(scopeValue) + "\n", "utf8");
+    const second = await runPilotCommand({
+      pilotId: exactPilotId,
+      configPath,
+      scopePath,
+      projectRunner: exactRunner,
+      now: () => new Date("2026-08-29T10:21:00.000Z"),
+    });
+    assert.equal(second.exitCode, 3);
+    assert.equal(second.runs[0]?.failureKind, "scope-mismatch");
+    assert.equal(exactRunnerCalls, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("scope enforcement rejects an extra optional flow before device execution", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-optional-mwa-"));
   try {
     const configPath = await writeFullPublisherProject(directory);
@@ -1043,8 +1291,10 @@ test("optional MWA failure downgrades readiness without invalidating a passed pi
     );
     const pilotId = "publisher-optional-mwa";
     await startPilot({ pilotId, configPath });
+    let runnerCalls = 0;
     const coreScenarioIds = ["authorize", "siws", "sign-message", "reject"];
     const optionalFailureRunner: PilotProjectRunner = async (...args) => {
+      runnerCalls += 1;
       const output = await passingRunner(
         directory,
         undefined,
@@ -1064,9 +1314,11 @@ test("optional MWA failure downgrades readiness without invalidating a passed pi
       return output;
     };
     const output = await runPilot({ pilotId, configPath, projectRunner: optionalFailureRunner });
-    assert.equal(output.exitCode, 0);
-    assert.equal(output.runs[0]?.qualifying, true);
-    assert.equal(output.runs[0]?.readiness, "Android Device Ready");
+    assert.equal(output.exitCode, 3);
+    assert.equal(output.runs[0]?.qualifying, false);
+    assert.equal(output.runs[0]?.failureKind, "scope-mismatch");
+    assert.equal(output.runs[0]?.scopeInputsMatched, false);
+    assert.equal(runnerCalls, 0);
     assert.equal(output.technicalPilot.qualified, false);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -1076,7 +1328,7 @@ test("optional MWA failure downgrades readiness without invalidating a passed pi
 test("pilot records runner and report failures without inflating success metrics", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-failures-"));
   try {
-    const configPath = await writePublisherProject(directory);
+    const configPath = await writeFullPublisherProject(directory);
     await startPilot({
       pilotId: "publisher-delta",
       configPath,
@@ -1140,10 +1392,16 @@ test("pilot records runner and report failures without inflating success metrics
     assert.equal(mismatched.runs[0]?.failureKind, "report-invalid");
 
     await startPilot({ pilotId: "publisher-mwa-label", configPath });
+    const incompleteMwaReport: PilotProjectRunner = async (...args) => {
+      const result = await passingRunner(directory, undefined, "Android/MWA Ready")(...args);
+      result.report.checks = result.report.checks.filter((check) => check.id !== "scenario.reject");
+      await writeFile(result.artifacts.json, JSON.stringify(result.report, null, 2) + "\n", "utf8");
+      return result;
+    };
     const falseMwaReadiness = await runPilot({
       pilotId: "publisher-mwa-label",
       configPath,
-      projectRunner: passingRunner(directory, undefined, "Android/MWA Ready"),
+      projectRunner: incompleteMwaReport,
     });
     assert.equal(falseMwaReadiness.exitCode, 3);
     assert.equal(falseMwaReadiness.runs[0]?.failureKind, "report-invalid");
@@ -1165,14 +1423,8 @@ test("pilot records runner and report failures without inflating success metrics
 
     const configuredAppDirectory = path.join(directory, "configured-app");
     await mkdir(configuredAppDirectory);
-    const configuredAppPath = await writePublisherProject(configuredAppDirectory);
-    await writeFile(path.join(configuredAppDirectory, "publisher.apk"), "publisher artifact", "utf8");
-    const configuredSource = await readFile(configuredAppPath, "utf8");
-    await writeFile(
-      configuredAppPath,
-      configuredSource.replace("  install: false", "  apk: ./publisher.apk\n  install: false"),
-      "utf8",
-    );
+    const configuredAppPath = await writeFullPublisherProject(configuredAppDirectory);
+    await writeFile(path.join(configuredAppDirectory, "publisher-app.apk"), "publisher artifact", "utf8");
     await startPilot({ pilotId: "publisher-artifact", configPath: configuredAppPath });
     const artifactMismatch = await runPilot({
       pilotId: "publisher-artifact",
@@ -1257,7 +1509,7 @@ test("pilot refuses controlled fixtures and input mutation", async () => {
       (error: unknown) => error instanceof PilotError && error.message.includes("cannot be recorded"),
     );
 
-    const publisherConfig = await writePublisherProject(publisherDirectory);
+    const publisherConfig = await writeFullPublisherProject(publisherDirectory);
     await startPilot({ pilotId: "publisher-beta", configPath: publisherConfig });
     const runner = passingRunner(publisherDirectory);
     const mutatingRunner: PilotProjectRunner = async (...args) => {
@@ -1273,7 +1525,7 @@ test("pilot refuses controlled fixtures and input mutation", async () => {
         "appId: com.publisher.mobile\n---\n- assertVisible: Changed\n",
         "utf8",
       );
-      assert.match(await readFile(stagedFlow, "utf8"), /assertVisible: Connect/);
+      assert.match(await readFile(stagedFlow, "utf8"), /publisher-authorize-ready/);
       return output;
     };
     const mutation = await runPilot({
@@ -1311,7 +1563,7 @@ test("pilot setup timer can start before configuration work begins", async () =>
 test("pilot state parser rejects duplicate JSON keys and duplicate run IDs", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-pilot-strict-"));
   try {
-    const configPath = await writePublisherProject(directory);
+    const configPath = await writeFullPublisherProject(directory);
     const started = await startPilot({ pilotId: "publisher-gamma", configPath });
     const source = await readFile(started.statePath, "utf8");
     await writeFile(started.statePath, source.replace('"schemaVersion": 1,', '"schemaVersion": 1,\n  "schemaVersion": 1,'), "utf8");

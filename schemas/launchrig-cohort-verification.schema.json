@@ -31,6 +31,7 @@
         "submittedEvidenceFiles",
         "uniqueEvidenceIds",
         "recomputableV2Files",
+        "scopeEnforcedV3Files",
         "technicallyQualifiedFiles",
         "requiredTechnicallyQualifiedFiles",
         "selfRecordedTechnicalThresholdMet"
@@ -39,6 +40,7 @@
         "submittedEvidenceFiles": { "type": "integer", "minimum": 1, "maximum": 25 },
         "uniqueEvidenceIds": { "type": "integer", "minimum": 1, "maximum": 25 },
         "recomputableV2Files": { "$ref": "#/$defs/count" },
+        "scopeEnforcedV3Files": { "$ref": "#/$defs/count" },
         "technicallyQualifiedFiles": { "$ref": "#/$defs/count" },
         "requiredTechnicallyQualifiedFiles": { "const": 3 },
         "selfRecordedTechnicalThresholdMet": { "type": "boolean" }
@@ -156,7 +158,7 @@
           "type": "string",
           "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
         },
-        "schemaVersion": { "enum": [1, 2] },
+        "schemaVersion": { "enum": [1, 2, 3] },
         "claimStatus": { "const": "self-recorded-unattested" },
         "internalConsistencyValid": { "const": true },
         "technicalStatus": {
@@ -187,7 +189,7 @@
         },
         {
           "properties": {
-            "schemaVersion": { "const": 2 },
+            "schemaVersion": { "enum": [2, 3] },
             "technicalStatus": { "enum": ["qualified", "not-qualified"] },
             "technicalProfile": { "const": "external-mwa-pilot-v1" }
           },

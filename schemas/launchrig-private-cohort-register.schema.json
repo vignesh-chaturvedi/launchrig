@@ -254,7 +254,7 @@
         "evidenceId": { "$ref": "#/$defs/uuidV4" },
         "fileSha256": { "$ref": "#/$defs/hash" },
         "evidenceSha256": { "$ref": "#/$defs/hash" },
-        "schemaVersion": { "enum": [1, 2] }
+        "schemaVersion": { "enum": [1, 2, 3] }
       }
     },
     "evidence": {

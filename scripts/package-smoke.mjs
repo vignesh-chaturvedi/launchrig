@@ -101,6 +101,9 @@ try {
   if (!installedFiles.includes("schemas/launchrig-pilot-evidence-v2.schema.json")) {
     throw new Error("Packed pilot evidence v2 schema is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-pilot-evidence-v3.schema.json")) {
+    throw new Error("Packed pilot evidence v3 schema is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-pilot-evidence-binding-receipt.schema.json")) {
     throw new Error("Packed pilot evidence binding receipt schema is missing.");
   }
@@ -162,6 +165,10 @@ try {
     ...v7RehearsalChecks,
     "device-free-session-scope-receipt",
   ];
+  const v9RehearsalChecks = [
+    ...v8RehearsalChecks,
+    "device-free-approved-scope-enforcement",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -176,17 +183,21 @@ try {
         "phase-3-validation-action-rc-v6",
         "phase-2d-publisher-readiness-rc-v7",
         "phase-2e-consent-scope-rc-v8",
+        "phase-2f-scope-enforced-pilot-rc-v9",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v8RehearsalChecks) ||
+    ) !== JSON.stringify(v9RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v8RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.properties?.consumerRehearsal?.properties?.checks?.const,
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
       JSON.stringify([
@@ -359,7 +370,7 @@ try {
     privateRegisterSchema.properties?.privacyProfile?.const !== "opaque-refs-digests-dates-v1" ||
     privateRegisterSchema.properties?.candidates?.maxItems !== 25 ||
     privateRegisterSchema.$defs?.candidate?.additionalProperties !== false ||
-    privateRegisterSchema.$defs?.evidenceBinding?.properties?.schemaVersion?.enum?.join(",") !== "1,2"
+    privateRegisterSchema.$defs?.evidenceBinding?.properties?.schemaVersion?.enum?.join(",") !== "1,2,3"
   ) {
     throw new Error("Packed private cohort register schema does not preserve the privacy contract.");
   }
@@ -409,6 +420,7 @@ try {
     "schemas/launchrig-core-rule-catalog.schema.json",
     "schemas/launchrig-pilot-evidence-v1.schema.json",
     "schemas/launchrig-pilot-evidence-v2.schema.json",
+    "schemas/launchrig-pilot-evidence-v3.schema.json",
     "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
     "schemas/launchrig-pilot-session-scope-receipt.schema.json",
@@ -512,8 +524,11 @@ try {
   if (!help.stdout.includes("launchrig pilot lint")) {
     throw new Error("Installed CLI help is missing the device-free pilot policy lint.");
   }
-  if (!help.stdout.includes("launchrig pilot check --pilot ID")) {
+  if (!help.stdout.includes("launchrig pilot check --pilot ID --scope FILE")) {
     throw new Error("Installed CLI help is missing the publisher pilot preflight.");
+  }
+  if (!help.stdout.includes("launchrig pilot run --pilot ID --scope FILE")) {
+    throw new Error("Installed CLI help is missing the scope-enforced publisher pilot run.");
   }
   if (!help.stdout.includes("launchrig cohort verify FILE...")) {
     throw new Error("Installed CLI help is missing the Phase 2B cohort verifier.");
@@ -641,10 +656,9 @@ try {
   }
   if (
     !(preflightFailure instanceof Error) ||
-    !preflightFailure.message.includes("Required MWA coverage is missing") ||
-    !preflightFailure.message.includes('"status": "skip"')
+    !preflightFailure.message.includes("pilot check requires --scope FILE")
   ) {
-    throw new Error("Installed pilot preflight did not reject the incomplete starter without device access.");
+    throw new Error("Installed pilot preflight did not require an approved private scope.");
   }
   let lintFailure;
   try {
@@ -806,6 +820,33 @@ try {
     JSON.stringify(sessionScopeReceipt).includes("urn:launchrig:")
   ) {
     throw new Error("Installed pilot scope did not preserve its private claim-limited receipt contract.");
+  }
+  let scopedPreflightFailure;
+  try {
+    await run(
+      executable,
+      [
+        "pilot",
+        "check",
+        "--pilot",
+        "package-smoke",
+        "--scope",
+        sessionScopePath,
+        "--config",
+        "launchrig.yml",
+        "--json",
+      ],
+      { cwd: publisherDirectory },
+    );
+  } catch (error) {
+    scopedPreflightFailure = error;
+  }
+  if (
+    !(scopedPreflightFailure instanceof Error) ||
+    !scopedPreflightFailure.message.includes("Configured app APK bytes do not match the approved scope") ||
+    !scopedPreflightFailure.message.includes('"status": "skip"')
+  ) {
+    throw new Error("Installed scoped preflight did not refuse mismatched inputs before device access.");
   }
 
   const claims = {

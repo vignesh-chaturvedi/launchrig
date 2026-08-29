@@ -108,6 +108,11 @@ export interface PilotSessionScopeReceiptV1 {
   limitations: string[];
 }
 
+export interface LoadedPilotSessionScopeV1 {
+  scope: PilotSessionScopeV1;
+  receipt: PilotSessionScopeReceiptV1;
+}
+
 export class PilotSessionScopeError extends Error {
   constructor(
     message: string,
@@ -471,16 +476,17 @@ async function readPrivateScope(inputPath: string): Promise<{ value: unknown; fi
   }
 }
 
-export async function createPilotSessionScopeReceipt(
-  inputPath: string,
-): Promise<PilotSessionScopeReceiptV1> {
+export function pilotSessionFlowReviewSha256(flows: readonly PilotSessionScopeFlow[]): string {
+  return sha256Value({
+    profile: "external-mwa-flow-review-v1",
+    flows,
+  });
+}
+
+export async function loadPilotSessionScope(inputPath: string): Promise<LoadedPilotSessionScopeV1> {
   const input = await readPrivateScope(inputPath);
   const scope = parseScope(input.value);
-  const flowReviewSha256 = sha256Value({
-    profile: "external-mwa-flow-review-v1",
-    flows: scope.inputs.flows,
-  });
-  return {
+  const receipt: PilotSessionScopeReceiptV1 = {
     receiptSchemaVersion: 1,
     kind: "launchrig-pilot-session-scope-receipt",
     profile: "external-mwa-pilot-scope-v1",
@@ -489,7 +495,7 @@ export async function createPilotSessionScopeReceipt(
       packageSha256: scope.bundle.packageSha256,
       appBuildSha256: scope.inputs.appBuildSha256,
       walletArtifactSha256: scope.inputs.walletArtifactSha256,
-      flowReviewSha256,
+      flowReviewSha256: pilotSessionFlowReviewSha256(scope.inputs.flows),
       scopeSha256: sha256Value(scope),
     },
     bundleVerification: {
@@ -506,4 +512,11 @@ export async function createPilotSessionScopeReceipt(
     grantReady: false,
     limitations: [...RECEIPT_LIMITATIONS],
   };
+  return { scope, receipt };
+}
+
+export async function createPilotSessionScopeReceipt(
+  inputPath: string,
+): Promise<PilotSessionScopeReceiptV1> {
+  return (await loadPilotSessionScope(inputPath)).receipt;
 }

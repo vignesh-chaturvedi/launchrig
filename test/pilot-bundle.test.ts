@@ -65,6 +65,7 @@ const BUNDLE_PROFILE_V5 = "phase-3-config-parity-rc-v5";
 const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
 const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
+const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const LEGACY_REHEARSAL_CHECKS = [
   "offline-package-install",
   "installed-version-match",
@@ -81,6 +82,10 @@ const V7_REHEARSAL_CHECKS = [
 const V8_REHEARSAL_CHECKS = [
   ...V7_REHEARSAL_CHECKS,
   "device-free-session-scope-receipt",
+];
+const V9_REHEARSAL_CHECKS = [
+  ...V8_REHEARSAL_CHECKS,
+  "device-free-approved-scope-enforcement",
 ];
 const REQUIRED_PAYLOADS = [
   "README.md",
@@ -242,6 +247,10 @@ const PACKED_SCHEMAS_V8 = [
   "schemas/launchrig-pilot-session-scope-receipt.schema.json",
   "schemas/launchrig-pilot-session-scope.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V9 = [
+  ...PACKED_SCHEMAS_V8,
+  "schemas/launchrig-pilot-evidence-v3.schema.json",
+].sort();
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
@@ -315,7 +324,7 @@ const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.
 
 function createTestPackageArchive(
   extraPaths: string[] = [],
-  profile = BUNDLE_PROFILE_V8,
+  profile = BUNDLE_PROFILE_V9,
   omittedPaths: string[] = [],
 ): Buffer {
   const inventories = {
@@ -339,6 +348,11 @@ function createTestPackageArchive(
       schemas: PACKED_SCHEMAS_V8,
       actionFiles: PACKED_ACTION_FILES_V6,
     },
+    [BUNDLE_PROFILE_V9]: {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V9,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    },
   };
   const inventory = inventories[profile as keyof typeof inventories];
   if (!inventory) throw new Error("Unsupported synthetic bundle profile.");
@@ -358,7 +372,7 @@ function createTestPackageArchive(
     "package/dist/src/cli.js",
     "package/dist/src/fixtures/matrix.js",
     "package/package.json",
-    ...(profile === BUNDLE_PROFILE_V8
+    ...(profile === BUNDLE_PROFILE_V9 || profile === BUNDLE_PROFILE_V8
       ? PACKED_COMPILED_ADDITIONS_V8
       : profile === BUNDLE_PROFILE_V7
         ? PACKED_COMPILED_ADDITIONS_V7
@@ -396,7 +410,7 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
-  profile = BUNDLE_PROFILE_V8,
+  profile = BUNDLE_PROFILE_V9,
 ): Promise<BundleManifest> {
   for (const relativePath of [...REQUIRED_PAYLOADS, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
@@ -462,6 +476,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     BUNDLE_PROFILE_V6,
     BUNDLE_PROFILE_V7,
     BUNDLE_PROFILE_V8,
+    BUNDLE_PROFILE_V9,
   ]) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
     try {
@@ -475,11 +490,13 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
       assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
       assert.deepEqual(
         verified.consumerRehearsal.checks,
-        profile === BUNDLE_PROFILE_V8
-          ? V8_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V7
-            ? V7_REHEARSAL_CHECKS
-            : LEGACY_REHEARSAL_CHECKS,
+        profile === BUNDLE_PROFILE_V9
+          ? V9_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V8
+            ? V8_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V7
+              ? V7_REHEARSAL_CHECKS
+              : LEGACY_REHEARSAL_CHECKS,
       );
       assert.deepEqual(verified.sourceVerification, {
         status: "passed",
@@ -661,11 +678,61 @@ test("publisher bundle v8 requires its session scope command and schema inventor
       await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V8);
       await assert.rejects(
         () => bundleVerifier.verifyPublisherBundle(directory),
-        /RC8 is missing|inventory does not match the release allowlist/,
+        /scope-capable profile is missing|inventory does not match the release allowlist/,
       );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  }
+});
+
+test("publisher bundle v9 requires the scope-enforced evidence schema", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v9-required-"));
+  try {
+    const archive = createTestPackageArchive([], BUNDLE_PROFILE_V9, [
+      "package/schemas/launchrig-pilot-evidence-v3.schema.json",
+    ]);
+    await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V9);
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /inventory does not match the release allowlist/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("publisher bundle v9 rejects schemas outside its exact inventory", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v9-extra-"));
+  try {
+    const archive = createTestPackageArchive(
+      ["package/schemas/launchrig-pilot-evidence-v4.schema.json"],
+      BUNDLE_PROFILE_V9,
+    );
+    await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V9);
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /outside the release allowlist/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("publisher bundle v8 rejects the v9-only evidence schema", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v8-frozen-"));
+  try {
+    const archive = createTestPackageArchive(
+      ["package/schemas/launchrig-pilot-evidence-v3.schema.json"],
+      BUNDLE_PROFILE_V8,
+    );
+    await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V8);
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /outside the release allowlist/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

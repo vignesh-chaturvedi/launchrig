@@ -6,7 +6,11 @@ import test from "node:test";
 import { runCli } from "../src/cli.js";
 import { verifyPublicPilotEvidence } from "../src/pilot/public-evidence.js";
 import { sha256Value } from "../src/pilot/store.js";
-import type { PublicPilotEvidenceV1, PublicPilotEvidenceV2 } from "../src/pilot/types.js";
+import type {
+  PublicPilotEvidenceV1,
+  PublicPilotEvidenceV2,
+  PublicPilotEvidenceV3,
+} from "../src/pilot/types.js";
 
 function validEvidence(): PublicPilotEvidenceV1 {
   const core: Omit<PublicPilotEvidenceV1, "evidenceSha256"> = {
@@ -132,7 +136,30 @@ function validV2Evidence(): PublicPilotEvidenceV2 {
   return { ...core, evidenceSha256: sha256Value(core) };
 }
 
-function refreshDigest(evidence: PublicPilotEvidenceV1 | PublicPilotEvidenceV2): void {
+function validV3Evidence(): PublicPilotEvidenceV3 {
+  const v2 = validV2Evidence();
+  const scopeSha256 = "e".repeat(64);
+  const { evidenceSha256: _legacyDigest, schemaVersion: _legacyVersion, runs: legacyRuns, ...shared } = v2;
+  const core: Omit<PublicPilotEvidenceV3, "evidenceSha256"> = {
+    schemaVersion: 3,
+    ...shared,
+    sessionScope: {
+      profile: "external-mwa-pilot-scope-v1",
+      scopeSha256,
+      claimStatus: "operator-prepared-unattested",
+    },
+    runs: legacyRuns.map((run) => ({
+      ...run,
+      sessionScopeSha256: scopeSha256,
+      scopeInputsMatched: true,
+    })),
+  };
+  return { ...core, evidenceSha256: sha256Value(core) };
+}
+
+function refreshDigest(
+  evidence: PublicPilotEvidenceV1 | PublicPilotEvidenceV2 | PublicPilotEvidenceV3,
+): void {
   const { evidenceSha256: _digest, ...core } = evidence;
   evidence.evidenceSha256 = sha256Value(core);
 }
@@ -479,6 +506,55 @@ test("public evidence v2 recomputes the self-recorded technical gate without ele
     refreshDigest(latestFailure);
     await writeFile(evidencePath, JSON.stringify(latestFailure), "utf8");
     assert.equal((await verifyPublicPilotEvidence(evidencePath)).reportedTechnicalTargetsMet, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("public evidence v3 recomputes scope linkage without authenticating external claims", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-public-evidence-v3-"));
+  try {
+    const evidencePath = path.join(directory, "pilot-evidence-v3.json");
+    const evidence = validV3Evidence();
+    await writeFile(evidencePath, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+
+    const verified = await verifyPublicPilotEvidence(evidencePath);
+    assert.equal(verified.schemaVersion, 3);
+    assert.equal(verified.sessionScopeSha256, evidence.sessionScope.scopeSha256);
+    assert.equal(verified.reportedTechnicalTargetsMet, true);
+    assert.equal(verified.grantReady, false);
+    assert.ok(verified.limitations.some((entry) => entry.includes("does not authenticate consent")));
+    assert.ok(verified.limitations.some((entry) => entry.includes("stable across reexports")));
+
+    const human: string[] = [];
+    assert.equal(
+      await runCli(["pilot", "verify", evidencePath], {
+        out: (message) => human.push(message),
+        error: () => undefined,
+      }),
+      0,
+    );
+    assert.match(human.join("\n"), /evidence schema: v3/);
+    assert.match(human.join("\n"), /technical pilot gate \(recomputed from self-recorded fields\): met/);
+    assert.match(human.join("\n"), /grant ready: no/);
+
+    const mismatchedScope = structuredClone(evidence);
+    mismatchedScope.runs[0]!.sessionScopeSha256 = "f".repeat(64);
+    refreshDigest(mismatchedScope);
+    await writeFile(evidencePath, JSON.stringify(mismatchedScope), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("do not bind the declared session scope"),
+    );
+
+    const falseScopeMatch = structuredClone(evidence);
+    falseScopeMatch.runs[0]!.scopeInputsMatched = false;
+    refreshDigest(falseScopeMatch);
+    await writeFile(evidencePath, JSON.stringify(falseScopeMatch), "utf8");
+    await assert.rejects(
+      () => verifyPublicPilotEvidence(evidencePath),
+      (error: unknown) => error instanceof Error && error.message.includes("qualifying state is inconsistent"),
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
