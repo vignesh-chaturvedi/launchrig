@@ -11,6 +11,7 @@ import {
   parseBundleArguments,
   renderSha256Sums,
   resolveNewOutputDirectory,
+  sha256Value,
 } from "./pilot-bundle-lib.mjs";
 import { verifyPublisherBundle } from "./verify-pilot-bundle.mjs";
 
@@ -97,6 +98,325 @@ async function run(command, args, options = {}) {
   });
 }
 
+function rehearsalDigest(label) {
+  return createHash("sha256").update(label, "utf8").digest("hex");
+}
+
+function rehearsalUuid(index) {
+  const value = index.toString(16);
+  return value.padStart(8, "0") + "-0000-4000-a000-" + value.padStart(12, "0");
+}
+
+function rehearsalRef(kind, index) {
+  return "urn:launchrig:" + kind + ":" + rehearsalUuid(index);
+}
+
+function qualifiedRehearsalEvidence(index, launchRigVersion, schemaVersion, scopeSha256) {
+  const durationMs = 5 * 60_000;
+  const setupDurationMs = 10 * 60_000;
+  const fingerprint = rehearsalDigest("rehearsal-fingerprint-" + index);
+  const legacyRuns = [0, 1, 2].map((runIndex) => ({
+    runId: "run-" + String(runIndex + 1).padStart(3, "0"),
+    outcome: "passed",
+    readiness: "Android/MWA Ready",
+    durationMs,
+    elapsedSinceStartMs: setupDurationMs + runIndex * 6 * 60_000,
+    executionFingerprintSha256: fingerprint,
+    launchRigVersion,
+    physicalDevice: true,
+    requiredChecksPassed: true,
+    qualifying: true,
+  }));
+  const core = {
+    schemaVersion,
+    kind: "launchrig-pilot-evidence",
+    evidenceId: rehearsalUuid(index),
+    claimStatus: "self-recorded-unattested",
+    metrics: {
+      runAttempts: 3,
+      qualifyingRuns: 3,
+      passRate: 1,
+      consecutivePasses: 3,
+      medianRunDurationMs: durationMs,
+      setupDurationMs,
+      executionFingerprintSha256: fingerprint,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    },
+    technicalPilot: {
+      profile: "external-mwa-pilot-v1",
+      qualified: true,
+      latestReadiness: "Android/MWA Ready",
+      trailingMwaPasses: 3,
+      requiredTrailingMwaPasses: 3,
+      setupDurationMs,
+      medianRunDurationMs: durationMs,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    },
+    runs:
+      schemaVersion === 3
+        ? legacyRuns.map((entry) => ({
+            ...entry,
+            sessionScopeSha256: scopeSha256,
+            scopeInputsMatched: true,
+          }))
+        : legacyRuns,
+    claims: {
+      externalPublisher: "not-established",
+      seekerHardware: "not-established",
+      productionWallet: "not-established",
+      seedVault: "not-established",
+      confirmedDefect: "not-established",
+    },
+    ...(schemaVersion === 3
+      ? {
+          sessionScope: {
+            profile: "external-mwa-pilot-scope-v1",
+            scopeSha256,
+            claimStatus: "operator-prepared-unattested",
+          },
+        }
+      : {}),
+  };
+  return { ...core, evidenceSha256: sha256Value(core) };
+}
+
+function rehearsalCandidate(index, evidenceBinding, scopeSha256) {
+  return {
+    candidateRef: rehearsalRef("candidate", 100 + index),
+    publisherRef: rehearsalRef("publisher", 200 + index),
+    projectRef: rehearsalRef("project", 300 + index),
+    lineageRef: rehearsalRef("lineage", 400 + index),
+    pilotRef: rehearsalRef("pilot", 500 + index),
+    recruitment: {
+      status: "interest-recorded",
+      recordSha256: rehearsalDigest("recruitment-" + index),
+      statusOn: "2026-08-01",
+    },
+    intakeReview: {
+      status: "operator-recorded-sufficient",
+      recordSha256: rehearsalDigest("intake-" + index),
+      reviewedOn: "2026-08-02",
+      reviewerRef: rehearsalRef("reviewer", 600 + index),
+    },
+    independenceReview: {
+      status: "operator-recorded-eligible",
+      recordSha256: rehearsalDigest("independence-" + index),
+      reviewedOn: "2026-08-03",
+      reviewerRef: rehearsalRef("reviewer", 700 + index),
+      relationshipCodes: ["none-declared"],
+    },
+    consent: {
+      status: "operator-recorded-active",
+      recordSha256: rehearsalDigest("consent-" + index),
+      scopeSha256,
+      effectiveOn: "2026-08-04",
+      expiresOn: "2026-12-31",
+      withdrawalRecordSha256: null,
+      withdrawnOn: null,
+    },
+    session: {
+      status: "completed",
+      statusOn: "2026-08-10",
+      binding: {
+        bundleId: "sha256:" + rehearsalDigest("bundle-" + index),
+        packageSha256: rehearsalDigest("package-" + index),
+        appBuildSha256: rehearsalDigest("app-build-" + index),
+        walletArtifactSha256: rehearsalDigest("wallet-" + index),
+        flowReviewSha256: rehearsalDigest("flow-review-" + index),
+        scopeSha256,
+      },
+    },
+    evidence: {
+      sharingStatus: "operator-recorded-approved",
+      binding: evidenceBinding,
+      decisionRecordSha256: rehearsalDigest("sharing-" + index),
+      decidedOn: "2026-08-11",
+      withdrawalRecordSha256: null,
+      withdrawnOn: null,
+    },
+    closeout: {
+      status: "operator-recorded-complete",
+      recordSha256: rehearsalDigest("closeout-" + index),
+      completedOn: "2026-08-12",
+    },
+    countDecision: {
+      status: "operator-recorded-include",
+      recordSha256: rehearsalDigest("count-" + index),
+      reviewedOn: "2026-08-13",
+      reviewerRef: rehearsalRef("reviewer", 800 + index),
+      reasonCodes: ["meets-recorded-policy"],
+    },
+  };
+}
+
+function sealedRehearsalRegister(candidates, index) {
+  const core = {
+    schemaVersion: 1,
+    kind: "launchrig-private-cohort-register",
+    profile: "phase-2c-publisher-governance-v1",
+    privacyProfile: "opaque-refs-digests-dates-v1",
+    registerRef: rehearsalRef("register", index),
+    revision: 1,
+    asOfDate: "2026-08-28",
+    operatorRef: rehearsalRef("operator", index),
+    candidates,
+    defects: [],
+  };
+  return { ...core, integritySha256: sha256Value(core) };
+}
+
+function rehearsalExternalGateIsUnestablished(gate) {
+  return (
+    gate &&
+    Object.keys(gate).length === 8 &&
+    Object.values(gate).every((value) => value === "not-established")
+  );
+}
+
+async function writePrivateRehearsalJson(target, value) {
+  await writeFile(target, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  await chmod(target, 0o600);
+}
+
+async function rehearseInstalledScopeLinkedGovernance(executable, installDirectory, launchRigVersion, environment) {
+  const evidenceRecords = [];
+  for (const index of [1, 2, 3]) {
+    const scopeSha256 = rehearsalDigest("scope-" + index);
+    const evidence = qualifiedRehearsalEvidence(index, launchRigVersion, 3, scopeSha256);
+    const evidencePath = path.join(installDirectory, "scope-linked-evidence-" + index + ".json");
+    await writeFile(evidencePath, JSON.stringify(evidence, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+    await chmod(evidencePath, 0o600);
+    const verified = JSON.parse(
+      (await run(executable, ["pilot", "verify", evidencePath, "--json"], {
+        cwd: installDirectory,
+        env: environment,
+      })).stdout,
+    );
+    if (
+      verified.schemaVersion !== 3 ||
+      verified.sessionScopeSha256 !== scopeSha256 ||
+      verified.reportedTechnicalTargetsMet !== true ||
+      verified.claimStatus !== "self-recorded-unattested" ||
+      verified.grantReady !== false
+    ) {
+      throw new Error("Clean consumer evidence-v3 verification did not preserve the scope-linked contract.");
+    }
+    const receipt = JSON.parse(
+      (await run(executable, ["pilot", "binding", evidencePath, "--json"], {
+        cwd: installDirectory,
+        env: environment,
+      })).stdout,
+    );
+    if (
+      receipt.binding?.schemaVersion !== 3 ||
+      receipt.binding?.evidenceId !== evidence.evidenceId ||
+      receipt.binding?.evidenceSha256 !== evidence.evidenceSha256 ||
+      receipt.technicalStatus !== "qualified-self-recorded" ||
+      receipt.externalGrantGate !== "not-established" ||
+      receipt.grantReady !== false ||
+      JSON.stringify(receipt).includes(evidencePath)
+    ) {
+      throw new Error("Clean consumer evidence-v3 binding did not preserve the claim-limited contract.");
+    }
+    evidenceRecords.push({ path: evidencePath, binding: receipt.binding, scopeSha256 });
+  }
+
+  const positiveRegisterPath = path.join(installDirectory, "scope-linked-private-register.json");
+  await writePrivateRehearsalJson(
+    positiveRegisterPath,
+    sealedRehearsalRegister(
+      evidenceRecords.map((entry, index) => rehearsalCandidate(index + 1, entry.binding, entry.scopeSha256)),
+      1,
+    ),
+  );
+  const positiveAudit = JSON.parse(
+    (await run(
+      executable,
+      ["cohort", "audit", positiveRegisterPath, ...evidenceRecords.map((entry) => entry.path), "--json"],
+      { cwd: installDirectory, env: environment },
+    )).stdout,
+  );
+  if (
+    positiveAudit.summary?.matchedEvidenceBindings !== 3 ||
+    positiveAudit.summary?.recomputedQualifiedV3Bindings !== 3 ||
+    positiveAudit.summary?.recordedIncludedWithScopeQualifiedV3 !== 3 ||
+    positiveAudit.summary?.recordedGovernanceAndTechnicalThresholdMet !== true ||
+    !positiveAudit.entries?.every((entry) => entry.evidenceStatus === "matched-v3-scope-qualified") ||
+    !rehearsalExternalGateIsUnestablished(positiveAudit.externalGrantGate) ||
+    positiveAudit.grantReady !== false ||
+    JSON.stringify(positiveAudit).includes("urn:launchrig:") ||
+    JSON.stringify(positiveAudit).includes(positiveRegisterPath)
+  ) {
+    throw new Error("Clean consumer private audit did not preserve the matched evidence-v3 contract.");
+  }
+
+  const mismatchRegisterPath = path.join(installDirectory, "scope-mismatch-private-register.json");
+  await writePrivateRehearsalJson(
+    mismatchRegisterPath,
+    sealedRehearsalRegister(
+      [rehearsalCandidate(11, evidenceRecords[0].binding, rehearsalDigest("mismatched-scope"))],
+      2,
+    ),
+  );
+  const mismatchAudit = JSON.parse(
+    (await run(executable, ["cohort", "audit", mismatchRegisterPath, evidenceRecords[0].path, "--json"], {
+      cwd: installDirectory,
+      env: environment,
+    })).stdout,
+  );
+  if (
+    mismatchAudit.entries?.[0]?.evidenceStatus !== "matched-v3-scope-mismatch" ||
+    !mismatchAudit.entries?.[0]?.blockers?.includes("evidence-scope-mismatch") ||
+    mismatchAudit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+    mismatchAudit.grantReady !== false
+  ) {
+    throw new Error("Clean consumer private audit did not block an evidence-v3 scope mismatch.");
+  }
+
+  const v2ScopeSha256 = rehearsalDigest("historical-v2-scope");
+  const v2Evidence = qualifiedRehearsalEvidence(20, launchRigVersion, 2, v2ScopeSha256);
+  const v2Path = path.join(installDirectory, "historical-evidence-v2.json");
+  await writeFile(v2Path, JSON.stringify(v2Evidence, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  await chmod(v2Path, 0o600);
+  const v2Receipt = JSON.parse(
+    (await run(executable, ["pilot", "binding", v2Path, "--json"], {
+      cwd: installDirectory,
+      env: environment,
+    })).stdout,
+  );
+  if (
+    v2Receipt.binding?.schemaVersion !== 2 ||
+    v2Receipt.technicalStatus !== "qualified-self-recorded" ||
+    v2Receipt.grantReady !== false
+  ) {
+    throw new Error("Clean consumer historical evidence-v2 binding compatibility failed.");
+  }
+  const v2RegisterPath = path.join(installDirectory, "historical-v2-private-register.json");
+  await writePrivateRehearsalJson(
+    v2RegisterPath,
+    sealedRehearsalRegister([rehearsalCandidate(20, v2Receipt.binding, v2ScopeSha256)], 3),
+  );
+  const v2Audit = JSON.parse(
+    (await run(executable, ["cohort", "audit", v2RegisterPath, v2Path, "--json"], {
+      cwd: installDirectory,
+      env: environment,
+    })).stdout,
+  );
+  if (
+    v2Audit.entries?.[0]?.evidenceStatus !== "matched-v2-qualified" ||
+    !v2Audit.entries?.[0]?.blockers?.includes("evidence-scope-unavailable") ||
+    v2Audit.summary?.recordedIncludedWithScopeQualifiedV3 !== 0 ||
+    v2Audit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+    v2Audit.grantReady !== false
+  ) {
+    throw new Error("Clean consumer private audit did not keep evidence v2 outside scope-linked governance.");
+  }
+}
+
 async function assertCleanSource() {
   const status = await run("git", ["status", "--porcelain=v1", "--untracked-files=all"]);
   if (status.stdout) throw new Error("Refusing to build a publisher bundle from a dirty Git worktree.");
@@ -170,6 +490,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope.schema.json",
+      "templates/pilot-consent.md",
+      "templates/pilot-notes.md",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
       "action.yml",
@@ -177,6 +499,52 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "examples/github-actions/launchrig-validation.yml",
     ]) {
       await assertInstalledFile(installDirectory, relativePath);
+    }
+
+    const operationalRecords = [
+      {
+        path: "templates/pilot-consent.md",
+        required: [
+          "scope-linked public evidence v3",
+          "mandatory `--scope FILE` options",
+          "cannot satisfy the private scope-linked governance threshold",
+        ],
+      },
+      {
+        path: "templates/pilot-notes.md",
+        required: [
+          "scope-linked evidence v3",
+          "stable scope-digest linkability",
+          "cannot satisfy private scope-linked governance",
+        ],
+      },
+      {
+        path: "templates/publisher-intake.md",
+        required: [
+          "mandatory `--scope FILE` options",
+          "scope-linked evidence v3",
+          "cannot satisfy private scope-linked governance",
+        ],
+      },
+      {
+        path: "templates/sharing-review.md",
+        required: [
+          "scope-linked evidence v3 JSON",
+          "stable scope-digest linkability",
+          "cannot satisfy private scope-linked governance",
+        ],
+      },
+    ];
+    for (const record of operationalRecords) {
+      const recordSource = await readFile(
+        path.join(installDirectory, "node_modules", "launchrig", ...record.path.split("/")),
+        "utf8",
+      );
+      for (const phrase of record.required) {
+        if (!recordSource.includes(phrase)) {
+          throw new Error("Clean consumer operational record is missing its evidence-v3 contract: " + record.path + ".");
+        }
+      }
     }
 
     const executable = path.join(
@@ -347,6 +715,12 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     ) {
       throw new Error("Clean consumer scoped preflight did not refuse mismatched inputs before device checks.");
     }
+    await rehearseInstalledScopeLinkedGovernance(
+      executable,
+      installDirectory,
+      launchRigVersion,
+      rehearsalEnvironment,
+    );
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

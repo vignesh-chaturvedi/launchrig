@@ -71,6 +71,112 @@ function sha256Value(value) {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
+function smokeDigest(label) {
+  return createHash("sha256").update(label, "utf8").digest("hex");
+}
+
+function smokeUuid(index) {
+  const value = index.toString(16);
+  return value.padStart(8, "0") + "-0000-4000-a000-" + value.padStart(12, "0");
+}
+
+function smokeRef(kind, index) {
+  return "urn:launchrig:" + kind + ":" + smokeUuid(index);
+}
+
+function privateCandidate(index, evidenceBinding, scopeSha256) {
+  return {
+    candidateRef: smokeRef("candidate", 100 + index),
+    publisherRef: smokeRef("publisher", 200 + index),
+    projectRef: smokeRef("project", 300 + index),
+    lineageRef: smokeRef("lineage", 400 + index),
+    pilotRef: smokeRef("pilot", 500 + index),
+    recruitment: {
+      status: "interest-recorded",
+      recordSha256: smokeDigest("recruitment-" + index),
+      statusOn: "2026-08-01",
+    },
+    intakeReview: {
+      status: "operator-recorded-sufficient",
+      recordSha256: smokeDigest("intake-" + index),
+      reviewedOn: "2026-08-02",
+      reviewerRef: smokeRef("reviewer", 600 + index),
+    },
+    independenceReview: {
+      status: "operator-recorded-eligible",
+      recordSha256: smokeDigest("independence-" + index),
+      reviewedOn: "2026-08-03",
+      reviewerRef: smokeRef("reviewer", 700 + index),
+      relationshipCodes: ["none-declared"],
+    },
+    consent: {
+      status: "operator-recorded-active",
+      recordSha256: smokeDigest("consent-" + index),
+      scopeSha256,
+      effectiveOn: "2026-08-04",
+      expiresOn: "2026-12-31",
+      withdrawalRecordSha256: null,
+      withdrawnOn: null,
+    },
+    session: {
+      status: "completed",
+      statusOn: "2026-08-10",
+      binding: {
+        bundleId: "sha256:" + smokeDigest("bundle-" + index),
+        packageSha256: smokeDigest("package-" + index),
+        appBuildSha256: smokeDigest("app-build-" + index),
+        walletArtifactSha256: smokeDigest("wallet-" + index),
+        flowReviewSha256: smokeDigest("flow-review-" + index),
+        scopeSha256,
+      },
+    },
+    evidence: {
+      sharingStatus: "operator-recorded-approved",
+      binding: evidenceBinding,
+      decisionRecordSha256: smokeDigest("sharing-" + index),
+      decidedOn: "2026-08-11",
+      withdrawalRecordSha256: null,
+      withdrawnOn: null,
+    },
+    closeout: {
+      status: "operator-recorded-complete",
+      recordSha256: smokeDigest("closeout-" + index),
+      completedOn: "2026-08-12",
+    },
+    countDecision: {
+      status: "operator-recorded-include",
+      recordSha256: smokeDigest("count-" + index),
+      reviewedOn: "2026-08-13",
+      reviewerRef: smokeRef("reviewer", 800 + index),
+      reasonCodes: ["meets-recorded-policy"],
+    },
+  };
+}
+
+function sealedPrivateRegister(candidates, index) {
+  const core = {
+    schemaVersion: 1,
+    kind: "launchrig-private-cohort-register",
+    profile: "phase-2c-publisher-governance-v1",
+    privacyProfile: "opaque-refs-digests-dates-v1",
+    registerRef: smokeRef("register", index),
+    revision: 1,
+    asOfDate: "2026-08-28",
+    operatorRef: smokeRef("operator", index),
+    candidates,
+    defects: [],
+  };
+  return { ...core, integritySha256: sha256Value(core) };
+}
+
+function externalGateIsNotEstablished(gate) {
+  return (
+    gate &&
+    Object.keys(gate).length === 8 &&
+    Object.values(gate).every((value) => value === "not-established")
+  );
+}
+
 try {
   await mkdir(packageDirectory, { recursive: true });
   await run(pnpm, ["pack", "--pack-destination", packageDirectory]);
@@ -169,6 +275,10 @@ try {
     ...v8RehearsalChecks,
     "device-free-approved-scope-enforcement",
   ];
+  const v10RehearsalChecks = [
+    ...v9RehearsalChecks,
+    "installed-scope-linked-governance-contract",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -184,20 +294,26 @@ try {
         "phase-2d-publisher-readiness-rc-v7",
         "phase-2e-consent-scope-rc-v8",
         "phase-2f-scope-enforced-pilot-rc-v9",
+        "phase-2g-operational-contract-rc-v10",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v9RehearsalChecks) ||
+    ) !== JSON.stringify(v10RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v8RehearsalChecks) ||
+    ) !== JSON.stringify(v9RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v8RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
+        ?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.properties?.consumerRehearsal?.properties?.checks?.const,
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties?.checks
+        ?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
       JSON.stringify([
@@ -413,6 +529,43 @@ try {
   ];
   for (const template of expectedTemplates) {
     if (!installedFiles.includes(template)) throw new Error("Packed template is missing " + template + ".");
+  }
+  const operationalTemplateContracts = [
+    {
+      file: "templates/pilot-consent.md",
+      scopeCommandsRequired: true,
+    },
+    {
+      file: "templates/pilot-notes.md",
+      scopeCommandsRequired: true,
+    },
+    {
+      file: "templates/publisher-intake.md",
+      scopeCommandsRequired: true,
+    },
+    {
+      file: "templates/sharing-review.md",
+      scopeCommandsRequired: false,
+    },
+  ];
+  for (const contract of operationalTemplateContracts) {
+    const source = await readFile(path.join(installedDirectory, ...contract.file.split("/")), "utf8");
+    const commonContractPresent =
+      /evidence v3/i.test(source) &&
+      /stable[\s\S]{0,80}scope(?:-| )digest[\s\S]{0,100}link/i.test(source) &&
+      /evidence v1 and v2[\s\S]{0,120}historical[\s\S]{0,180}cannot satisfy[\s\S]{0,100}(?:private )?scope-linked governance/i.test(
+        source,
+      );
+    const scopeCommandContractPresent =
+      !contract.scopeCommandsRequired ||
+      (/--scope FILE/.test(source) && /pilot check/.test(source) && /pilot run/.test(source));
+    const staleV2InstructionPresent =
+      /the evidence v2 JSON passes/i.test(source) ||
+      /only an approved, verified evidence v2 JSON is eligible/i.test(source) ||
+      /public evidence v2 includes/i.test(source);
+    if (!commonContractPresent || !scopeCommandContractPresent || staleV2InstructionPresent) {
+      throw new Error("Packed operational template does not preserve the evidence v3 handoff contract: " + contract.file);
+    }
   }
   const expectedSchemas = [
     "schemas/fixtures/launchrig-config-v1.conformance.json",
@@ -1058,6 +1211,202 @@ try {
     bindingV2Met.grantReady !== false
   ) {
     throw new Error("Installed evidence binding receipt did not preserve its qualified self-recorded boundary.");
+  }
+
+  const qualifiedV3Artifacts = [];
+  for (const index of [41, 42, 43]) {
+    const scopeSha256 = smokeDigest("qualified-v3-scope-" + index);
+    const executionFingerprintSha256 = smokeDigest("qualified-v3-fingerprint-" + index);
+    const metrics = {
+      runAttempts: 3,
+      qualifyingRuns: 3,
+      passRate: 1,
+      consecutivePasses: 3,
+      medianRunDurationMs: 5 * 60_000,
+      setupDurationMs: 20 * 60_000,
+      executionFingerprintSha256,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    };
+    const technicalPilot = {
+      profile: "external-mwa-pilot-v1",
+      qualified: true,
+      latestReadiness: "Android/MWA Ready",
+      trailingMwaPasses: 3,
+      requiredTrailingMwaPasses: 3,
+      setupDurationMs: 20 * 60_000,
+      medianRunDurationMs: 5 * 60_000,
+      setupTargetMet: true,
+      runtimeTargetMet: true,
+      repeatabilityTargetMet: true,
+    };
+    const evidenceCore = {
+      schemaVersion: 3,
+      kind: "launchrig-pilot-evidence",
+      evidenceId: smokeUuid(index),
+      claimStatus: "self-recorded-unattested",
+      sessionScope: {
+        profile: "external-mwa-pilot-scope-v1",
+        scopeSha256,
+        claimStatus: "operator-prepared-unattested",
+      },
+      metrics,
+      technicalPilot,
+      runs: [20, 25, 30].map((elapsedMinutes, runIndex) => ({
+        runId: "run-" + String(runIndex + 1).padStart(3, "0"),
+        outcome: "passed",
+        readiness: "Android/MWA Ready",
+        durationMs: 5 * 60_000,
+        elapsedSinceStartMs: elapsedMinutes * 60_000,
+        executionFingerprintSha256,
+        sessionScopeSha256: scopeSha256,
+        scopeInputsMatched: true,
+        launchRigVersion: installedPackage.version,
+        physicalDevice: true,
+        requiredChecksPassed: true,
+        qualifying: true,
+      })),
+      claims,
+    };
+    const evidence = { ...evidenceCore, evidenceSha256: sha256Value(evidenceCore) };
+    const evidencePath = path.join(publisherDirectory, "pilot-evidence-v3-qualified-" + index + ".json");
+    const evidenceBytes = Buffer.from(JSON.stringify(evidence, null, 2) + "\n", "utf8");
+    await writeFile(evidencePath, evidenceBytes, "utf8");
+
+    const verified = JSON.parse(
+      (await run(executable, ["pilot", "verify", evidencePath, "--json"], { cwd: publisherDirectory })).stdout,
+    );
+    if (
+      verified.schemaVersion !== 3 ||
+      verified.evidenceId !== evidence.evidenceId ||
+      verified.integrityValid !== true ||
+      verified.internalConsistencyValid !== true ||
+      verified.claimStatus !== "self-recorded-unattested" ||
+      verified.sessionScopeSha256 !== scopeSha256 ||
+      verified.technicalPilot?.qualified !== true ||
+      verified.reportedTechnicalTargetsMet !== true ||
+      verified.grantReady !== false
+    ) {
+      throw new Error("Installed verifier did not recompute a qualified scope-linked evidence v3 result.");
+    }
+
+    const bindingV3 = JSON.parse(
+      (await run(executable, ["pilot", "binding", evidencePath, "--json"], { cwd: publisherDirectory })).stdout,
+    );
+    if (
+      bindingV3.receiptSchemaVersion !== 1 ||
+      bindingV3.kind !== "launchrig-pilot-evidence-binding-receipt" ||
+      bindingV3.binding?.evidenceId !== evidence.evidenceId ||
+      bindingV3.binding?.fileSha256 !== createHash("sha256").update(evidenceBytes).digest("hex") ||
+      bindingV3.binding?.evidenceSha256 !== evidence.evidenceSha256 ||
+      bindingV3.binding?.schemaVersion !== 3 ||
+      bindingV3.technicalStatus !== "qualified-self-recorded" ||
+      bindingV3.externalGrantGate !== "not-established" ||
+      bindingV3.grantReady !== false
+    ) {
+      throw new Error("Installed evidence binding receipt did not preserve the qualified evidence v3 boundary.");
+    }
+    qualifiedV3Artifacts.push({ evidencePath, scopeSha256, binding: bindingV3.binding });
+  }
+  if (
+    new Set(qualifiedV3Artifacts.map((entry) => entry.binding.evidenceId)).size !== 3 ||
+    new Set(qualifiedV3Artifacts.map((entry) => entry.binding.fileSha256)).size !== 3 ||
+    new Set(qualifiedV3Artifacts.map((entry) => entry.scopeSha256)).size !== 3
+  ) {
+    throw new Error("Installed evidence v3 rehearsal did not produce three distinct scope-linked bindings.");
+  }
+
+  const auditRegister = async (name, candidates, evidencePaths, registerIndex) => {
+    const registerPath = path.join(temporaryDirectory, name);
+    await writeFile(
+      registerPath,
+      JSON.stringify(sealedPrivateRegister(candidates, registerIndex), null, 2) + "\n",
+      { encoding: "utf8", mode: 0o600 },
+    );
+    await chmod(registerPath, 0o600);
+    return JSON.parse(
+      (
+        await run(executable, ["cohort", "audit", registerPath, ...evidencePaths, "--json"], {
+          cwd: installDirectory,
+        })
+      ).stdout,
+    );
+  };
+
+  const qualifiedV3Audit = await auditRegister(
+    "qualified-v3-private-register.json",
+    qualifiedV3Artifacts.map((entry, index) => privateCandidate(index + 1, entry.binding, entry.scopeSha256)),
+    qualifiedV3Artifacts.map((entry) => entry.evidencePath),
+    11,
+  );
+  if (
+    qualifiedV3Audit.kind !== "launchrig-private-cohort-register-audit" ||
+    qualifiedV3Audit.register?.integrityRecorded !== true ||
+    qualifiedV3Audit.summary?.candidateRecords !== 3 ||
+    qualifiedV3Audit.summary?.matchedEvidenceBindings !== 3 ||
+    qualifiedV3Audit.summary?.recomputedQualifiedV2Bindings !== 0 ||
+    qualifiedV3Audit.summary?.recomputedQualifiedV3Bindings !== 3 ||
+    qualifiedV3Audit.summary?.recordedIncludedWithQualifiedV2 !== 0 ||
+    qualifiedV3Audit.summary?.recordedIncludedWithScopeQualifiedV3 !== 3 ||
+    qualifiedV3Audit.summary?.distinctRecordedPublishersForQualifiedIncluded !== 3 ||
+    qualifiedV3Audit.summary?.distinctRecordedProjectsForQualifiedIncluded !== 3 ||
+    qualifiedV3Audit.summary?.recordedGovernanceAndTechnicalThresholdMet !== true ||
+    qualifiedV3Audit.entries?.length !== 3 ||
+    qualifiedV3Audit.entries.some(
+      (entry) =>
+        entry.governanceStatus !== "recorded-ready" ||
+        entry.evidenceStatus !== "matched-v3-scope-qualified" ||
+        entry.blockers?.length !== 0,
+    ) ||
+    !externalGateIsNotEstablished(qualifiedV3Audit.externalGrantGate) ||
+    qualifiedV3Audit.grantReady !== false
+  ) {
+    throw new Error("Installed private cohort audit did not accept three matched qualified evidence v3 candidates.");
+  }
+
+  const mismatchedScopeCandidate = privateCandidate(
+    11,
+    qualifiedV3Artifacts[0].binding,
+    smokeDigest("mismatched-recorded-scope"),
+  );
+  const mismatchedScopeAudit = await auditRegister(
+    "mismatched-v3-private-register.json",
+    [mismatchedScopeCandidate],
+    [qualifiedV3Artifacts[0].evidencePath],
+    12,
+  );
+  if (
+    mismatchedScopeAudit.entries?.[0]?.governanceStatus !== "recorded-ready" ||
+    mismatchedScopeAudit.entries?.[0]?.evidenceStatus !== "matched-v3-scope-mismatch" ||
+    !mismatchedScopeAudit.entries?.[0]?.blockers?.includes("evidence-scope-mismatch") ||
+    mismatchedScopeAudit.summary?.recordedIncludedWithScopeQualifiedV3 !== 0 ||
+    mismatchedScopeAudit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+    !externalGateIsNotEstablished(mismatchedScopeAudit.externalGrantGate) ||
+    mismatchedScopeAudit.grantReady !== false
+  ) {
+    throw new Error("Installed private cohort audit did not block a mismatched evidence v3 scope.");
+  }
+
+  const historicalV2Audit = await auditRegister(
+    "historical-v2-private-register.json",
+    [privateCandidate(12, bindingV2Met.binding, smokeDigest("historical-v2-scope"))],
+    [evidenceV2MetPath],
+    13,
+  );
+  if (
+    historicalV2Audit.entries?.[0]?.governanceStatus !== "recorded-ready" ||
+    historicalV2Audit.entries?.[0]?.evidenceStatus !== "matched-v2-qualified" ||
+    !historicalV2Audit.entries?.[0]?.blockers?.includes("evidence-scope-unavailable") ||
+    historicalV2Audit.summary?.recomputedQualifiedV2Bindings !== 1 ||
+    historicalV2Audit.summary?.recomputedQualifiedV3Bindings !== 0 ||
+    historicalV2Audit.summary?.recordedIncludedWithQualifiedV2 !== 1 ||
+    historicalV2Audit.summary?.recordedIncludedWithScopeQualifiedV3 !== 0 ||
+    historicalV2Audit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+    !externalGateIsNotEstablished(historicalV2Audit.externalGrantGate) ||
+    historicalV2Audit.grantReady !== false
+  ) {
+    throw new Error("Installed private cohort audit did not keep evidence v2 outside scope-linked governance.");
   }
 
   let matrixFailure;

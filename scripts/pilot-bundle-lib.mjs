@@ -15,7 +15,8 @@ export const BUNDLE_KIND = "launchrig-publisher-bundle";
 const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
-export const BUNDLE_PROFILE = BUNDLE_PROFILE_V9;
+const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
+export const BUNDLE_PROFILE = BUNDLE_PROFILE_V10;
 const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-2a-publisher-rc-v1",
   "phase-2b-publisher-rc-v2",
@@ -26,6 +27,7 @@ const SUPPORTED_BUNDLE_PROFILES = new Set([
   BUNDLE_PROFILE_V7,
   BUNDLE_PROFILE_V8,
   BUNDLE_PROFILE_V9,
+  BUNDLE_PROFILE_V10,
 ]);
 export const LEGACY_REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",
@@ -44,9 +46,13 @@ export const V8_REHEARSAL_CHECKS = Object.freeze([
   ...V7_REHEARSAL_CHECKS,
   "device-free-session-scope-receipt",
 ]);
-export const REHEARSAL_CHECKS = Object.freeze([
+export const V9_REHEARSAL_CHECKS = Object.freeze([
   ...V8_REHEARSAL_CHECKS,
   "device-free-approved-scope-enforcement",
+]);
+export const REHEARSAL_CHECKS = Object.freeze([
+  ...V9_REHEARSAL_CHECKS,
+  "installed-scope-linked-governance-contract",
 ]);
 export const SOURCE_VERIFICATION_CHECKS = Object.freeze([
   "package-manager-version",
@@ -227,13 +233,15 @@ export function createPublisherManifest({
   if (!packageFile) throw new Error("Packed LaunchRig archive is missing from the bundle payload.");
   const payloadSha256 = sha256Value(sortedFiles);
   const rehearsalChecks =
-    profile === BUNDLE_PROFILE_V9
+    profile === BUNDLE_PROFILE_V10
       ? REHEARSAL_CHECKS
-      : profile === BUNDLE_PROFILE_V8
-        ? V8_REHEARSAL_CHECKS
-        : profile === BUNDLE_PROFILE_V7
-          ? V7_REHEARSAL_CHECKS
-          : LEGACY_REHEARSAL_CHECKS;
+      : profile === BUNDLE_PROFILE_V9
+        ? V9_REHEARSAL_CHECKS
+        : profile === BUNDLE_PROFILE_V8
+          ? V8_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V7
+            ? V7_REHEARSAL_CHECKS
+            : LEGACY_REHEARSAL_CHECKS;
   const manifestCore = {
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     kind: BUNDLE_KIND,

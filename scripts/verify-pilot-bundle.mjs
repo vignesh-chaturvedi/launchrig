@@ -41,6 +41,10 @@ const REHEARSAL_CHECKS_V9 = [
   ...REHEARSAL_CHECKS_V8,
   "device-free-approved-scope-enforcement",
 ];
+const REHEARSAL_CHECKS_V10 = [
+  ...REHEARSAL_CHECKS_V9,
+  "installed-scope-linked-governance-contract",
+];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
   "frozen-offline-dependency-restore",
@@ -62,6 +66,7 @@ const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
 const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
+const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -275,6 +280,13 @@ function packedInventory(profile) {
     };
   }
   if (profile === BUNDLE_PROFILE_V9) {
+    return {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V9,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    };
+  }
+  if (profile === BUNDLE_PROFILE_V10) {
     return {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V9,
@@ -548,7 +560,11 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
-  if (manifest.profile === BUNDLE_PROFILE_V9 || manifest.profile === BUNDLE_PROFILE_V8) {
+  if (
+    manifest.profile === BUNDLE_PROFILE_V10 ||
+    manifest.profile === BUNDLE_PROFILE_V9 ||
+    manifest.profile === BUNDLE_PROFILE_V8
+  ) {
     for (const required of PACKED_COMPILED_ADDITIONS_V8) {
       if (!entries.has(required)) {
         throw new Error("LaunchRig package scope-capable profile is missing " + required + ".");
@@ -676,13 +692,15 @@ function validateManifest(manifest) {
     "Bundle manifest",
   );
   const expectedRehearsalChecks =
-    manifest.profile === BUNDLE_PROFILE_V9
-      ? REHEARSAL_CHECKS_V9
-      : manifest.profile === BUNDLE_PROFILE_V8
-        ? REHEARSAL_CHECKS_V8
-        : manifest.profile === BUNDLE_PROFILE_V7
-          ? REHEARSAL_CHECKS_V7
-          : LEGACY_REHEARSAL_CHECKS;
+    manifest.profile === BUNDLE_PROFILE_V10
+      ? REHEARSAL_CHECKS_V10
+      : manifest.profile === BUNDLE_PROFILE_V9
+        ? REHEARSAL_CHECKS_V9
+        : manifest.profile === BUNDLE_PROFILE_V8
+          ? REHEARSAL_CHECKS_V8
+          : manifest.profile === BUNDLE_PROFILE_V7
+            ? REHEARSAL_CHECKS_V7
+            : LEGACY_REHEARSAL_CHECKS;
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
@@ -696,6 +714,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V7,
       BUNDLE_PROFILE_V8,
       BUNDLE_PROFILE_V9,
+      BUNDLE_PROFILE_V10,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");

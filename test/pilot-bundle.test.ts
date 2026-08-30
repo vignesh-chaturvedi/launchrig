@@ -66,6 +66,7 @@ const BUNDLE_PROFILE_V6 = "phase-3-validation-action-rc-v6";
 const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
+const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
 const LEGACY_REHEARSAL_CHECKS = [
   "offline-package-install",
   "installed-version-match",
@@ -86,6 +87,10 @@ const V8_REHEARSAL_CHECKS = [
 const V9_REHEARSAL_CHECKS = [
   ...V8_REHEARSAL_CHECKS,
   "device-free-approved-scope-enforcement",
+];
+const V10_REHEARSAL_CHECKS = [
+  ...V9_REHEARSAL_CHECKS,
+  "installed-scope-linked-governance-contract",
 ];
 const REQUIRED_PAYLOADS = [
   "README.md",
@@ -324,7 +329,7 @@ const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.
 
 function createTestPackageArchive(
   extraPaths: string[] = [],
-  profile = BUNDLE_PROFILE_V9,
+  profile = BUNDLE_PROFILE_V10,
   omittedPaths: string[] = [],
 ): Buffer {
   const inventories = {
@@ -353,6 +358,11 @@ function createTestPackageArchive(
       schemas: PACKED_SCHEMAS_V9,
       actionFiles: PACKED_ACTION_FILES_V6,
     },
+    [BUNDLE_PROFILE_V10]: {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V9,
+      actionFiles: PACKED_ACTION_FILES_V6,
+    },
   };
   const inventory = inventories[profile as keyof typeof inventories];
   if (!inventory) throw new Error("Unsupported synthetic bundle profile.");
@@ -372,7 +382,7 @@ function createTestPackageArchive(
     "package/dist/src/cli.js",
     "package/dist/src/fixtures/matrix.js",
     "package/package.json",
-    ...(profile === BUNDLE_PROFILE_V9 || profile === BUNDLE_PROFILE_V8
+    ...(profile === BUNDLE_PROFILE_V10 || profile === BUNDLE_PROFILE_V9 || profile === BUNDLE_PROFILE_V8
       ? PACKED_COMPILED_ADDITIONS_V8
       : profile === BUNDLE_PROFILE_V7
         ? PACKED_COMPILED_ADDITIONS_V7
@@ -410,7 +420,7 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
-  profile = BUNDLE_PROFILE_V9,
+  profile = BUNDLE_PROFILE_V10,
 ): Promise<BundleManifest> {
   for (const relativePath of [...REQUIRED_PAYLOADS, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
@@ -477,6 +487,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     BUNDLE_PROFILE_V7,
     BUNDLE_PROFILE_V8,
     BUNDLE_PROFILE_V9,
+    BUNDLE_PROFILE_V10,
   ]) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
     try {
@@ -490,13 +501,15 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
       assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
       assert.deepEqual(
         verified.consumerRehearsal.checks,
-        profile === BUNDLE_PROFILE_V9
-          ? V9_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V8
-            ? V8_REHEARSAL_CHECKS
-            : profile === BUNDLE_PROFILE_V7
-              ? V7_REHEARSAL_CHECKS
-              : LEGACY_REHEARSAL_CHECKS,
+        profile === BUNDLE_PROFILE_V10
+          ? V10_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V9
+            ? V9_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V8
+              ? V8_REHEARSAL_CHECKS
+              : profile === BUNDLE_PROFILE_V7
+                ? V7_REHEARSAL_CHECKS
+                : LEGACY_REHEARSAL_CHECKS,
       );
       assert.deepEqual(verified.sourceVerification, {
         status: "passed",
@@ -513,6 +526,42 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  }
+});
+
+test("publisher bundle defaults to the RC10 operational contract", () => {
+  const packageEntry = {
+    path: ARCHIVE,
+    sizeBytes: 1,
+    sha256: "c".repeat(64),
+  };
+  const manifest = bundleLibrary.createPublisherManifest({
+    launchRigVersion: VERSION,
+    gitCommit: "a".repeat(40),
+    lockfileSha256: "b".repeat(64),
+    nodeEngine: ">=20.11",
+    packageManager: "pnpm@10.34.0",
+    packagePath: ARCHIVE,
+    files: [packageEntry],
+  });
+  assert.equal(manifest.profile, BUNDLE_PROFILE_V10);
+  assert.deepEqual(manifest.consumerRehearsal.checks, V10_REHEARSAL_CHECKS);
+  assert.deepEqual(V10_REHEARSAL_CHECKS.slice(0, -1), V9_REHEARSAL_CHECKS);
+});
+
+test("publisher bundle v9 rejects the RC10-only rehearsal claim", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v9-rehearsal-"));
+  try {
+    const archive = createTestPackageArchive([], BUNDLE_PROFILE_V9);
+    const manifest = await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V9);
+    manifest.consumerRehearsal.checks = [...V10_REHEARSAL_CHECKS];
+    await writeFile(path.join(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /consumer rehearsal contract is invalid/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
