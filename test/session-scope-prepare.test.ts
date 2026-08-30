@@ -26,7 +26,9 @@ import { PilotSessionScopeError } from "../src/pilot/session-scope.js";
 const MANAGED_WALLET_SHA256 = "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b";
 const OUTER_BUNDLE_COPY_MAP = [
   ["docs/publisher-bundle-readme.md", "README.md"],
+  ["docs/cohort-audit.md", "docs/cohort-audit.md"],
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
   ["docs/flows/mwa-reject.md", "docs/flows/mwa-reject.md"],
@@ -36,6 +38,7 @@ const OUTER_BUNDLE_COPY_MAP = [
   ["templates/defect-evidence.md", "templates/defect-evidence.md"],
   ["templates/pilot-consent.md", "templates/pilot-consent.md"],
   ["templates/pilot-notes.md", "templates/pilot-notes.md"],
+  ["templates/publisher-fit-check.md", "templates/publisher-fit-check.md"],
   ["templates/publisher-intake.md", "templates/publisher-intake.md"],
   ["templates/sharing-review.md", "templates/sharing-review.md"],
 ] as const;

@@ -35,7 +35,9 @@ const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const MAX_COMMAND_OUTPUT_BYTES = 2 * 1024 * 1024;
 const COPY_MAP = [
   ["docs/publisher-bundle-readme.md", "README.md"],
+  ["docs/cohort-audit.md", "docs/cohort-audit.md"],
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
   ["docs/flows/mwa-reject.md", "docs/flows/mwa-reject.md"],
@@ -45,6 +47,7 @@ const COPY_MAP = [
   ["templates/defect-evidence.md", "templates/defect-evidence.md"],
   ["templates/pilot-consent.md", "templates/pilot-consent.md"],
   ["templates/pilot-notes.md", "templates/pilot-notes.md"],
+  ["templates/publisher-fit-check.md", "templates/publisher-fit-check.md"],
   ["templates/publisher-intake.md", "templates/publisher-intake.md"],
   ["templates/sharing-review.md", "templates/sharing-review.md"],
 ];
@@ -505,6 +508,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
     for (const relativePath of [
       "dist/src/cli.js",
       "dist/src/pilot/binding.js",
+      "dist/src/pilot/cohort-preparation.js",
       "dist/src/pilot/session-scope.js",
       "dist/src/pilot/scope-preparation.js",
       "docs/cohort-audit.md",
@@ -513,6 +517,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "docs/github-action.md",
       "docs/phase-3-foundation.md",
       "docs/publisher-pilot-quickstart.md",
+      "docs/publisher-recruitment.md",
       "docs/supported-environment.md",
       "docs/flows/mwa-authorize.md",
       "docs/flows/mwa-reject.md",
@@ -524,6 +529,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/fixtures/launchrig-config-v1.conformance.json",
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
+      "schemas/launchrig-private-cohort-register-draft-result.schema.json",
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
@@ -532,6 +538,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "scripts/verify-pilot-bundle.mjs",
       "templates/pilot-consent.md",
       "templates/pilot-notes.md",
+      "templates/publisher-fit-check.md",
       "templates/publisher-intake.md",
       "templates/sharing-review.md",
       "action.yml",
@@ -556,6 +563,14 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
           "scope-linked evidence v3",
           "stable scope-digest linkability",
           "cannot satisfy private scope-linked governance",
+        ],
+      },
+      {
+        path: "templates/publisher-fit-check.md",
+        required: [
+          "positive fit review is not consent",
+          "`interest-recorded`",
+          "No project or device action is authorized",
         ],
       },
       {
@@ -607,6 +622,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "launchrig pilot prepare-scope",
       "launchrig cohort verify FILE...",
       "launchrig cohort audit REGISTER [EVIDENCE...]",
+      "launchrig cohort prepare-register --output FILE",
     ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
     }
@@ -621,6 +637,62 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       catalog.grantMilestoneComplete !== false
     ) {
       throw new Error("Installed LaunchRig rule catalog does not preserve its pre-award contract.");
+    }
+
+    const privateRegisterPath = path.join(temporaryDirectory, "private-recruitment-register.json");
+    const registerPreparation = JSON.parse(
+      (
+        await run(
+          executable,
+          ["cohort", "prepare-register", "--output", privateRegisterPath, "--json"],
+          { cwd: installDirectory, env: rehearsalEnvironment },
+        )
+      ).stdout,
+    );
+    const privateRegisterBytes = await readFile(privateRegisterPath);
+    const privateRegister = JSON.parse(privateRegisterBytes.toString("utf8"));
+    const privateRegisterMetadata = await lstat(privateRegisterPath);
+    if (
+      registerPreparation.kind !== "launchrig-private-cohort-register-draft-result" ||
+      registerPreparation.profile !== "phase-2i-recruitment-register-v1" ||
+      registerPreparation.claimStatus !== "operator-prepared-unattested" ||
+      registerPreparation.candidateRecords !== 0 ||
+      registerPreparation.interestRecorded !== 0 ||
+      registerPreparation.projectModificationAuthorized !== false ||
+      registerPreparation.phoneAccessAuthorized !== false ||
+      registerPreparation.deviceEnvironmentChecked !== false ||
+      registerPreparation.candidatePool !== "not-established" ||
+      registerPreparation.externalGrantGate !== "not-established" ||
+      registerPreparation.grantReady !== false ||
+      privateRegister.candidates?.length !== 0 ||
+      privateRegister.defects?.length !== 0 ||
+      privateRegister.integritySha256 !== null ||
+      !privateRegisterMetadata.isFile() ||
+      privateRegisterMetadata.nlink !== 1 ||
+      (process.platform !== "win32" && (privateRegisterMetadata.mode & 0o777) !== 0o600) ||
+      JSON.stringify(registerPreparation).includes(privateRegisterPath) ||
+      JSON.stringify(registerPreparation).includes("urn:launchrig:") ||
+      JSON.stringify(registerPreparation).includes("Android Device Ready") ||
+      JSON.stringify(registerPreparation).includes("Android/MWA Ready")
+    ) {
+      throw new Error("Clean consumer register preparation did not preserve its private claim-limited contract.");
+    }
+    const preparedRegisterAudit = JSON.parse(
+      (
+        await run(executable, ["cohort", "audit", privateRegisterPath, "--json"], {
+          cwd: installDirectory,
+          env: rehearsalEnvironment,
+        })
+      ).stdout,
+    );
+    if (
+      preparedRegisterAudit.summary?.candidateRecords !== 0 ||
+      preparedRegisterAudit.summary?.interestRecorded !== 0 ||
+      preparedRegisterAudit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+      preparedRegisterAudit.externalGrantGate?.status !== "not-established" ||
+      preparedRegisterAudit.grantReady !== false
+    ) {
+      throw new Error("Clean consumer prepared register audit elevated an external claim.");
     }
 
     await run(executable, ["pilot", "start", "--pilot", "bundle-rehearsal", "--config", "launchrig.yml"], {

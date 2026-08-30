@@ -42,6 +42,10 @@ import {
   CohortRegisterError,
   type CohortRegisterAuditOutput,
 } from "./pilot/cohort-register.js";
+import {
+  preparePrivateCohortRegister,
+  type PrivateCohortRegisterDraftResultV1,
+} from "./pilot/cohort-preparation.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { getCoreRuleCatalog, type CoreRuleCatalog } from "./rules/catalog.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
@@ -65,6 +69,7 @@ export interface CliDependencies {
   verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
   verifyCohortEvidence?: typeof verifyCohortEvidence;
   auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
+  preparePrivateCohortRegister?: typeof preparePrivateCohortRegister;
 }
 
 const defaultIO: CliIO = {
@@ -95,6 +100,7 @@ const HELP = [
   "    METHOD: standard-delete | secure-delete | publisher-managed | other-documented",
   "  launchrig cohort verify FILE... [--json]",
   "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
+  "  launchrig cohort prepare-register --output FILE [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -376,6 +382,29 @@ function humanCohortRegisterAudit(value: CohortRegisterAuditOutput): string {
   return lines.join("\n");
 }
 
+function humanPrivateCohortRegisterDraft(value: PrivateCohortRegisterDraftResultV1): string {
+  const lines = [
+    "Private cohort register draft created",
+    "file SHA-256: " + value.fileSha256,
+    "content SHA-256: " + value.contentSha256,
+    "revision: " + value.revision,
+    "candidate records: " + value.candidateRecords,
+    "interest recorded: " + value.interestRecorded,
+    "human recruitment required: yes",
+    "project modification authorized: no",
+    "phone access authorized: no",
+    "publisher identity: not established",
+    "publisher authority: not established",
+    "publisher consent: not established",
+    "publisher independence: not established",
+    "external grant gate: not established",
+    "grant ready: no",
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  lines.push("Next: keep the private draft outside Git and begin guarded publisher fit checks.");
+  return lines.join("\n");
+}
+
 function unsupportedOption(argv: string[], allowed: ReadonlySet<string>): string | undefined {
   for (const argument of argv) {
     if (!argument.startsWith("-")) continue;
@@ -549,6 +578,31 @@ export async function runCli(
 
     if (command === "cohort") {
       const subcommand = parsed.positionals[1];
+      if (subcommand === "prepare-register") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set(["--output", "--json", "--help", "-h", "--version", "-v"]),
+        );
+        if (rejectedOption) {
+          throw new CohortRegisterError("cohort prepare-register does not accept " + rejectedOption);
+        }
+        if (parsed.positionals.length !== 2) {
+          throw new CohortRegisterError("cohort prepare-register does not accept positional arguments");
+        }
+        if (!outputPath) {
+          throw new CohortRegisterError("cohort prepare-register requires --output FILE");
+        }
+        const prepareRegister =
+          dependencies.preparePrivateCohortRegister ?? preparePrivateCohortRegister;
+        const output = await prepareRegister({ outputPath });
+        io.out(
+          parsed.values.json
+            ? JSON.stringify(output, null, 2)
+            : humanPrivateCohortRegisterDraft(output),
+        );
+        return 0;
+      }
+
       const rejectedOption = unsupportedOption(
         argv,
         new Set(["--json", "--help", "-h", "--version", "-v"]),
@@ -572,7 +626,7 @@ export async function runCli(
         io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortRegisterAudit(output));
         return 0;
       }
-      throw new CohortError("cohort command must be verify or audit");
+      throw new CohortError("cohort command must be verify, audit, or prepare-register");
     }
 
     if (command === "pilot") {

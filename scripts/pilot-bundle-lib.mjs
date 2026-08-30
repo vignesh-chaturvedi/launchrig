@@ -17,7 +17,8 @@ const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
 const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
-export const BUNDLE_PROFILE = BUNDLE_PROFILE_V11;
+const BUNDLE_PROFILE_V12 = "phase-2i-recruitment-register-rc-v12";
+export const BUNDLE_PROFILE = BUNDLE_PROFILE_V12;
 const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-2a-publisher-rc-v1",
   "phase-2b-publisher-rc-v2",
@@ -30,6 +31,7 @@ const SUPPORTED_BUNDLE_PROFILES = new Set([
   BUNDLE_PROFILE_V9,
   BUNDLE_PROFILE_V10,
   BUNDLE_PROFILE_V11,
+  BUNDLE_PROFILE_V12,
 ]);
 export const LEGACY_REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",
@@ -56,9 +58,13 @@ export const V10_REHEARSAL_CHECKS = Object.freeze([
   ...V9_REHEARSAL_CHECKS,
   "installed-scope-linked-governance-contract",
 ]);
-export const REHEARSAL_CHECKS = Object.freeze([
+export const V11_REHEARSAL_CHECKS = Object.freeze([
   ...V10_REHEARSAL_CHECKS,
   "device-free-consent-safe-scope-preparation",
+]);
+export const REHEARSAL_CHECKS = Object.freeze([
+  ...V11_REHEARSAL_CHECKS,
+  "device-free-private-recruitment-register-preparation",
 ]);
 export const SOURCE_VERIFICATION_CHECKS = Object.freeze([
   "package-manager-version",
@@ -244,8 +250,10 @@ export function createPublisherManifest({
   if (!packageFile) throw new Error("Packed LaunchRig archive is missing from the bundle payload.");
   const payloadSha256 = sha256Value(sortedFiles);
   const rehearsalChecks =
-    profile === BUNDLE_PROFILE_V11
+    profile === BUNDLE_PROFILE_V12
       ? REHEARSAL_CHECKS
+      : profile === BUNDLE_PROFILE_V11
+        ? V11_REHEARSAL_CHECKS
       : profile === BUNDLE_PROFILE_V10
         ? V10_REHEARSAL_CHECKS
         : profile === BUNDLE_PROFILE_V9

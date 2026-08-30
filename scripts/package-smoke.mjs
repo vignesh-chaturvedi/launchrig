@@ -26,7 +26,9 @@ const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 const OUTER_BUNDLE_COPY_MAP = [
   ["docs/publisher-bundle-readme.md", "README.md"],
+  ["docs/cohort-audit.md", "docs/cohort-audit.md"],
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
   ["docs/flows/mwa-reject.md", "docs/flows/mwa-reject.md"],
@@ -36,6 +38,7 @@ const OUTER_BUNDLE_COPY_MAP = [
   ["templates/defect-evidence.md", "templates/defect-evidence.md"],
   ["templates/pilot-consent.md", "templates/pilot-consent.md"],
   ["templates/pilot-notes.md", "templates/pilot-notes.md"],
+  ["templates/publisher-fit-check.md", "templates/publisher-fit-check.md"],
   ["templates/publisher-intake.md", "templates/publisher-intake.md"],
   ["templates/sharing-review.md", "templates/sharing-review.md"],
 ];
@@ -289,6 +292,9 @@ try {
   if (!installedFiles.includes("dist/src/pilot/scope-preparation.js")) {
     throw new Error("Packed pilot scope preparation implementation is missing.");
   }
+  if (!installedFiles.includes("dist/src/pilot/cohort-preparation.js")) {
+    throw new Error("Packed private cohort register preparation implementation is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
   }
@@ -300,6 +306,9 @@ try {
   }
   if (!installedFiles.includes("schemas/launchrig-private-cohort-register.schema.json")) {
     throw new Error("Packed private cohort register schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-private-cohort-register-draft-result.schema.json")) {
+    throw new Error("Packed private cohort register draft result schema is missing.");
   }
   if (!installedFiles.includes("schemas/launchrig-private-cohort-audit.schema.json")) {
     throw new Error("Packed private cohort audit schema is missing.");
@@ -353,6 +362,10 @@ try {
     ...v10RehearsalChecks,
     "device-free-consent-safe-scope-preparation",
   ];
+  const v12RehearsalChecks = [
+    ...v11RehearsalChecks,
+    "device-free-private-recruitment-register-preparation",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -370,28 +383,33 @@ try {
         "phase-2f-scope-enforced-pilot-rc-v9",
         "phase-2g-operational-contract-rc-v10",
         "phase-2h-consent-safe-scope-rc-v11",
+        "phase-2i-recruitment-register-rc-v12",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v11RehearsalChecks) ||
+    ) !== JSON.stringify(v12RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v10RehearsalChecks) ||
+    ) !== JSON.stringify(v11RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v9RehearsalChecks) ||
+    ) !== JSON.stringify(v10RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
         ?.const,
-    ) !== JSON.stringify(v8RehearsalChecks) ||
+    ) !== JSON.stringify(v9RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
         ?.const,
+    ) !== JSON.stringify(v8RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
+        ?.checks?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
         ?.checks?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
@@ -507,6 +525,16 @@ try {
   const privateRegisterSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-private-cohort-register.schema.json"), "utf8"),
   );
+  const privateRegisterDraftResultSchema = JSON.parse(
+    await readFile(
+      path.join(
+        installedDirectory,
+        "schemas",
+        "launchrig-private-cohort-register-draft-result.schema.json",
+      ),
+      "utf8",
+    ),
+  );
   const privateAuditSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-private-cohort-audit.schema.json"), "utf8"),
   );
@@ -583,6 +611,24 @@ try {
     throw new Error("Packed private cohort register schema does not preserve the privacy contract.");
   }
   if (
+    privateRegisterDraftResultSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-private-cohort-register-draft-result.schema.json" ||
+    privateRegisterDraftResultSchema.additionalProperties !== false ||
+    privateRegisterDraftResultSchema.properties?.kind?.const !==
+      "launchrig-private-cohort-register-draft-result" ||
+    privateRegisterDraftResultSchema.properties?.claimStatus?.const !==
+      "operator-prepared-unattested" ||
+    privateRegisterDraftResultSchema.properties?.candidateRecords?.const !== 0 ||
+    privateRegisterDraftResultSchema.properties?.interestRecorded?.const !== 0 ||
+    privateRegisterDraftResultSchema.properties?.projectModificationAuthorized?.const !== false ||
+    privateRegisterDraftResultSchema.properties?.phoneAccessAuthorized?.const !== false ||
+    privateRegisterDraftResultSchema.properties?.candidatePool?.const !== "not-established" ||
+    privateRegisterDraftResultSchema.properties?.externalGrantGate?.const !== "not-established" ||
+    privateRegisterDraftResultSchema.properties?.grantReady?.const !== false
+  ) {
+    throw new Error("Packed private cohort register draft result schema does not preserve the claim limit.");
+  }
+  if (
     privateAuditSchema.$id !== "https://launchrig.dev/schemas/launchrig-private-cohort-audit.schema.json" ||
     privateAuditSchema.additionalProperties !== false ||
     privateAuditSchema.properties?.kind?.const !== "launchrig-private-cohort-register-audit" ||
@@ -603,6 +649,7 @@ try {
     "docs/physical-device.md",
     "docs/publisher-bundle-readme.md",
     "docs/publisher-pilot-quickstart.md",
+    "docs/publisher-recruitment.md",
     "docs/supported-environment.md",
     "docs/flows/mwa-authorize.md",
     "docs/flows/mwa-reject.md",
@@ -616,6 +663,7 @@ try {
     "templates/pilot-consent.md",
     "templates/pilot-notes.md",
     "templates/defect-evidence.md",
+    "templates/publisher-fit-check.md",
     "templates/publisher-intake.md",
     "templates/sharing-review.md",
   ];
@@ -672,6 +720,7 @@ try {
     "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
     "schemas/launchrig-pilot-session-scope.schema.json",
     "schemas/launchrig-private-cohort-audit.schema.json",
+    "schemas/launchrig-private-cohort-register-draft-result.schema.json",
     "schemas/launchrig-private-cohort-register.schema.json",
     "schemas/launchrig-publisher-bundle.schema.json",
     "schemas/launchrig.schema.json",
@@ -790,6 +839,9 @@ try {
   if (!help.stdout.includes("launchrig cohort audit REGISTER [EVIDENCE...]")) {
     throw new Error("Installed CLI help is missing the Phase 2C private cohort audit.");
   }
+  if (!help.stdout.includes("launchrig cohort prepare-register --output FILE")) {
+    throw new Error("Installed CLI help is missing the Phase 2I private register preparation command.");
+  }
   if (!help.stdout.includes("launchrig rules [--json]")) {
     throw new Error("Installed CLI help is missing the core rule catalog.");
   }
@@ -808,6 +860,59 @@ try {
     catalogSha256 !== sha256Value(coreRuleCatalogCore)
   ) {
     throw new Error("Installed core rule catalog does not preserve its deterministic pre-award contract.");
+  }
+
+  const preparedRegisterPath = path.join(temporaryDirectory, "prepared-private-cohort-register.json");
+  const preparedRegisterResult = JSON.parse(
+    (
+      await run(
+        executable,
+        ["cohort", "prepare-register", "--output", preparedRegisterPath, "--json"],
+        { cwd: installDirectory },
+      )
+    ).stdout,
+  );
+  const preparedRegisterBytes = await readFile(preparedRegisterPath);
+  const preparedRegister = JSON.parse(preparedRegisterBytes.toString("utf8"));
+  const preparedRegisterMetadata = await lstat(preparedRegisterPath);
+  const preparedRegisterValidator = new Ajv2020({ strict: true }).compile(
+    privateRegisterDraftResultSchema,
+  );
+  if (
+    !preparedRegisterValidator(preparedRegisterResult) ||
+    preparedRegisterResult.fileSha256 !== createHash("sha256").update(preparedRegisterBytes).digest("hex") ||
+    preparedRegisterResult.candidateRecords !== 0 ||
+    preparedRegisterResult.interestRecorded !== 0 ||
+    preparedRegisterResult.projectModificationAuthorized !== false ||
+    preparedRegisterResult.phoneAccessAuthorized !== false ||
+    preparedRegisterResult.deviceEnvironmentChecked !== false ||
+    preparedRegisterResult.candidatePool !== "not-established" ||
+    preparedRegisterResult.externalGrantGate !== "not-established" ||
+    preparedRegisterResult.grantReady !== false ||
+    preparedRegister.candidates?.length !== 0 ||
+    preparedRegister.defects?.length !== 0 ||
+    preparedRegister.integritySha256 !== null ||
+    !preparedRegisterMetadata.isFile() ||
+    preparedRegisterMetadata.nlink !== 1 ||
+    (process.platform !== "win32" && (preparedRegisterMetadata.mode & 0o777) !== 0o600) ||
+    JSON.stringify(preparedRegisterResult).includes(preparedRegisterPath) ||
+    JSON.stringify(preparedRegisterResult).includes("urn:launchrig:") ||
+    JSON.stringify(preparedRegisterResult).includes("Android Device Ready") ||
+    JSON.stringify(preparedRegisterResult).includes("Android/MWA Ready")
+  ) {
+    throw new Error("Installed private register preparation did not preserve its path-free claim limit.");
+  }
+  const preparedRegisterAudit = JSON.parse(
+    (await run(executable, ["cohort", "audit", preparedRegisterPath, "--json"], { cwd: installDirectory })).stdout,
+  );
+  if (
+    preparedRegisterAudit.summary?.candidateRecords !== 0 ||
+    preparedRegisterAudit.summary?.interestRecorded !== 0 ||
+    preparedRegisterAudit.summary?.recordedGovernanceAndTechnicalThresholdMet !== false ||
+    preparedRegisterAudit.externalGrantGate?.status !== "not-established" ||
+    preparedRegisterAudit.grantReady !== false
+  ) {
+    throw new Error("Installed prepared register audit elevated an external claim.");
   }
 
   const privateRegisterCore = {

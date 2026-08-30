@@ -49,6 +49,10 @@ const REHEARSAL_CHECKS_V11 = [
   ...REHEARSAL_CHECKS_V10,
   "device-free-consent-safe-scope-preparation",
 ];
+const REHEARSAL_CHECKS_V12 = [
+  ...REHEARSAL_CHECKS_V11,
+  "device-free-private-recruitment-register-preparation",
+];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
   "frozen-offline-dependency-restore",
@@ -72,6 +76,7 @@ const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
 const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
+const BUNDLE_PROFILE_V12 = "phase-2i-recruitment-register-rc-v12";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -159,6 +164,10 @@ const PACKED_DOCUMENTS_V6 = [
   "docs/publisher-pilot-quickstart.md",
   "docs/supported-environment.md",
 ];
+const PACKED_DOCUMENTS_V12 = [
+  ...PACKED_DOCUMENTS_V6,
+  "docs/publisher-recruitment.md",
+].sort();
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -224,6 +233,10 @@ const PACKED_SCHEMAS_V11 = [
   ...PACKED_SCHEMAS_V9,
   "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V12 = [
+  ...PACKED_SCHEMAS_V11,
+  "schemas/launchrig-private-cohort-register-draft-result.schema.json",
+].sort();
 const PACKED_ACTION_FILES_V6 = [
   "action.yml",
   "action/run-validation.mjs",
@@ -248,79 +261,91 @@ const PACKED_COMPILED_ADDITIONS_V11_ONLY = [
   "package/dist/src/pilot/scope-preparation.js",
   "package/dist/src/pilot/scope-preparation.js.map",
 ];
-const PACKED_TEMPLATES = [
+const PACKED_COMPILED_ADDITIONS_V12_ONLY = [
+  "package/dist/src/pilot/cohort-preparation.d.ts",
+  "package/dist/src/pilot/cohort-preparation.js",
+  "package/dist/src/pilot/cohort-preparation.js.map",
+];
+const PACKED_TEMPLATES_V11 = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
   "templates/pilot-notes.md",
   "templates/publisher-intake.md",
   "templates/sharing-review.md",
 ];
+const PACKED_TEMPLATES_V12 = [
+  ...PACKED_TEMPLATES_V11,
+  "templates/publisher-fit-check.md",
+].sort();
 const PACKED_RUNTIME_FILES_V11 = [
   "scripts/runtime-contract.mjs",
   "scripts/verify-pilot-bundle.mjs",
 ];
 
 function packedInventory(profile) {
+  let inventory;
   if (profile === BUNDLE_PROFILE_V1) {
-    return { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1, actionFiles: [] };
-  }
-  if (profile === BUNDLE_PROFILE_V2) {
-    return { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2, actionFiles: [] };
-  }
-  if (profile === BUNDLE_PROFILE_V3) {
-    return { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3, actionFiles: [] };
-  }
-  if (profile === BUNDLE_PROFILE_V4) {
-    return { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4, actionFiles: [] };
-  }
-  if (profile === BUNDLE_PROFILE_V5) {
-    return { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5, actionFiles: [] };
-  }
-  if (profile === BUNDLE_PROFILE_V6) {
-    return {
+    inventory = { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1, actionFiles: [] };
+  } else if (profile === BUNDLE_PROFILE_V2) {
+    inventory = { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2, actionFiles: [] };
+  } else if (profile === BUNDLE_PROFILE_V3) {
+    inventory = { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3, actionFiles: [] };
+  } else if (profile === BUNDLE_PROFILE_V4) {
+    inventory = { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4, actionFiles: [] };
+  } else if (profile === BUNDLE_PROFILE_V5) {
+    inventory = { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5, actionFiles: [] };
+  } else if (profile === BUNDLE_PROFILE_V6) {
+    inventory = {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V5,
       actionFiles: PACKED_ACTION_FILES_V6,
     };
-  }
-  if (profile === BUNDLE_PROFILE_V7) {
-    return {
+  } else if (profile === BUNDLE_PROFILE_V7) {
+    inventory = {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V7,
       actionFiles: PACKED_ACTION_FILES_V6,
     };
-  }
-  if (profile === BUNDLE_PROFILE_V8) {
-    return {
+  } else if (profile === BUNDLE_PROFILE_V8) {
+    inventory = {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V8,
       actionFiles: PACKED_ACTION_FILES_V6,
     };
-  }
-  if (profile === BUNDLE_PROFILE_V9) {
-    return {
+  } else if (profile === BUNDLE_PROFILE_V9) {
+    inventory = {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V9,
       actionFiles: PACKED_ACTION_FILES_V6,
     };
-  }
-  if (profile === BUNDLE_PROFILE_V10) {
-    return {
+  } else if (profile === BUNDLE_PROFILE_V10) {
+    inventory = {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V9,
       actionFiles: PACKED_ACTION_FILES_V6,
       runtimeFiles: [],
     };
-  }
-  if (profile === BUNDLE_PROFILE_V11) {
-    return {
+  } else if (profile === BUNDLE_PROFILE_V11) {
+    inventory = {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V11,
       actionFiles: PACKED_ACTION_FILES_V6,
       runtimeFiles: PACKED_RUNTIME_FILES_V11,
     };
+  } else if (profile === BUNDLE_PROFILE_V12) {
+    inventory = {
+      documents: PACKED_DOCUMENTS_V12,
+      schemas: PACKED_SCHEMAS_V12,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
+    };
+  } else {
+    throw new Error("Unsupported bundle manifest.");
   }
-  throw new Error("Unsupported bundle manifest.");
+  return {
+    ...inventory,
+    templates: profile === BUNDLE_PROFILE_V12 ? PACKED_TEMPLATES_V12 : PACKED_TEMPLATES_V11,
+  };
 }
 
 function comparePaths(left, right) {
@@ -511,10 +536,13 @@ async function readRegularFile(bundleRoot, relativePath, maximumBytes) {
   }
 }
 
-function expectedPayloadFiles(version) {
+function expectedPayloadFiles(version, profile) {
+  const inventory = packedInventory(profile);
   return [
     "README.md",
+    ...(profile === BUNDLE_PROFILE_V12 ? ["docs/cohort-audit.md"] : []),
     "docs/publisher-pilot-quickstart.md",
+    ...(profile === BUNDLE_PROFILE_V12 ? ["docs/publisher-recruitment.md"] : []),
     "docs/supported-environment.md",
     "docs/flows/mwa-authorize.md",
     "docs/flows/mwa-reject.md",
@@ -522,11 +550,7 @@ function expectedPayloadFiles(version) {
     "docs/flows/mwa-siws.md",
     "launchrig-" + version + ".tgz",
     "schemas/launchrig-publisher-bundle.schema.json",
-    "templates/defect-evidence.md",
-    "templates/pilot-consent.md",
-    "templates/pilot-notes.md",
-    "templates/publisher-intake.md",
-    "templates/sharing-review.md",
+    ...inventory.templates,
   ].sort();
 }
 
@@ -599,7 +623,7 @@ function isAllowedArchivePath(archivePath, inventory) {
     relativePath.startsWith("dist/node_modules/yaml/") ||
     inventory.documents.includes(relativePath) ||
     inventory.schemas.includes(relativePath) ||
-    PACKED_TEMPLATES.includes(relativePath) ||
+    inventory.templates.includes(relativePath) ||
     inventory.actionFiles.includes(relativePath) ||
     runtimeFileAllowed
   );
@@ -663,11 +687,25 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
-  if (manifest.profile === BUNDLE_PROFILE_V11) {
+  if (manifest.profile === BUNDLE_PROFILE_V12) {
+    for (const required of [
+      ...PACKED_COMPILED_ADDITIONS_V8,
+      ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+    ]) {
+      if (!entries.has(required)) {
+        throw new Error("LaunchRig package RC12 is missing " + required + ".");
+      }
+    }
+  } else if (manifest.profile === BUNDLE_PROFILE_V11) {
     for (const required of [...PACKED_COMPILED_ADDITIONS_V8, ...PACKED_COMPILED_ADDITIONS_V11_ONLY]) {
       if (!entries.has(required)) {
         throw new Error("LaunchRig package RC11 is missing " + required + ".");
       }
+    }
+    const unexpected = PACKED_COMPILED_ADDITIONS_V12_ONLY.find((entry) => entries.has(entry));
+    if (unexpected) {
+      throw new Error("LaunchRig package contains an RC12 file outside its historical profile: " + unexpected);
     }
   } else if (
     manifest.profile === BUNDLE_PROFILE_V10 ||
@@ -679,7 +717,9 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
         throw new Error("LaunchRig package scope-capable profile is missing " + required + ".");
       }
     }
-    const unexpected = PACKED_COMPILED_ADDITIONS_V11_ONLY.find((entry) => entries.has(entry));
+    const unexpected = [...PACKED_COMPILED_ADDITIONS_V11_ONLY, ...PACKED_COMPILED_ADDITIONS_V12_ONLY].find(
+      (entry) => entries.has(entry),
+    );
     if (unexpected) {
       throw new Error("LaunchRig package contains an RC11 file outside its historical profile: " + unexpected);
     }
@@ -689,16 +729,20 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
         throw new Error("LaunchRig package RC7 is missing " + required + ".");
       }
     }
-    const unexpected = [...PACKED_COMPILED_ADDITIONS_V8_ONLY, ...PACKED_COMPILED_ADDITIONS_V11_ONLY].find(
-      (entry) => entries.has(entry),
-    );
+    const unexpected = [
+      ...PACKED_COMPILED_ADDITIONS_V8_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+    ].find((entry) => entries.has(entry));
     if (unexpected) {
       throw new Error("LaunchRig package contains an RC8 file outside its historical profile: " + unexpected);
     }
   } else {
-    const unexpected = [...PACKED_COMPILED_ADDITIONS_V8, ...PACKED_COMPILED_ADDITIONS_V11_ONLY].find(
-      (entry) => entries.has(entry),
-    );
+    const unexpected = [
+      ...PACKED_COMPILED_ADDITIONS_V8,
+      ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+    ].find((entry) => entries.has(entry));
     if (unexpected) {
       throw new Error("LaunchRig package contains a newer release file outside its historical profile: " + unexpected);
     }
@@ -707,7 +751,7 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   for (const [label, expected, prefix] of [
     ["documentation", inventory.documents, "package/docs/"],
     ["schema", inventory.schemas, "package/schemas/"],
-    ["template", PACKED_TEMPLATES, "package/templates/"],
+    ["template", inventory.templates, "package/templates/"],
     ["runtime verifier", inventory.runtimeFiles ?? [], "package/scripts/"],
   ]) {
     const actual = [...entries.keys()]
@@ -810,8 +854,10 @@ function validateManifest(manifest) {
     "Bundle manifest",
   );
   const expectedRehearsalChecks =
-    manifest.profile === BUNDLE_PROFILE_V11
-      ? REHEARSAL_CHECKS_V11
+    manifest.profile === BUNDLE_PROFILE_V12
+      ? REHEARSAL_CHECKS_V12
+      : manifest.profile === BUNDLE_PROFILE_V11
+        ? REHEARSAL_CHECKS_V11
       : manifest.profile === BUNDLE_PROFILE_V10
         ? REHEARSAL_CHECKS_V10
         : manifest.profile === BUNDLE_PROFILE_V9
@@ -836,6 +882,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V9,
       BUNDLE_PROFILE_V10,
       BUNDLE_PROFILE_V11,
+      BUNDLE_PROFILE_V12,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");
@@ -922,7 +969,7 @@ function validateManifest(manifest) {
   if (JSON.stringify(paths) !== JSON.stringify(sortedPaths) || new Set(paths).size !== paths.length) {
     throw new Error("Manifest file inventory must be unique and sorted.");
   }
-  const expectedPaths = expectedPayloadFiles(manifest.launchRigVersion);
+  const expectedPaths = expectedPayloadFiles(manifest.launchRigVersion, manifest.profile);
   if (JSON.stringify(paths) !== JSON.stringify(expectedPaths)) {
     throw new Error("Bundle payload does not match the exact publisher profile allowlist.");
   }

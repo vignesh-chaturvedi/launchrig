@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-cohort-register-draft-result.schema.json",
+  "title": "LaunchRig private cohort register draft result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "claimStatus",
+    "status",
+    "fileSha256",
+    "contentSha256",
+    "revision",
+    "targetPublisherProjects",
+    "candidateRecords",
+    "interestRecorded",
+    "integrityRecorded",
+    "humanRecruitmentRequired",
+    "projectModificationAuthorized",
+    "phoneAccessAuthorized",
+    "pilotStateChecked",
+    "deviceEnvironmentChecked",
+    "candidatePool",
+    "publisherIdentity",
+    "publisherAuthority",
+    "publisherConsent",
+    "publisherIndependence",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-cohort-register-draft-result" },
+    "profile": { "const": "phase-2i-recruitment-register-v1" },
+    "claimStatus": { "const": "operator-prepared-unattested" },
+    "status": { "const": "created" },
+    "fileSha256": { "$ref": "#/$defs/hash" },
+    "contentSha256": { "$ref": "#/$defs/hash" },
+    "revision": { "const": 1 },
+    "targetPublisherProjects": { "const": 3 },
+    "candidateRecords": { "const": 0 },
+    "interestRecorded": { "const": 0 },
+    "integrityRecorded": { "const": false },
+    "humanRecruitmentRequired": { "const": true },
+    "projectModificationAuthorized": { "const": false },
+    "phoneAccessAuthorized": { "const": false },
+    "pilotStateChecked": { "const": false },
+    "deviceEnvironmentChecked": { "const": false },
+    "candidatePool": { "const": "not-established" },
+    "publisherIdentity": { "const": "not-established" },
+    "publisherAuthority": { "const": "not-established" },
+    "publisherConsent": { "const": "not-established" },
+    "publisherIndependence": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "This draft creates private bookkeeping infrastructure only. It does not identify, contact, recruit, or accept a publisher candidate.",
+        "Fresh opaque references do not authenticate the operator or prove publisher identity, authority, consent, project ownership, or independence.",
+        "The draft authorizes no installation, publisher-project change, device access, wallet action, evidence sharing, or public claim.",
+        "File ownership and mode checks do not prove ACL, backup, sync, or cloud-storage privacy.",
+        "Human recruitment, fit review, Stage A permission, exact Stage B scope approval, and attended execution remain separate steps."
+      ]
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

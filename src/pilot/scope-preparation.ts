@@ -40,6 +40,7 @@ const DELETION_METHODS = [
 const ACCEPTED_BUNDLE_PROFILES = new Set([
   "phase-2g-operational-contract-rc-v10",
   "phase-2h-consent-safe-scope-rc-v11",
+  "phase-2i-recruitment-register-rc-v12",
 ]);
 
 const DRAFT_LIMITATIONS = [
