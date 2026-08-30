@@ -1,6 +1,21 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +28,7 @@ import {
   resolveNewOutputDirectory,
   sha256Value,
 } from "./pilot-bundle-lib.mjs";
-import { verifyPublisherBundle } from "./verify-pilot-bundle.mjs";
+import { verifyPublisherBundle, verifyPublisherBundleAtIdentity } from "./verify-pilot-bundle.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -33,6 +48,25 @@ const COPY_MAP = [
   ["templates/publisher-intake.md", "templates/publisher-intake.md"],
   ["templates/sharing-review.md", "templates/sharing-review.md"],
 ];
+
+function sameDirectoryIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function removeStagingDirectoryIfUnchanged(directory, expectedIdentity) {
+  const current = await lstat(directory, { bigint: true }).catch(() => undefined);
+  if (
+    !current ||
+    current.isSymbolicLink() ||
+    !current.isDirectory() ||
+    !sameDirectoryIdentity(current, expectedIdentity)
+  ) {
+    return false;
+  }
+  if ((await readdir(directory)).length !== 0) return false;
+  await rmdir(directory);
+  return true;
+}
 
 function helpText() {
   return [
@@ -214,7 +248,7 @@ function rehearsalCandidate(index, evidenceBinding, scopeSha256) {
       recordSha256: rehearsalDigest("consent-" + index),
       scopeSha256,
       effectiveOn: "2026-08-04",
-      expiresOn: "2026-12-31",
+      expiresOn: "2099-12-31",
       withdrawalRecordSha256: null,
       withdrawnOn: null,
     },
@@ -439,8 +473,10 @@ async function assertInstalledFile(installDirectory, relativePath) {
   }
 }
 
-async function rehearseCleanConsumer(archivePath, launchRigVersion) {
-  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrig-publisher-rehearsal-"));
+async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirectory) {
+  const temporaryDirectory = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "launchrig-publisher-rehearsal-")),
+  );
   const installDirectory = path.join(temporaryDirectory, "consumer");
   try {
     const storePath = path.join(temporaryDirectory, "empty-store");
@@ -470,6 +506,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "dist/src/cli.js",
       "dist/src/pilot/binding.js",
       "dist/src/pilot/session-scope.js",
+      "dist/src/pilot/scope-preparation.js",
       "docs/cohort-audit.md",
       "docs/cohort-verification.md",
       "docs/config-v1-compatibility.md",
@@ -489,7 +526,10 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "schemas/launchrig-private-cohort-register.schema.json",
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
+      "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
       "schemas/launchrig-pilot-session-scope.schema.json",
+      "scripts/runtime-contract.mjs",
+      "scripts/verify-pilot-bundle.mjs",
       "templates/pilot-consent.md",
       "templates/pilot-notes.md",
       "templates/publisher-intake.md",
@@ -564,6 +604,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       "launchrig pilot verify FILE",
       "launchrig pilot binding FILE",
       "launchrig pilot scope FILE",
+      "launchrig pilot prepare-scope",
       "launchrig cohort verify FILE...",
       "launchrig cohort audit REGISTER [EVIDENCE...]",
     ]) {
@@ -622,54 +663,112 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
       throw new Error("Clean consumer pilot lint did not safely refuse the unpromoted starter flows.");
     }
 
+    const promotedScenarios = [
+      ["authorize", "mwa-authorize", "Authorize"],
+      ["siws", "mwa-siws", "Sign in with Solana"],
+      ["sign-message", "mwa-sign-message", "Sign message"],
+      ["reject", "mwa-reject", "Reject and recover"],
+    ];
+    for (const [id] of promotedScenarios) {
+      await writeFile(
+        path.join(installDirectory, "launchrig-flows", id + ".yaml"),
+        [
+          "appId: com.example.bundlerehearsal",
+          "---",
+          "- launchApp:",
+          "    clearState: false",
+          "- assertVisible:",
+          "    id: bundle-rehearsal-" + id + "-ready",
+          "",
+        ].join("\n"),
+        { flag: "wx", mode: 0o600 },
+      );
+    }
+    const appApkPath = path.join(installDirectory, "bundle-rehearsal-app.apk");
+    await writeFile(appApkPath, "bundle rehearsal app artifact v1\n", { flag: "wx", mode: 0o600 });
+    const starterSource = await readFile(path.join(installDirectory, "launchrig.yml"), "utf8");
+    const promotedConfig = starterSource
+      .replace("  # apk: ./build/app-devnet.apk", "  apk: ./bundle-rehearsal-app.apk")
+      .replace(
+        "scenarios: []",
+        [
+          "scenarios:",
+          ...promotedScenarios.flatMap(([id, kind, name]) => [
+            "  - id: " + id,
+            "    kind: " + kind,
+            "    name: " + name,
+            "    flow: ./launchrig-flows/" + id + ".yaml",
+            "    required: true",
+          ]),
+        ].join("\n"),
+      );
+    await writeFile(path.join(installDirectory, "launchrig.yml"), promotedConfig, "utf8");
+    const promotedLint = JSON.parse(
+      (
+        await run(executable, ["pilot", "lint", "--config", "launchrig.yml", "--json"], {
+          cwd: installDirectory,
+          env: rehearsalEnvironment,
+        })
+      ).stdout,
+    );
+    if (
+      promotedLint.staticPolicyValid !== true ||
+      promotedLint.deviceEnvironmentChecked !== false ||
+      promotedLint.grantReady !== false
+    ) {
+      throw new Error("Clean consumer promoted policy did not pass its device-free lint.");
+    }
+
     const scopePath = path.join(installDirectory, "private-session-scope.json");
-    const scopeInput = {
-      schemaVersion: 1,
-      kind: "launchrig-pilot-session-scope",
-      profile: "external-mwa-pilot-scope-v1",
-      scopeRef: "urn:launchrig:scope:123e4567-e89b-42d3-a456-426614174000",
-      operatorRef: "urn:launchrig:operator:223e4567-e89b-42d3-a456-426614174000",
-      pilotRef: "urn:launchrig:pilot:323e4567-e89b-42d3-a456-426614174000",
-      deviceRef: "urn:launchrig:device:423e4567-e89b-42d3-a456-426614174000",
-      bundle: {
-        bundleId: "sha256:" + "a".repeat(64),
-        manifestSha256: "b".repeat(64),
-        sha256SumsSha256: "c".repeat(64),
-        packageSha256: "d".repeat(64),
-      },
-      inputs: {
-        configSha256: "e".repeat(64),
-        appBuildSha256: "f".repeat(64),
-        walletArtifactSha256: "0".repeat(64),
-        flows: [
-          { kind: "mwa-authorize", scenarioId: "authorize", fileSha256: "1".repeat(64) },
-          { kind: "mwa-siws", scenarioId: "siws", fileSha256: "2".repeat(64) },
-          { kind: "mwa-sign-message", scenarioId: "sign-message", fileSha256: "3".repeat(64) },
-          { kind: "mwa-reject", scenarioId: "reject", fileSha256: "4".repeat(64) },
-        ],
-      },
-      policy: {
-        network: "devnet",
-        walletMode: "mock-mwa",
-        physicalAndroidRequired: true,
-        attendedExecutionRequired: true,
-        manualWalletActionsRequired: true,
-        valuableAssetsAllowed: false,
-        capture: { screenshots: "failure", includeLogcat: false, logcatLines: 200 },
-        retention: { maxRuns: 5, expiresOn: "2030-12-31", deletionMethod: "standard-delete" },
-        sharing: {
-          publicEvidenceJson: true,
-          sanitizedReports: false,
-          publisherName: false,
-          publisherLogo: false,
-          approvedQuote: false,
-          confirmedDefectRecord: false,
-        },
-      },
-    };
-    const scopeBytes = Buffer.from(JSON.stringify(scopeInput, null, 2) + "\n", "utf8");
-    await writeFile(scopePath, scopeBytes, { flag: "wx", mode: 0o600 });
-    await chmod(scopePath, 0o600);
+    const preparation = JSON.parse(
+      (
+        await run(
+          executable,
+          [
+            "pilot",
+            "prepare-scope",
+            "--config",
+            "launchrig.yml",
+            "--bundle",
+            bundleDirectory,
+            "--expires-on",
+            "2099-12-31",
+            "--deletion-method",
+            "publisher-managed",
+            "--output",
+            scopePath,
+            "--json",
+          ],
+          { cwd: installDirectory, env: rehearsalEnvironment },
+        )
+      ).stdout,
+    );
+    const scopeBytes = await readFile(scopePath);
+    const scopeInput = JSON.parse(scopeBytes.toString("utf8"));
+    const scopeMetadata = await lstat(scopePath);
+    if (
+      preparation.kind !== "launchrig-pilot-session-scope-draft-result" ||
+      preparation.status !== "created" ||
+      preparation.bundleVerification?.status !== "passed" ||
+      preparation.policyValid !== true ||
+      preparation.reviewRequired !== true ||
+      preparation.approvalReceiptCreated !== false ||
+      preparation.pilotStateChecked !== false ||
+      preparation.deviceEnvironmentChecked !== false ||
+      preparation.bundleAuthenticity !== "not-established" ||
+      preparation.externalGrantGate !== "not-established" ||
+      preparation.grantReady !== false ||
+      Object.values(scopeInput.policy?.sharing ?? {}).some((value) => value !== false) ||
+      !scopeMetadata.isFile() ||
+      scopeMetadata.nlink !== 1 ||
+      (process.platform !== "win32" && (scopeMetadata.mode & 0o777) !== 0o600) ||
+      JSON.stringify(preparation).includes(scopePath) ||
+      JSON.stringify(preparation).includes("urn:launchrig:") ||
+      JSON.stringify(preparation).includes("Android Device Ready") ||
+      JSON.stringify(preparation).includes("Android/MWA Ready")
+    ) {
+      throw new Error("Clean consumer scope preparation did not preserve its device-free claim-limited contract.");
+    }
     const scopeReceipt = JSON.parse(
       (await run(executable, ["pilot", "scope", scopePath, "--json"], {
         cwd: installDirectory,
@@ -692,6 +791,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     ) {
       throw new Error("Clean consumer session scope receipt did not preserve its private claim-limited contract.");
     }
+    await writeFile(appApkPath, "bundle rehearsal app artifact changed after approval\n", { mode: 0o600 });
     const scopedPreflight = await run(
       executable,
       [
@@ -709,8 +809,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion) {
     );
     const scopedPreflightOutput = scopedPreflight.stdout + "\n" + scopedPreflight.stderr;
     if (
-      !scopedPreflightOutput.includes("Required MWA coverage is missing") ||
-      !scopedPreflightOutput.includes("Configuration bytes do not match the approved scope") ||
+      !scopedPreflightOutput.includes("Configured app APK bytes do not match the approved scope") ||
       !scopedPreflightOutput.includes('"status": "skip"')
     ) {
       throw new Error("Clean consumer scoped preflight did not refuse mismatched inputs before device checks.");
@@ -767,7 +866,10 @@ async function buildBundle(output) {
     .digest("hex");
   const destination = await resolveNewOutputDirectory(output);
   const stagingDirectory = await mkdtemp(path.join(destination.parentDirectory, ".launchrig-bundle-staging-"));
+  const stagingIdentity = await lstat(stagingDirectory, { bigint: true });
   let outputCreated = false;
+  let outputIdentity;
+  let outputHandle;
   try {
     await run(pnpm, ["run", "check"], { env: sourceEnvironment });
     await run(pnpm, ["test"], { env: sourceEnvironment });
@@ -784,11 +886,35 @@ async function buildBundle(output) {
     const archivePath = path.join(stagingDirectory, expectedArchiveName);
 
     await copyBundleMaterials(stagingDirectory);
-    const packageBeforeRehearsal = (await collectPayloadEntries(stagingDirectory)).find(
+    const rehearsalFiles = await collectPayloadEntries(stagingDirectory);
+    const packageBeforeRehearsal = rehearsalFiles.find(
       (entry) => entry.path === expectedArchiveName,
     );
     if (!packageBeforeRehearsal) throw new Error("Packed archive is missing before the consumer rehearsal.");
-    await rehearseCleanConsumer(archivePath, packageMetadata.version);
+    const rehearsalManifest = createPublisherManifest({
+      launchRigVersion: packageMetadata.version,
+      gitCommit: sourceCommit,
+      lockfileSha256,
+      nodeEngine: packageMetadata.engines.node,
+      packageManager: packageMetadata.packageManager,
+      packagePath: expectedArchiveName,
+      files: rehearsalFiles,
+    });
+    await writeFile(
+      path.join(stagingDirectory, "manifest.json"),
+      JSON.stringify(rehearsalManifest, null, 2) + "\n",
+      { flag: "wx", mode: 0o600 },
+    );
+    await writeFile(
+      path.join(stagingDirectory, "SHA256SUMS"),
+      renderSha256Sums(rehearsalFiles),
+      { flag: "wx", mode: 0o600 },
+    );
+    await verifyPublisherBundle(stagingDirectory);
+    await rehearseCleanConsumer(archivePath, packageMetadata.version, stagingDirectory);
+    await verifyPublisherBundle(stagingDirectory);
+    await unlink(path.join(stagingDirectory, "manifest.json"));
+    await unlink(path.join(stagingDirectory, "SHA256SUMS"));
     const finalSourceCommit = await assertCleanSource();
     if (finalSourceCommit !== sourceCommit) throw new Error("Source commit changed during bundle assembly.");
 
@@ -810,6 +936,9 @@ async function buildBundle(output) {
       packagePath: expectedArchiveName,
       files,
     });
+    if (JSON.stringify(manifest) !== JSON.stringify(rehearsalManifest)) {
+      throw new Error("Publisher bundle identity changed after the clean consumer rehearsal.");
+    }
     const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2) + "\n", "utf8");
     const sumsBytes = Buffer.from(renderSha256Sums(files), "utf8");
     const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
@@ -826,19 +955,42 @@ async function buildBundle(output) {
 
     await mkdir(destination.outputDirectory, { mode: 0o700 });
     outputCreated = true;
-    for (const file of [...files.map((entry) => entry.path), "SHA256SUMS"].sort()) {
-      await copyRegularBundleInput(
-        path.join(stagingDirectory, ...file.split("/")),
-        path.join(destination.outputDirectory, ...file.split("/")),
+    outputIdentity = await lstat(destination.outputDirectory, { bigint: true });
+    outputHandle = await open(
+      destination.outputDirectory,
+      constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
+    );
+    const openedOutput = await outputHandle.stat({ bigint: true });
+    if (!openedOutput.isDirectory() || !sameDirectoryIdentity(openedOutput, outputIdentity)) {
+      throw new Error("Publisher bundle output changed while being opened.");
+    }
+    for (const entry of (await readdir(stagingDirectory)).sort()) {
+      await rename(
+        path.join(stagingDirectory, entry),
+        path.join(destination.outputDirectory, entry),
       );
     }
-    await copyRegularBundleInput(
-      path.join(stagingDirectory, "manifest.json"),
-      path.join(destination.outputDirectory, "manifest.json"),
-    );
     await verifyPublisherBundle(destination.outputDirectory);
-    await chmod(destination.outputDirectory, 0o755);
-    await rm(stagingDirectory, { recursive: true, force: true });
+    const outputBeforePublish = await lstat(destination.outputDirectory, { bigint: true });
+    const openedBeforePublish = await outputHandle.stat({ bigint: true });
+    if (
+      outputBeforePublish.isSymbolicLink() ||
+      !outputBeforePublish.isDirectory() ||
+      !openedBeforePublish.isDirectory() ||
+      !sameDirectoryIdentity(outputBeforePublish, outputIdentity) ||
+      !sameDirectoryIdentity(openedBeforePublish, outputIdentity)
+    ) {
+      throw new Error("Publisher bundle output changed before publication.");
+    }
+    const stagingRemoved = await removeStagingDirectoryIfUnchanged(stagingDirectory, stagingIdentity);
+    if (!stagingRemoved) {
+      console.warn("LaunchRig private staging directory changed and was left in place for manual inspection.");
+    }
+    await outputHandle.chmod(0o755);
+    await verifyPublisherBundleAtIdentity(destination.outputDirectory, {
+      dev: outputIdentity.dev,
+      ino: outputIdentity.ino,
+    });
 
     console.log("LaunchRig publisher bundle created and verified.");
     console.log("output: " + destination.outputDirectory);
@@ -850,9 +1002,17 @@ async function buildBundle(output) {
     console.log("device or wallet tested by this rehearsal: no");
     console.log("grant ready: no");
   } catch (error) {
-    await rm(stagingDirectory, { recursive: true, force: true });
-    if (outputCreated) await rm(destination.outputDirectory, { recursive: true, force: true });
-    throw error;
+    await outputHandle?.chmod(0o700).catch(() => undefined);
+    const detail = error instanceof Error ? error.message : String(error);
+    const retained = [
+      "Private staging data was left in place for manual inspection.",
+      ...(outputCreated
+        ? ["An incomplete mode-700 output directory may also remain and will not be removed automatically."]
+        : []),
+    ];
+    throw new Error(detail + " " + retained.join(" "));
+  } finally {
+    await outputHandle?.close().catch(() => undefined);
   }
 }
 

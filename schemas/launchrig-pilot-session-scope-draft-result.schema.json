@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-pilot-session-scope-draft-result.schema.json",
+  "title": "LaunchRig pilot session scope draft result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "status",
+    "scopeFileSha256",
+    "binding",
+    "bundleVerification",
+    "policyValid",
+    "reviewRequired",
+    "approvalReceiptCreated",
+    "pilotStateChecked",
+    "deviceEnvironmentChecked",
+    "publisherIdentity",
+    "consentAuthenticity",
+    "bundleAuthenticity",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-pilot-session-scope-draft-result" },
+    "profile": { "const": "external-mwa-pilot-scope-v1" },
+    "status": { "const": "created" },
+    "scopeFileSha256": { "$ref": "#/$defs/sha256" },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundleId",
+        "packageSha256",
+        "appBuildSha256",
+        "walletArtifactSha256",
+        "flowReviewSha256",
+        "scopeSha256"
+      ],
+      "properties": {
+        "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "packageSha256": { "$ref": "#/$defs/sha256" },
+        "appBuildSha256": { "$ref": "#/$defs/sha256" },
+        "walletArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "flowReviewSha256": { "$ref": "#/$defs/sha256" },
+        "scopeSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "bundleVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "manifestSha256", "sha256SumsSha256"],
+      "properties": {
+        "status": { "const": "passed" },
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "sha256SumsSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "policyValid": { "const": true },
+    "reviewRequired": { "const": true },
+    "approvalReceiptCreated": { "const": false },
+    "pilotStateChecked": { "const": false },
+    "deviceEnvironmentChecked": { "const": false },
+    "publisherIdentity": { "const": "not-established" },
+    "consentAuthenticity": { "const": "not-established" },
+    "bundleAuthenticity": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "This draft requires human review and a separate launchrig pilot scope receipt before any attended device check.",
+        "Local bundle and input integrity checks do not establish source authenticity, publisher identity, operator authority, consent, or a device environment.",
+        "No pilot state, ADB, Maestro, connected device, wallet action, flow execution, external adoption, Seeker hardware, Seed Vault behavior, confirmed defect, or grant readiness was established."
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

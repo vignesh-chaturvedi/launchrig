@@ -29,6 +29,10 @@ import {
   PilotSessionScopeError,
 } from "./pilot/session-scope.js";
 import {
+  preparePilotSessionScope,
+  type PilotSessionScopeDraftResultV1,
+} from "./pilot/scope-preparation.js";
+import {
   CohortError,
   verifyCohortEvidence,
   type CohortVerificationOutput,
@@ -57,6 +61,7 @@ export interface CliDependencies {
   exportPilotEvidence?: typeof exportPilotEvidence;
   createPublicPilotEvidenceBinding?: typeof createPublicPilotEvidenceBinding;
   createPilotSessionScopeReceipt?: typeof createPilotSessionScopeReceipt;
+  preparePilotSessionScope?: typeof preparePilotSessionScope;
   verifyPublicPilotEvidence?: typeof verifyPublicPilotEvidence;
   verifyCohortEvidence?: typeof verifyCohortEvidence;
   auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
@@ -86,6 +91,8 @@ const HELP = [
   "  launchrig pilot verify FILE [--json]",
   "  launchrig pilot binding FILE [--json]",
   "  launchrig pilot scope FILE [--json]",
+  "  launchrig pilot prepare-scope --bundle DIRECTORY --expires-on YYYY-MM-DD --deletion-method METHOD --output FILE [--config launchrig.yml] [--json]",
+  "    METHOD: standard-delete | secure-delete | publisher-managed | other-documented",
   "  launchrig cohort verify FILE... [--json]",
   "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
   "",
@@ -191,7 +198,7 @@ function humanPilotCheck(value: Awaited<ReturnType<typeof checkPilot>>): string 
 function humanPilotPolicyLint(value: Awaited<ReturnType<typeof lintPilotPolicy>>): string {
   const lines = [
     value.staticPolicyValid
-      ? "Pilot policy lint: ready for an attended device check"
+      ? "Pilot policy lint: static policy passed, ready for private scope preparation"
       : "Pilot policy lint: action required",
   ];
   for (const check of value.checks) {
@@ -205,7 +212,9 @@ function humanPilotPolicyLint(value: Awaited<ReturnType<typeof lintPilotPolicy>>
   );
   for (const limitation of value.limitations) lines.push("- " + limitation);
   if (value.staticPolicyValid) {
-    lines.push("Next attended step: after the timer is started and the phone is connected, run launchrig pilot check.");
+    lines.push(
+      "Next device-free step: prepare and approve the private scope with launchrig pilot prepare-scope and launchrig pilot scope. Connect the phone only after the approval receipt is unchanged.",
+    );
   }
   return lines.join("\n");
 }
@@ -247,6 +256,32 @@ function humanPilotSessionScope(value: Awaited<ReturnType<typeof createPilotSess
     "grant ready: no",
   ];
   for (const limitation of value.limitations) lines.push("- " + limitation);
+  return lines.join("\n");
+}
+
+function humanPilotSessionScopeDraft(value: PilotSessionScopeDraftResultV1): string {
+  const lines = [
+    "Private pilot session scope draft created",
+    "scope file SHA-256: " + value.scopeFileSha256,
+    "bundle ID: " + value.binding.bundleId,
+    "package SHA-256: " + value.binding.packageSha256,
+    "app build SHA-256: " + value.binding.appBuildSha256,
+    "wallet artifact SHA-256: " + value.binding.walletArtifactSha256,
+    "flow review SHA-256: " + value.binding.flowReviewSha256,
+    "scope SHA-256: " + value.binding.scopeSha256,
+    "local bundle integrity: verified",
+    "human review required: yes",
+    "approval receipt created: no",
+    "pilot state checked: no",
+    "device environment checked: no",
+    "publisher identity: not established",
+    "consent authenticity: not established",
+    "bundle authenticity: not established",
+    "external grant gate: not established",
+    "grant ready: no",
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  lines.push("Next: review the private draft, then run launchrig pilot scope FILE.");
   return lines.join("\n");
 }
 
@@ -380,6 +415,9 @@ export async function runCli(
         scope: { type: "string" },
         repeat: { type: "string" },
         output: { type: "string" },
+        bundle: { type: "string" },
+        "expires-on": { type: "string" },
+        "deletion-method": { type: "string" },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -410,6 +448,10 @@ export async function runCli(
   const scopePath = typeof parsed.values.scope === "string" ? parsed.values.scope : undefined;
   const repeatValue = typeof parsed.values.repeat === "string" ? Number(parsed.values.repeat) : undefined;
   const outputPath = typeof parsed.values.output === "string" ? parsed.values.output : undefined;
+  const bundleDirectory = typeof parsed.values.bundle === "string" ? parsed.values.bundle : undefined;
+  const expiresOn = typeof parsed.values["expires-on"] === "string" ? parsed.values["expires-on"] : undefined;
+  const deletionMethod =
+    typeof parsed.values["deletion-method"] === "string" ? parsed.values["deletion-method"] : undefined;
 
   try {
     if (command === "rules") {
@@ -623,6 +665,46 @@ export async function runCli(
         return 0;
       }
 
+      if (subcommand === "prepare-scope") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set([
+            "--config",
+            "-c",
+            "--bundle",
+            "--expires-on",
+            "--deletion-method",
+            "--output",
+            "--json",
+            "--help",
+            "-h",
+            "--version",
+            "-v",
+          ]),
+        );
+        if (rejectedOption) {
+          throw new PilotSessionScopeError("pilot prepare-scope does not accept " + rejectedOption);
+        }
+        if (parsed.positionals.length !== 2) {
+          throw new PilotSessionScopeError("pilot prepare-scope does not accept positional arguments");
+        }
+        if (!bundleDirectory || !expiresOn || !deletionMethod || !outputPath) {
+          throw new PilotSessionScopeError(
+            "pilot prepare-scope requires --bundle DIRECTORY, --expires-on YYYY-MM-DD, --deletion-method METHOD, and --output FILE",
+          );
+        }
+        const prepareScope = dependencies.preparePilotSessionScope ?? preparePilotSessionScope;
+        const output = await prepareScope({
+          configPath,
+          bundleDirectory,
+          expiresOn,
+          deletionMethod,
+          outputPath,
+        });
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanPilotSessionScopeDraft(output));
+        return 0;
+      }
+
       if (!pilotId) throw new PilotError("pilot commands require --pilot ID");
 
       if (subcommand === "start") {
@@ -640,9 +722,9 @@ export async function runCli(
         io.out(
           parsed.values.json
             ? JSON.stringify(rendered, null, 2)
-            : [
+              : [
                 "Pilot " + pilotId + " started. State: " + rendered.statePath,
-                "Next: create or edit launchrig.yml, then run launchrig validate and launchrig doctor.",
+                "Next: create or edit launchrig.yml, run launchrig validate and launchrig pilot lint, then prepare and approve the private scope before connecting a phone.",
               ].join("\n"),
         );
         return 0;
@@ -817,7 +899,7 @@ export async function runCli(
       }
 
       throw new PilotError(
-        "pilot command must be lint, start, check, run, status, export, verify, binding, or scope",
+        "pilot command must be lint, start, check, run, status, export, verify, binding, scope, or prepare-scope",
       );
     }
 

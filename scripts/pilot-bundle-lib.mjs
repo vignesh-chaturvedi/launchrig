@@ -16,7 +16,8 @@ const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
-export const BUNDLE_PROFILE = BUNDLE_PROFILE_V10;
+const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
+export const BUNDLE_PROFILE = BUNDLE_PROFILE_V11;
 const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-2a-publisher-rc-v1",
   "phase-2b-publisher-rc-v2",
@@ -28,6 +29,7 @@ const SUPPORTED_BUNDLE_PROFILES = new Set([
   BUNDLE_PROFILE_V8,
   BUNDLE_PROFILE_V9,
   BUNDLE_PROFILE_V10,
+  BUNDLE_PROFILE_V11,
 ]);
 export const LEGACY_REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",
@@ -50,9 +52,13 @@ export const V9_REHEARSAL_CHECKS = Object.freeze([
   ...V8_REHEARSAL_CHECKS,
   "device-free-approved-scope-enforcement",
 ]);
-export const REHEARSAL_CHECKS = Object.freeze([
+export const V10_REHEARSAL_CHECKS = Object.freeze([
   ...V9_REHEARSAL_CHECKS,
   "installed-scope-linked-governance-contract",
+]);
+export const REHEARSAL_CHECKS = Object.freeze([
+  ...V10_REHEARSAL_CHECKS,
+  "device-free-consent-safe-scope-preparation",
 ]);
 export const SOURCE_VERIFICATION_CHECKS = Object.freeze([
   "package-manager-version",
@@ -145,6 +151,11 @@ export async function resolveNewOutputDirectory(output) {
     throw new Error("The pilot bundle output parent must be an existing, non-symlink directory.");
   }
   const resolvedParent = await realpath(parent);
+  const comparableParent = process.platform === "win32" ? parent.toLowerCase() : parent;
+  const comparableResolvedParent = process.platform === "win32" ? resolvedParent.toLowerCase() : resolvedParent;
+  if (path.normalize(comparableParent) !== path.normalize(comparableResolvedParent)) {
+    throw new Error("The pilot bundle output parent must not contain symbolic-link components.");
+  }
   return {
     parentDirectory: resolvedParent,
     outputDirectory: path.join(resolvedParent, parsed.base),
@@ -233,15 +244,17 @@ export function createPublisherManifest({
   if (!packageFile) throw new Error("Packed LaunchRig archive is missing from the bundle payload.");
   const payloadSha256 = sha256Value(sortedFiles);
   const rehearsalChecks =
-    profile === BUNDLE_PROFILE_V10
+    profile === BUNDLE_PROFILE_V11
       ? REHEARSAL_CHECKS
-      : profile === BUNDLE_PROFILE_V9
-        ? V9_REHEARSAL_CHECKS
-        : profile === BUNDLE_PROFILE_V8
-          ? V8_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V7
-            ? V7_REHEARSAL_CHECKS
-            : LEGACY_REHEARSAL_CHECKS;
+      : profile === BUNDLE_PROFILE_V10
+        ? V10_REHEARSAL_CHECKS
+        : profile === BUNDLE_PROFILE_V9
+          ? V9_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V8
+            ? V8_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V7
+              ? V7_REHEARSAL_CHECKS
+              : LEGACY_REHEARSAL_CHECKS;
   const manifestCore = {
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     kind: BUNDLE_KIND,

@@ -17,6 +17,8 @@
     "docs",
     "examples",
     "templates",
+    "scripts/runtime-contract.mjs",
+    "scripts/verify-pilot-bundle.mjs",
     "README.md",
     "LICENSE"
   ],

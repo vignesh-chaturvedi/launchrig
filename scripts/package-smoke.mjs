@@ -1,20 +1,44 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { BUNDLE_PROFILE } from "./pilot-bundle-lib.mjs";
-import { inspectLaunchRigArchive } from "./verify-pilot-bundle.mjs";
+import {
+  BUNDLE_PROFILE,
+  collectPayloadEntries,
+  createPublisherManifest,
+  renderSha256Sums,
+} from "./pilot-bundle-lib.mjs";
+import { inspectLaunchRigArchive, verifyPublisherBundle } from "./verify-pilot-bundle.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrig-package-smoke-"));
+const temporaryDirectory = await realpath(
+  await mkdtemp(path.join(os.tmpdir(), "launchrig-package-smoke-")),
+);
 const packageDirectory = path.join(temporaryDirectory, "package");
 const installDirectory = path.join(temporaryDirectory, "install");
 const publisherDirectory = path.join(temporaryDirectory, "publisher");
 const emptyStoreDirectory = path.join(temporaryDirectory, "empty-store");
+const verifiedBundleDirectory = path.join(temporaryDirectory, "verified-publisher-bundle");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+
+const OUTER_BUNDLE_COPY_MAP = [
+  ["docs/publisher-bundle-readme.md", "README.md"],
+  ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/supported-environment.md", "docs/supported-environment.md"],
+  ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
+  ["docs/flows/mwa-reject.md", "docs/flows/mwa-reject.md"],
+  ["docs/flows/mwa-sign-message.md", "docs/flows/mwa-sign-message.md"],
+  ["docs/flows/mwa-siws.md", "docs/flows/mwa-siws.md"],
+  ["schemas/launchrig-publisher-bundle.schema.json", "schemas/launchrig-publisher-bundle.schema.json"],
+  ["templates/defect-evidence.md", "templates/defect-evidence.md"],
+  ["templates/pilot-consent.md", "templates/pilot-consent.md"],
+  ["templates/pilot-notes.md", "templates/pilot-notes.md"],
+  ["templates/publisher-intake.md", "templates/publisher-intake.md"],
+  ["templates/sharing-review.md", "templates/sharing-review.md"],
+];
 
 async function run(command, args, options = {}) {
   return await new Promise((resolve, reject) => {
@@ -84,6 +108,40 @@ function smokeRef(kind, index) {
   return "urn:launchrig:" + kind + ":" + smokeUuid(index);
 }
 
+async function createVerifiedPublisherBundle(archive, version) {
+  await mkdir(verifiedBundleDirectory, { recursive: true, mode: 0o700 });
+  const packagePath = "launchrig-" + version + ".tgz";
+  await copyFile(archive, path.join(verifiedBundleDirectory, packagePath));
+  for (const [source, destination] of OUTER_BUNDLE_COPY_MAP) {
+    const target = path.join(verifiedBundleDirectory, ...destination.split("/"));
+    await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await copyFile(path.join(root, ...source.split("/")), target);
+  }
+  const files = await collectPayloadEntries(verifiedBundleDirectory);
+  const manifest = createPublisherManifest({
+    profile: BUNDLE_PROFILE,
+    launchRigVersion: version,
+    gitCommit: "a".repeat(40),
+    lockfileSha256: "b".repeat(64),
+    nodeEngine: ">=20.11",
+    packageManager: "pnpm@10.34.0",
+    packagePath,
+    files,
+  });
+  await writeFile(
+    path.join(verifiedBundleDirectory, "manifest.json"),
+    JSON.stringify(manifest, null, 2) + "\n",
+    { flag: "wx", mode: 0o600 },
+  );
+  await writeFile(
+    path.join(verifiedBundleDirectory, "SHA256SUMS"),
+    renderSha256Sums(files),
+    { flag: "wx", mode: 0o600 },
+  );
+  await verifyPublisherBundle(verifiedBundleDirectory);
+  return manifest;
+}
+
 function privateCandidate(index, evidenceBinding, scopeSha256) {
   return {
     candidateRef: smokeRef("candidate", 100 + index),
@@ -114,7 +172,7 @@ function privateCandidate(index, evidenceBinding, scopeSha256) {
       recordSha256: smokeDigest("consent-" + index),
       scopeSha256,
       effectiveOn: "2026-08-04",
-      expiresOn: "2026-12-31",
+      expiresOn: "2099-12-31",
       withdrawalRecordSha256: null,
       withdrawnOn: null,
     },
@@ -189,6 +247,7 @@ try {
   await run(pnpm, ["add", "--dir", installDirectory, "--offline", "--store-dir", emptyStoreDirectory, archive]);
   const installedDirectory = path.join(installDirectory, "node_modules", "launchrig");
   const installedPackage = JSON.parse(await readFile(path.join(installedDirectory, "package.json"), "utf8"));
+  const verifiedBundleManifest = await createVerifiedPublisherBundle(archive, installedPackage.version);
   inspectLaunchRigArchive(await readFile(archive), {
     profile: BUNDLE_PROFILE,
     launchRigVersion: installedPackage.version,
@@ -218,6 +277,17 @@ try {
   }
   if (!installedFiles.includes("schemas/launchrig-pilot-session-scope-receipt.schema.json")) {
     throw new Error("Packed pilot session scope receipt schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-pilot-session-scope-draft-result.schema.json")) {
+    throw new Error("Packed pilot session scope draft result schema is missing.");
+  }
+  for (const runtimeFile of ["scripts/runtime-contract.mjs", "scripts/verify-pilot-bundle.mjs"]) {
+    if (!installedFiles.includes(runtimeFile)) {
+      throw new Error("Packed scope preparation verifier is missing " + runtimeFile + ".");
+    }
+  }
+  if (!installedFiles.includes("dist/src/pilot/scope-preparation.js")) {
+    throw new Error("Packed pilot scope preparation implementation is missing.");
   }
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
@@ -279,6 +349,10 @@ try {
     ...v9RehearsalChecks,
     "installed-scope-linked-governance-contract",
   ];
+  const v11RehearsalChecks = [
+    ...v10RehearsalChecks,
+    "device-free-consent-safe-scope-preparation",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -295,25 +369,30 @@ try {
         "phase-2e-consent-scope-rc-v8",
         "phase-2f-scope-enforced-pilot-rc-v9",
         "phase-2g-operational-contract-rc-v10",
+        "phase-2h-consent-safe-scope-rc-v11",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v10RehearsalChecks) ||
+    ) !== JSON.stringify(v11RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v9RehearsalChecks) ||
+    ) !== JSON.stringify(v10RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v8RehearsalChecks) ||
+    ) !== JSON.stringify(v9RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
         ?.const,
+    ) !== JSON.stringify(v8RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
+        ?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties?.checks
-        ?.const,
+      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
+        ?.checks?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
       JSON.stringify([
@@ -376,8 +455,15 @@ try {
       "utf8",
     ),
   );
+  const sessionScopeDraftResultSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-pilot-session-scope-draft-result.schema.json"),
+      "utf8",
+    ),
+  );
   const validateSessionScope = new Ajv2020({ strict: true }).compile(sessionScopeSchema);
   const validateSessionScopeReceipt = new Ajv2020({ strict: true }).compile(sessionScopeReceiptSchema);
+  const validateSessionScopeDraftResult = new Ajv2020({ strict: true }).compile(sessionScopeDraftResultSchema);
   if (
     sessionScopeSchema.properties?.kind?.const !== "launchrig-pilot-session-scope" ||
     sessionScopeSchema.properties?.policy?.properties?.physicalAndroidRequired?.const !== true ||
@@ -386,7 +472,13 @@ try {
     sessionScopeReceiptSchema.properties?.publisherIdentity?.const !== "not-established" ||
     sessionScopeReceiptSchema.properties?.consentAuthenticity?.const !== "not-established" ||
     sessionScopeReceiptSchema.properties?.externalGrantGate?.const !== "not-established" ||
-    sessionScopeReceiptSchema.properties?.grantReady?.const !== false
+    sessionScopeReceiptSchema.properties?.grantReady?.const !== false ||
+    sessionScopeDraftResultSchema.properties?.kind?.const !== "launchrig-pilot-session-scope-draft-result" ||
+    sessionScopeDraftResultSchema.properties?.reviewRequired?.const !== true ||
+    sessionScopeDraftResultSchema.properties?.approvalReceiptCreated?.const !== false ||
+    sessionScopeDraftResultSchema.properties?.bundleAuthenticity?.const !== "not-established" ||
+    sessionScopeDraftResultSchema.properties?.deviceEnvironmentChecked?.const !== false ||
+    sessionScopeDraftResultSchema.properties?.grantReady?.const !== false
   ) {
     throw new Error("Packed session scope schemas do not preserve the private claim-limited contract.");
   }
@@ -577,6 +669,7 @@ try {
     "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
     "schemas/launchrig-pilot-evidence.schema.json",
     "schemas/launchrig-pilot-session-scope-receipt.schema.json",
+    "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
     "schemas/launchrig-pilot-session-scope.schema.json",
     "schemas/launchrig-private-cohort-audit.schema.json",
     "schemas/launchrig-private-cohort-register.schema.json",
@@ -587,6 +680,10 @@ try {
     "action.yml",
     "action/run-validation.mjs",
     "examples/github-actions/launchrig-validation.yml",
+  ];
+  const expectedRuntimeFiles = [
+    "scripts/runtime-contract.mjs",
+    "scripts/verify-pilot-bundle.mjs",
   ];
   for (const [label, expected, prefix] of [
     ["documentation", expectedDocuments, "docs/"],
@@ -616,6 +713,7 @@ try {
     file.startsWith("docs/") ||
     file.startsWith("schemas/") ||
     file.startsWith("templates/") ||
+    expectedRuntimeFiles.includes(file) ||
     expectedActionFiles.includes(file);
   const unexpectedPackageFile = installedFiles.find((file) => !allowedPackageFile(file));
   if (unexpectedPackageFile) throw new Error("Packed archive contains an unexpected file: " + unexpectedPackageFile);
@@ -625,7 +723,7 @@ try {
       file.startsWith(".git/") ||
       file.startsWith("apps/") ||
       file.startsWith("fixtures/") ||
-      file.startsWith("scripts/") ||
+      (file.startsWith("scripts/") && !expectedRuntimeFiles.includes(file)) ||
       file.startsWith("test/") ||
       file.endsWith(".apk") ||
       file.endsWith(".log") ||
@@ -673,6 +771,9 @@ try {
   }
   if (!help.stdout.includes("launchrig pilot scope FILE")) {
     throw new Error("Installed CLI help is missing the private session scope receipt.");
+  }
+  if (!help.stdout.includes("launchrig pilot prepare-scope")) {
+    throw new Error("Installed CLI help is missing consent-safe private scope preparation.");
   }
   if (!help.stdout.includes("launchrig pilot lint")) {
     throw new Error("Installed CLI help is missing the device-free pilot policy lint.");
@@ -859,20 +960,24 @@ try {
       "utf8",
     );
   }
+  const appApkPath = path.join(publisherDirectory, "package-smoke-app.apk");
+  await writeFile(appApkPath, "package smoke app artifact v1\n", { flag: "wx", mode: 0o600 });
   const starterSource = await readFile(path.join(publisherDirectory, "launchrig.yml"), "utf8");
-  const promotedConfig = starterSource.replace(
-    "scenarios: []",
-    [
-      "scenarios:",
-      ...promotedScenarios.flatMap(([id, kind, name]) => [
-        "  - id: " + id,
-        "    kind: " + kind,
-        "    name: " + name,
-        "    flow: ./launchrig-flows/" + id + ".yaml",
-        "    required: true",
-      ]),
-    ].join("\n"),
-  );
+  const promotedConfig = starterSource
+    .replace("  # apk: ./build/app-devnet.apk", "  apk: ./package-smoke-app.apk")
+    .replace(
+      "scenarios: []",
+      [
+        "scenarios:",
+        ...promotedScenarios.flatMap(([id, kind, name]) => [
+          "  - id: " + id,
+          "    kind: " + kind,
+          "    name: " + name,
+          "    flow: ./launchrig-flows/" + id + ".yaml",
+          "    required: true",
+        ]),
+      ].join("\n"),
+    );
   await writeFile(path.join(publisherDirectory, "launchrig.yml"), promotedConfig, "utf8");
   const policyLint = JSON.parse(
     (
@@ -898,59 +1003,66 @@ try {
   }
 
   const sessionScopePath = path.join(publisherDirectory, "private-session-scope.json");
-  const sessionScopeInput = {
-    schemaVersion: 1,
-    kind: "launchrig-pilot-session-scope",
-    profile: "external-mwa-pilot-scope-v1",
-    scopeRef: "urn:launchrig:scope:123e4567-e89b-42d3-a456-426614174000",
-    operatorRef: "urn:launchrig:operator:223e4567-e89b-42d3-a456-426614174000",
-    pilotRef: "urn:launchrig:pilot:323e4567-e89b-42d3-a456-426614174000",
-    deviceRef: "urn:launchrig:device:423e4567-e89b-42d3-a456-426614174000",
-    bundle: {
-      bundleId: "sha256:" + "a".repeat(64),
-      manifestSha256: "b".repeat(64),
-      sha256SumsSha256: "c".repeat(64),
-      packageSha256: "d".repeat(64),
-    },
-    inputs: {
-      configSha256: createHash("sha256").update(promotedConfig).digest("hex"),
-      appBuildSha256: "e".repeat(64),
-      walletArtifactSha256: "f".repeat(64),
-      flows: await Promise.all(
-        promotedScenarios.map(async ([id, kind]) => ({
-          kind,
-          scenarioId: id,
-          fileSha256: createHash("sha256")
-            .update(await readFile(path.join(publisherDirectory, "launchrig-flows", id + ".yaml")))
-            .digest("hex"),
-        })),
-      ),
-    },
-    policy: {
-      network: "devnet",
-      walletMode: "mock-mwa",
-      physicalAndroidRequired: true,
-      attendedExecutionRequired: true,
-      manualWalletActionsRequired: true,
-      valuableAssetsAllowed: false,
-      capture: { screenshots: "failure", includeLogcat: false, logcatLines: 200 },
-      retention: { maxRuns: 5, expiresOn: "2030-12-31", deletionMethod: "standard-delete" },
-      sharing: {
-        publicEvidenceJson: true,
-        sanitizedReports: false,
-        publisherName: false,
-        publisherLogo: false,
-        approvedQuote: false,
-        confirmedDefectRecord: false,
-      },
-    },
-  };
-  if (!validateSessionScope(sessionScopeInput)) {
-    throw new Error("Package smoke session scope input does not satisfy its schema.");
+  const preparation = JSON.parse(
+    (
+      await run(
+        executable,
+        [
+          "pilot",
+          "prepare-scope",
+          "--config",
+          "launchrig.yml",
+          "--bundle",
+          verifiedBundleDirectory,
+          "--expires-on",
+          "2099-12-31",
+          "--deletion-method",
+          "publisher-managed",
+          "--output",
+          sessionScopePath,
+          "--json",
+        ],
+        { cwd: publisherDirectory },
+      )
+    ).stdout,
+  );
+  const scopeMetadata = await lstat(sessionScopePath);
+  if (
+    !validateSessionScopeDraftResult(preparation) ||
+    preparation.status !== "created" ||
+    preparation.binding?.bundleId !== verifiedBundleManifest.bundleId ||
+    preparation.binding?.packageSha256 !== verifiedBundleManifest.package.sha256 ||
+    preparation.bundleVerification?.status !== "passed" ||
+    preparation.policyValid !== true ||
+    preparation.reviewRequired !== true ||
+    preparation.approvalReceiptCreated !== false ||
+    preparation.pilotStateChecked !== false ||
+    preparation.deviceEnvironmentChecked !== false ||
+    preparation.publisherIdentity !== "not-established" ||
+    preparation.consentAuthenticity !== "not-established" ||
+    preparation.bundleAuthenticity !== "not-established" ||
+    preparation.externalGrantGate !== "not-established" ||
+    preparation.grantReady !== false ||
+    !scopeMetadata.isFile() ||
+    scopeMetadata.nlink !== 1 ||
+    (process.platform !== "win32" && (scopeMetadata.mode & 0o777) !== 0o600) ||
+    JSON.stringify(preparation).includes(sessionScopePath) ||
+    JSON.stringify(preparation).includes("urn:launchrig:") ||
+    JSON.stringify(preparation).includes("Android Device Ready") ||
+    JSON.stringify(preparation).includes("Android/MWA Ready")
+  ) {
+    throw new Error("Installed pilot scope preparation did not preserve its private device-free contract.");
   }
-  const sessionScopeBytes = Buffer.from(JSON.stringify(sessionScopeInput, null, 2) + "\n", "utf8");
-  await writeFile(sessionScopePath, sessionScopeBytes, { flag: "wx", mode: 0o600 });
-  await chmod(sessionScopePath, 0o600);
+  const sessionScopeBytes = await readFile(sessionScopePath);
+  const sessionScopeInput = JSON.parse(sessionScopeBytes.toString("utf8"));
+  if (
+    !validateSessionScope(sessionScopeInput) ||
+    sessionScopeInput.bundle?.bundleId !== verifiedBundleManifest.bundleId ||
+    sessionScopeInput.bundle?.packageSha256 !== verifiedBundleManifest.package.sha256 ||
+    Object.values(sessionScopeInput.policy?.sharing ?? {}).some((value) => value !== false)
+  ) {
+    throw new Error("Prepared package smoke session scope does not satisfy its safe schema contract.");
+  }
   const sessionScopeReceipt = JSON.parse(
     (await run(executable, ["pilot", "scope", sessionScopePath, "--json"], {
       cwd: publisherDirectory,
@@ -974,6 +1086,7 @@ try {
   ) {
     throw new Error("Installed pilot scope did not preserve its private claim-limited receipt contract.");
   }
+  await writeFile(appApkPath, "package smoke app artifact changed after approval\n", { mode: 0o600 });
   let scopedPreflightFailure;
   try {
     await run(

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -46,6 +47,17 @@ interface BundleLibrary {
 
 interface BundleVerifier {
   verifyPublisherBundle(directory: string): Promise<BundleManifest>;
+  verifyPublisherBundleAtIdentity(
+    directory: string,
+    identity: { dev: bigint; ino: bigint },
+  ): Promise<BundleManifest>;
+  verifyPublisherBundleSnapshot(directory: string): Promise<{
+    profile: string;
+    bundleId: string;
+    manifestSha256: string;
+    sha256SumsSha256: string;
+    packageSha256: string;
+  }>;
 }
 
 const bundleLibrary = (await import(
@@ -67,6 +79,7 @@ const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
+const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
 const LEGACY_REHEARSAL_CHECKS = [
   "offline-package-install",
   "installed-version-match",
@@ -91,6 +104,10 @@ const V9_REHEARSAL_CHECKS = [
 const V10_REHEARSAL_CHECKS = [
   ...V9_REHEARSAL_CHECKS,
   "installed-scope-linked-governance-contract",
+];
+const V11_REHEARSAL_CHECKS = [
+  ...V10_REHEARSAL_CHECKS,
+  "device-free-consent-safe-scope-preparation",
 ];
 const REQUIRED_PAYLOADS = [
   "README.md",
@@ -256,6 +273,10 @@ const PACKED_SCHEMAS_V9 = [
   ...PACKED_SCHEMAS_V8,
   "schemas/launchrig-pilot-evidence-v3.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V11 = [
+  ...PACKED_SCHEMAS_V9,
+  "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
+].sort();
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
@@ -281,6 +302,15 @@ const PACKED_COMPILED_ADDITIONS_V8_ONLY = [
 const PACKED_COMPILED_ADDITIONS_V8 = [
   ...PACKED_COMPILED_ADDITIONS_V7,
   ...PACKED_COMPILED_ADDITIONS_V8_ONLY,
+];
+const PACKED_COMPILED_ADDITIONS_V11_ONLY = [
+  "package/dist/src/pilot/scope-preparation.d.ts",
+  "package/dist/src/pilot/scope-preparation.js",
+  "package/dist/src/pilot/scope-preparation.js.map",
+];
+const PACKED_RUNTIME_FILES_V11 = [
+  "scripts/runtime-contract.mjs",
+  "scripts/verify-pilot-bundle.mjs",
 ];
 
 function tarHeader(name: string, size: number): Buffer {
@@ -329,39 +359,75 @@ const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.
 
 function createTestPackageArchive(
   extraPaths: string[] = [],
-  profile = BUNDLE_PROFILE_V10,
+  profile = BUNDLE_PROFILE_V11,
   omittedPaths: string[] = [],
 ): Buffer {
   const inventories = {
-    [BUNDLE_PROFILE_V1]: { documents: PACKED_DOCUMENTS_V1, schemas: PACKED_SCHEMAS_V1, actionFiles: [] },
-    [BUNDLE_PROFILE_V2]: { documents: PACKED_DOCUMENTS_V2, schemas: PACKED_SCHEMAS_V2, actionFiles: [] },
-    [BUNDLE_PROFILE_V3]: { documents: PACKED_DOCUMENTS_V3, schemas: PACKED_SCHEMAS_V3, actionFiles: [] },
-    [BUNDLE_PROFILE_V4]: { documents: PACKED_DOCUMENTS_V4, schemas: PACKED_SCHEMAS_V4, actionFiles: [] },
-    [BUNDLE_PROFILE_V5]: { documents: PACKED_DOCUMENTS_V5, schemas: PACKED_SCHEMAS_V5, actionFiles: [] },
+    [BUNDLE_PROFILE_V1]: {
+      documents: PACKED_DOCUMENTS_V1,
+      schemas: PACKED_SCHEMAS_V1,
+      actionFiles: [],
+      runtimeFiles: [],
+    },
+    [BUNDLE_PROFILE_V2]: {
+      documents: PACKED_DOCUMENTS_V2,
+      schemas: PACKED_SCHEMAS_V2,
+      actionFiles: [],
+      runtimeFiles: [],
+    },
+    [BUNDLE_PROFILE_V3]: {
+      documents: PACKED_DOCUMENTS_V3,
+      schemas: PACKED_SCHEMAS_V3,
+      actionFiles: [],
+      runtimeFiles: [],
+    },
+    [BUNDLE_PROFILE_V4]: {
+      documents: PACKED_DOCUMENTS_V4,
+      schemas: PACKED_SCHEMAS_V4,
+      actionFiles: [],
+      runtimeFiles: [],
+    },
+    [BUNDLE_PROFILE_V5]: {
+      documents: PACKED_DOCUMENTS_V5,
+      schemas: PACKED_SCHEMAS_V5,
+      actionFiles: [],
+      runtimeFiles: [],
+    },
     [BUNDLE_PROFILE_V6]: {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V5,
       actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: [],
     },
     [BUNDLE_PROFILE_V7]: {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V7,
       actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: [],
     },
     [BUNDLE_PROFILE_V8]: {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V8,
       actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: [],
     },
     [BUNDLE_PROFILE_V9]: {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V9,
       actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: [],
     },
     [BUNDLE_PROFILE_V10]: {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V9,
       actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: [],
+    },
+    [BUNDLE_PROFILE_V11]: {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V11,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
     },
   };
   const inventory = inventories[profile as keyof typeof inventories];
@@ -382,8 +448,10 @@ function createTestPackageArchive(
     "package/dist/src/cli.js",
     "package/dist/src/fixtures/matrix.js",
     "package/package.json",
-    ...(profile === BUNDLE_PROFILE_V10 || profile === BUNDLE_PROFILE_V9 || profile === BUNDLE_PROFILE_V8
-      ? PACKED_COMPILED_ADDITIONS_V8
+    ...(profile === BUNDLE_PROFILE_V11
+      ? [...PACKED_COMPILED_ADDITIONS_V8, ...PACKED_COMPILED_ADDITIONS_V11_ONLY]
+      : profile === BUNDLE_PROFILE_V10 || profile === BUNDLE_PROFILE_V9 || profile === BUNDLE_PROFILE_V8
+        ? PACKED_COMPILED_ADDITIONS_V8
       : profile === BUNDLE_PROFILE_V7
         ? PACKED_COMPILED_ADDITIONS_V7
         : []),
@@ -392,6 +460,7 @@ function createTestPackageArchive(
     ...packedSchemas.map((entry) => "package/" + entry),
     ...PACKED_TEMPLATES.map((entry) => "package/" + entry),
     ...inventory.actionFiles.map((entry) => "package/" + entry),
+    ...inventory.runtimeFiles.map((entry) => "package/" + entry),
     ...extraPaths,
   ].filter((entry) => !omittedPaths.includes(entry)).sort();
   const blocks: Buffer[] = [];
@@ -420,7 +489,7 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
-  profile = BUNDLE_PROFILE_V10,
+  profile = BUNDLE_PROFILE_V11,
 ): Promise<BundleManifest> {
   for (const relativePath of [...REQUIRED_PAYLOADS, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
@@ -454,7 +523,7 @@ test("pilot bundle arguments require one explicit output", () => {
 });
 
 test("pilot bundle output refuses relative, existing, and symlink-parent paths", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-path-"));
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-path-")));
   try {
     await assert.rejects(() => bundleLibrary.resolveNewOutputDirectory("relative-bundle"), /absolute path/);
     const candidate = path.join(directory, "publisher-rc");
@@ -470,6 +539,19 @@ test("pilot bundle output refuses relative, existing, and symlink-parent paths",
     await assert.rejects(
       () => bundleLibrary.resolveNewOutputDirectory(path.join(linkedParent, "publisher-rc")),
       /non-symlink directory/,
+    );
+
+    const realAncestor = path.join(directory, "real-ancestor");
+    const nestedParent = path.join(realAncestor, "nested-parent");
+    const linkedAncestor = path.join(directory, "linked-ancestor");
+    await mkdir(nestedParent, { recursive: true });
+    await symlink(realAncestor, linkedAncestor, "dir");
+    await assert.rejects(
+      () =>
+        bundleLibrary.resolveNewOutputDirectory(
+          path.join(linkedAncestor, "nested-parent", "publisher-rc"),
+        ),
+      /must not contain symbolic-link components/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -488,6 +570,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     BUNDLE_PROFILE_V8,
     BUNDLE_PROFILE_V9,
     BUNDLE_PROFILE_V10,
+    BUNDLE_PROFILE_V11,
   ]) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
     try {
@@ -501,15 +584,17 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
       assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
       assert.deepEqual(
         verified.consumerRehearsal.checks,
-        profile === BUNDLE_PROFILE_V10
-          ? V10_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V9
-            ? V9_REHEARSAL_CHECKS
-            : profile === BUNDLE_PROFILE_V8
-              ? V8_REHEARSAL_CHECKS
-              : profile === BUNDLE_PROFILE_V7
-                ? V7_REHEARSAL_CHECKS
-                : LEGACY_REHEARSAL_CHECKS,
+        profile === BUNDLE_PROFILE_V11
+          ? V11_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V10
+            ? V10_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V9
+              ? V9_REHEARSAL_CHECKS
+              : profile === BUNDLE_PROFILE_V8
+                ? V8_REHEARSAL_CHECKS
+                : profile === BUNDLE_PROFILE_V7
+                  ? V7_REHEARSAL_CHECKS
+                  : LEGACY_REHEARSAL_CHECKS,
       );
       assert.deepEqual(verified.sourceVerification, {
         status: "passed",
@@ -529,7 +614,49 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
   }
 });
 
-test("publisher bundle defaults to the RC10 operational contract", () => {
+test("publisher bundle snapshot returns only verified identity fields from exact bytes", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-snapshot-"));
+  try {
+    const expected = await writeSyntheticBundle(directory);
+    const manifestBytes = await readFile(path.join(directory, "manifest.json"));
+    const sumsBytes = await readFile(path.join(directory, "SHA256SUMS"));
+    const snapshot = await bundleVerifier.verifyPublisherBundleSnapshot(directory);
+    assert.deepEqual(Object.keys(snapshot), [
+      "profile",
+      "bundleId",
+      "manifestSha256",
+      "sha256SumsSha256",
+      "packageSha256",
+    ]);
+    assert.deepEqual(snapshot, {
+      profile: BUNDLE_PROFILE_V11,
+      bundleId: expected.bundleId,
+      manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
+      sha256SumsSha256: createHash("sha256").update(sumsBytes).digest("hex"),
+      packageSha256: expected.package.sha256,
+    });
+    assert.equal(Object.isFrozen(snapshot), true);
+    assert.equal(JSON.stringify(snapshot).includes(directory), false);
+    const rootIdentity = await lstat(directory, { bigint: true });
+    const identityBound = await bundleVerifier.verifyPublisherBundleAtIdentity(directory, {
+      dev: rootIdentity.dev,
+      ino: rootIdentity.ino,
+    });
+    assert.equal(identityBound.bundleId, expected.bundleId);
+    await assert.rejects(
+      () =>
+        bundleVerifier.verifyPublisherBundleAtIdentity(directory, {
+          dev: rootIdentity.dev,
+          ino: rootIdentity.ino + 1n,
+        }),
+      /root changed while being resolved/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("publisher bundle defaults to the RC11 consent-safe scope contract", () => {
   const packageEntry = {
     path: ARCHIVE,
     sizeBytes: 1,
@@ -544,9 +671,25 @@ test("publisher bundle defaults to the RC10 operational contract", () => {
     packagePath: ARCHIVE,
     files: [packageEntry],
   });
-  assert.equal(manifest.profile, BUNDLE_PROFILE_V10);
-  assert.deepEqual(manifest.consumerRehearsal.checks, V10_REHEARSAL_CHECKS);
-  assert.deepEqual(V10_REHEARSAL_CHECKS.slice(0, -1), V9_REHEARSAL_CHECKS);
+  assert.equal(manifest.profile, BUNDLE_PROFILE_V11);
+  assert.deepEqual(manifest.consumerRehearsal.checks, V11_REHEARSAL_CHECKS);
+  assert.deepEqual(V11_REHEARSAL_CHECKS.slice(0, -1), V10_REHEARSAL_CHECKS);
+});
+
+test("publisher bundle v10 rejects the RC11-only rehearsal claim", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v10-rehearsal-"));
+  try {
+    const archive = createTestPackageArchive([], BUNDLE_PROFILE_V10);
+    const manifest = await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V10);
+    manifest.consumerRehearsal.checks = [...V11_REHEARSAL_CHECKS];
+    await writeFile(path.join(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /consumer rehearsal contract is invalid/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("publisher bundle v9 rejects the RC10-only rehearsal claim", async () => {
@@ -751,6 +894,60 @@ test("publisher bundle v9 requires the scope-enforced evidence schema", async ()
   }
 });
 
+test("publisher bundle v11 requires its scope preparation inventory", async () => {
+  for (const omittedPath of [
+    ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+    "package/schemas/launchrig-pilot-session-scope-draft-result.schema.json",
+    ...PACKED_RUNTIME_FILES_V11.map((entry) => "package/" + entry),
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v11-required-"));
+    try {
+      const archive = createTestPackageArchive([], BUNDLE_PROFILE_V11, [omittedPath]);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V11);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /RC11 is missing|inventory does not match the release allowlist/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v10 rejects the RC11-only scope preparation inventory", async () => {
+  for (const addedPath of [
+    ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+    "package/schemas/launchrig-pilot-session-scope-draft-result.schema.json",
+    ...PACKED_RUNTIME_FILES_V11.map((entry) => "package/" + entry),
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v10-frozen-"));
+    try {
+      const archive = createTestPackageArchive([addedPath], BUNDLE_PROFILE_V10);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V10);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /outside the release allowlist|outside its historical profile/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v11 rejects unlisted package scripts", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v11-script-extra-"));
+  try {
+    const archive = createTestPackageArchive(["package/scripts/private-helper.mjs"], BUNDLE_PROFILE_V11);
+    await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V11);
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /outside the release allowlist/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("publisher bundle v9 rejects schemas outside its exact inventory", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v9-extra-"));
   try {
@@ -904,5 +1101,21 @@ test("publisher bundle verifier rejects payload symlinks", async () => {
     await assert.rejects(() => bundleVerifier.verifyPublisherBundle(directory), /symlink/);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("publisher bundle verifier rejects hard-linked payload files", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-hardlink-"));
+  const externalDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-hardlink-target-"));
+  try {
+    await writeSyntheticBundle(directory);
+    await link(path.join(directory, "README.md"), path.join(externalDirectory, "README.md"));
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /unsafe or oversized|unsupported entry/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(externalDirectory, { recursive: true, force: true });
   }
 });

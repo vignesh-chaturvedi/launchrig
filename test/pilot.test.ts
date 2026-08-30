@@ -384,7 +384,10 @@ test("pilot policy lint is state-free, device-free, and claim-limited", async ()
       ),
       0,
     );
-    assert.match(humanOutput.join("\n"), /Pilot policy lint: ready for an attended device check/);
+    assert.match(
+      humanOutput.join("\n"),
+      /Pilot policy lint: static policy passed, ready for private scope preparation/,
+    );
     assert.match(humanOutput.join("\n"), /device environment checked: no/);
     assert.match(humanOutput.join("\n"), /external grant gate: not established/);
     assert.doesNotMatch(humanOutput.join("\n"), /Android Device Ready|Android\/MWA Ready/);

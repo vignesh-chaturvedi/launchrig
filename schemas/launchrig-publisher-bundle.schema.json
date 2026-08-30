@@ -34,7 +34,8 @@
         "phase-2d-publisher-readiness-rc-v7",
         "phase-2e-consent-scope-rc-v8",
         "phase-2f-scope-enforced-pilot-rc-v9",
-        "phase-2g-operational-contract-rc-v10"
+        "phase-2g-operational-contract-rc-v10",
+        "phase-2h-consent-safe-scope-rc-v11"
       ]
     },
     "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
@@ -144,7 +145,7 @@
     {
       "if": {
         "properties": {
-          "profile": { "const": "phase-2g-operational-contract-rc-v10" }
+          "profile": { "const": "phase-2h-consent-safe-scope-rc-v11" }
         }
       },
       "then": {
@@ -164,7 +165,8 @@
                   "device-free-pilot-policy-lint-refusal",
                   "device-free-session-scope-receipt",
                   "device-free-approved-scope-enforcement",
-                  "installed-scope-linked-governance-contract"
+                  "installed-scope-linked-governance-contract",
+                  "device-free-consent-safe-scope-preparation"
                 ]
               }
             }
@@ -174,7 +176,7 @@
       "else": {
         "if": {
           "properties": {
-            "profile": { "const": "phase-2f-scope-enforced-pilot-rc-v9" }
+            "profile": { "const": "phase-2g-operational-contract-rc-v10" }
           }
         },
         "then": {
@@ -193,7 +195,8 @@
                     "device-free-preflight-refusal",
                     "device-free-pilot-policy-lint-refusal",
                     "device-free-session-scope-receipt",
-                    "device-free-approved-scope-enforcement"
+                    "device-free-approved-scope-enforcement",
+                    "installed-scope-linked-governance-contract"
                   ]
                 }
               }
@@ -203,7 +206,7 @@
         "else": {
           "if": {
             "properties": {
-              "profile": { "const": "phase-2e-consent-scope-rc-v8" }
+              "profile": { "const": "phase-2f-scope-enforced-pilot-rc-v9" }
             }
           },
           "then": {
@@ -221,7 +224,8 @@
                       "starter-validation",
                       "device-free-preflight-refusal",
                       "device-free-pilot-policy-lint-refusal",
-                      "device-free-session-scope-receipt"
+                      "device-free-session-scope-receipt",
+                      "device-free-approved-scope-enforcement"
                     ]
                   }
                 }
@@ -231,7 +235,7 @@
           "else": {
             "if": {
               "properties": {
-                "profile": { "const": "phase-2d-publisher-readiness-rc-v7" }
+                "profile": { "const": "phase-2e-consent-scope-rc-v8" }
               }
             },
             "then": {
@@ -248,7 +252,8 @@
                         "starter-generation",
                         "starter-validation",
                         "device-free-preflight-refusal",
-                        "device-free-pilot-policy-lint-refusal"
+                        "device-free-pilot-policy-lint-refusal",
+                        "device-free-session-scope-receipt"
                       ]
                     }
                   }
@@ -256,20 +261,48 @@
               }
             },
             "else": {
-              "properties": {
-                "consumerRehearsal": {
-                  "type": "object",
-                  "properties": {
-                    "checks": {
-                      "const": [
-                        "offline-package-install",
-                        "installed-version-match",
-                        "installed-help-contract",
-                        "pilot-timer-start",
-                        "starter-generation",
-                        "starter-validation",
-                        "device-free-preflight-refusal"
-                      ]
+              "if": {
+                "properties": {
+                  "profile": { "const": "phase-2d-publisher-readiness-rc-v7" }
+                }
+              },
+              "then": {
+                "properties": {
+                  "consumerRehearsal": {
+                    "type": "object",
+                    "properties": {
+                      "checks": {
+                        "const": [
+                          "offline-package-install",
+                          "installed-version-match",
+                          "installed-help-contract",
+                          "pilot-timer-start",
+                          "starter-generation",
+                          "starter-validation",
+                          "device-free-preflight-refusal",
+                          "device-free-pilot-policy-lint-refusal"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "consumerRehearsal": {
+                    "type": "object",
+                    "properties": {
+                      "checks": {
+                        "const": [
+                          "offline-package-install",
+                          "installed-version-match",
+                          "installed-help-contract",
+                          "pilot-timer-start",
+                          "starter-generation",
+                          "starter-validation",
+                          "device-free-preflight-refusal"
+                        ]
+                      }
                     }
                   }
                 }

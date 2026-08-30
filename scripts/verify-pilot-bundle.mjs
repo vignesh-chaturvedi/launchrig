@@ -45,6 +45,10 @@ const REHEARSAL_CHECKS_V10 = [
   ...REHEARSAL_CHECKS_V9,
   "installed-scope-linked-governance-contract",
 ];
+const REHEARSAL_CHECKS_V11 = [
+  ...REHEARSAL_CHECKS_V10,
+  "device-free-consent-safe-scope-preparation",
+];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
   "frozen-offline-dependency-restore",
@@ -67,6 +71,7 @@ const BUNDLE_PROFILE_V7 = "phase-2d-publisher-readiness-rc-v7";
 const BUNDLE_PROFILE_V8 = "phase-2e-consent-scope-rc-v8";
 const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
+const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -215,6 +220,10 @@ const PACKED_SCHEMAS_V9 = [
   ...PACKED_SCHEMAS_V8,
   "schemas/launchrig-pilot-evidence-v3.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V11 = [
+  ...PACKED_SCHEMAS_V9,
+  "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
+].sort();
 const PACKED_ACTION_FILES_V6 = [
   "action.yml",
   "action/run-validation.mjs",
@@ -234,12 +243,21 @@ const PACKED_COMPILED_ADDITIONS_V8 = [
   ...PACKED_COMPILED_ADDITIONS_V7,
   ...PACKED_COMPILED_ADDITIONS_V8_ONLY,
 ];
+const PACKED_COMPILED_ADDITIONS_V11_ONLY = [
+  "package/dist/src/pilot/scope-preparation.d.ts",
+  "package/dist/src/pilot/scope-preparation.js",
+  "package/dist/src/pilot/scope-preparation.js.map",
+];
 const PACKED_TEMPLATES = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
   "templates/pilot-notes.md",
   "templates/publisher-intake.md",
   "templates/sharing-review.md",
+];
+const PACKED_RUNTIME_FILES_V11 = [
+  "scripts/runtime-contract.mjs",
+  "scripts/verify-pilot-bundle.mjs",
 ];
 
 function packedInventory(profile) {
@@ -291,6 +309,15 @@ function packedInventory(profile) {
       documents: PACKED_DOCUMENTS_V6,
       schemas: PACKED_SCHEMAS_V9,
       actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: [],
+    };
+  }
+  if (profile === BUNDLE_PROFILE_V11) {
+    return {
+      documents: PACKED_DOCUMENTS_V6,
+      schemas: PACKED_SCHEMAS_V11,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
     };
   }
   throw new Error("Unsupported bundle manifest.");
@@ -323,6 +350,28 @@ function sameFileIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
+function metadataFingerprint(metadata, type) {
+  return {
+    type,
+    dev: metadata.dev.toString(),
+    ino: metadata.ino.toString(),
+    size: metadata.size.toString(),
+    mode: metadata.mode.toString(),
+    nlink: metadata.nlink.toString(),
+    mtimeNs: metadata.mtimeNs.toString(),
+    ctimeNs: metadata.ctimeNs.toString(),
+  };
+}
+
+function sameMetadata(left, right, type) {
+  return JSON.stringify(metadataFingerprint(left, type)) === JSON.stringify(metadataFingerprint(right, type));
+}
+
+function treeRootMatchesMetadata(tree, metadata) {
+  const root = tree.entries.find(([relativePath]) => relativePath === ".");
+  return Boolean(root) && JSON.stringify(root[1]) === JSON.stringify(metadataFingerprint(metadata, "directory"));
+}
+
 function assertExactKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(label + " must be an object.");
   const actual = Object.keys(value).sort();
@@ -346,66 +395,117 @@ function assertSafeRelativePath(value) {
   }
 }
 
-async function collectFiles(directory, prefix = "") {
-  const files = [];
-  const before = await lstat(directory);
+async function captureBundleTree(directory, prefix = "", state = { files: [], entries: [] }) {
+  const before = await lstat(directory, { bigint: true });
   if (before.isSymbolicLink() || !before.isDirectory()) {
     throw new Error("Bundle contains an unsafe directory: " + (prefix || "."));
   }
+  state.entries.push([prefix || ".", metadataFingerprint(before, "directory")]);
   const entries = await readdir(directory, { withFileTypes: true });
   entries.sort((left, right) => comparePaths(left.name, right.name));
   for (const entry of entries) {
     const relativePath = path.posix.join(prefix, entry.name);
     const absolutePath = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error("Bundle contains a symlink: " + relativePath);
-    if (entry.isDirectory()) {
-      files.push(...(await collectFiles(absolutePath, relativePath)));
+    const metadata = await lstat(absolutePath, { bigint: true });
+    if (entry.isSymbolicLink() || metadata.isSymbolicLink()) {
+      throw new Error("Bundle contains a symlink: " + relativePath);
+    }
+    if (entry.isDirectory() && metadata.isDirectory()) {
+      await captureBundleTree(absolutePath, relativePath, state);
       continue;
     }
-    if (!entry.isFile()) throw new Error("Bundle contains an unsupported entry: " + relativePath);
-    files.push(relativePath);
+    if (!entry.isFile() || !metadata.isFile() || metadata.nlink !== 1n) {
+      throw new Error("Bundle contains an unsupported entry: " + relativePath);
+    }
+    state.files.push(relativePath);
+    state.entries.push([relativePath, metadataFingerprint(metadata, "file")]);
   }
-  const after = await lstat(directory);
+  const after = await lstat(directory, { bigint: true });
   if (
     after.isSymbolicLink() ||
     !after.isDirectory() ||
-    !sameFileIdentity(before, after) ||
-    before.mtimeMs !== after.mtimeMs
+    !sameMetadata(before, after, "directory")
   ) {
     throw new Error("Bundle directory changed while being inspected: " + (prefix || "."));
   }
-  return files.sort();
+  if (prefix === "") {
+    state.files.sort(comparePaths);
+    state.entries.sort((left, right) => comparePaths(left[0], right[0]));
+  }
+  return state;
 }
 
 async function readRegularFile(bundleRoot, relativePath, maximumBytes) {
   assertSafeRelativePath(relativePath);
   const candidate = path.join(bundleRoot, ...relativePath.split("/"));
-  const metadata = await lstat(candidate);
-  if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > maximumBytes) {
+  const metadata = await lstat(candidate, { bigint: true });
+  if (
+    metadata.isSymbolicLink() ||
+    !metadata.isFile() ||
+    metadata.size < 1n ||
+    metadata.size > BigInt(maximumBytes) ||
+    metadata.nlink !== 1n
+  ) {
     throw new Error("Bundle file is unsafe or oversized: " + relativePath);
   }
   const resolved = await realpath(candidate);
-  if (!resolved.startsWith(bundleRoot + path.sep)) throw new Error("Bundle file escapes its root: " + relativePath);
+  const relativeResolved = path.relative(bundleRoot, resolved);
+  if (
+    relativeResolved.length === 0 ||
+    path.isAbsolute(relativeResolved) ||
+    relativeResolved === ".." ||
+    relativeResolved.startsWith(".." + path.sep)
+  ) {
+    throw new Error("Bundle file escapes its root: " + relativePath);
+  }
   let handle;
   try {
     handle = await open(
       resolved,
       constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | constants.O_NONBLOCK,
     );
-    const opened = await handle.stat();
-    if (!opened.isFile() || !sameFileIdentity(metadata, opened) || opened.size !== metadata.size) {
+    const opened = await handle.stat({ bigint: true });
+    if (
+      !opened.isFile() ||
+      !sameFileIdentity(metadata, opened) ||
+      opened.size !== metadata.size ||
+      opened.mtimeNs !== metadata.mtimeNs ||
+      opened.ctimeNs !== metadata.ctimeNs ||
+      opened.mode !== metadata.mode ||
+      opened.nlink !== 1n
+    ) {
       throw new Error("Bundle file changed while being opened: " + relativePath);
     }
-    const bytes = await handle.readFile();
-    const after = await handle.stat();
+    const expectedSize = Number(opened.size);
+    const buffer = Buffer.alloc(expectedSize + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const result = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+      if (result.bytesRead === 0) break;
+      bytesRead += result.bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    const afterPath = await lstat(candidate, { bigint: true });
     if (
-      bytes.length !== opened.size ||
+      bytesRead !== expectedSize ||
+      !sameFileIdentity(opened, after) ||
       after.size !== opened.size ||
-      after.mtimeMs !== opened.mtimeMs
+      after.mtimeNs !== opened.mtimeNs ||
+      after.ctimeNs !== opened.ctimeNs ||
+      after.mode !== opened.mode ||
+      after.nlink !== 1n ||
+      afterPath.isSymbolicLink() ||
+      !afterPath.isFile() ||
+      !sameFileIdentity(opened, afterPath) ||
+      afterPath.size !== opened.size ||
+      afterPath.mtimeNs !== opened.mtimeNs ||
+      afterPath.ctimeNs !== opened.ctimeNs ||
+      afterPath.mode !== opened.mode ||
+      afterPath.nlink !== 1n
     ) {
       throw new Error("Bundle file changed while being read: " + relativePath);
     }
-    return bytes;
+    return buffer.subarray(0, expectedSize);
   } finally {
     await handle?.close().catch(() => undefined);
   }
@@ -481,8 +581,10 @@ function isAllowedArchivePath(archivePath, inventory) {
   const baseName = path.posix.basename(relativePath);
   const parts = relativePath.split("/");
   const rootDirectory = parts.length > 1 ? parts[0] : "";
+  const runtimeFileAllowed = (inventory.runtimeFiles ?? []).includes(relativePath);
   if (
-    [".git", ".launchrig", ".superstack", "apps", "fixtures", "scripts", "test"].includes(rootDirectory) ||
+    [".git", ".launchrig", ".superstack", "apps", "fixtures", "test"].includes(rootDirectory) ||
+    (rootDirectory === "scripts" && !runtimeFileAllowed) ||
     parts.some((part) => [".git", ".launchrig", ".superstack"].includes(part)) ||
     baseName.startsWith(".env") ||
     /\.(?:apk|jks|keystore|key|log|p12|pem)$/i.test(baseName)
@@ -498,7 +600,8 @@ function isAllowedArchivePath(archivePath, inventory) {
     inventory.documents.includes(relativePath) ||
     inventory.schemas.includes(relativePath) ||
     PACKED_TEMPLATES.includes(relativePath) ||
-    inventory.actionFiles.includes(relativePath)
+    inventory.actionFiles.includes(relativePath) ||
+    runtimeFileAllowed
   );
 }
 
@@ -560,7 +663,13 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
-  if (
+  if (manifest.profile === BUNDLE_PROFILE_V11) {
+    for (const required of [...PACKED_COMPILED_ADDITIONS_V8, ...PACKED_COMPILED_ADDITIONS_V11_ONLY]) {
+      if (!entries.has(required)) {
+        throw new Error("LaunchRig package RC11 is missing " + required + ".");
+      }
+    }
+  } else if (
     manifest.profile === BUNDLE_PROFILE_V10 ||
     manifest.profile === BUNDLE_PROFILE_V9 ||
     manifest.profile === BUNDLE_PROFILE_V8
@@ -570,18 +679,26 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
         throw new Error("LaunchRig package scope-capable profile is missing " + required + ".");
       }
     }
+    const unexpected = PACKED_COMPILED_ADDITIONS_V11_ONLY.find((entry) => entries.has(entry));
+    if (unexpected) {
+      throw new Error("LaunchRig package contains an RC11 file outside its historical profile: " + unexpected);
+    }
   } else if (manifest.profile === BUNDLE_PROFILE_V7) {
     for (const required of PACKED_COMPILED_ADDITIONS_V7) {
       if (!entries.has(required)) {
         throw new Error("LaunchRig package RC7 is missing " + required + ".");
       }
     }
-    const unexpected = PACKED_COMPILED_ADDITIONS_V8_ONLY.find((entry) => entries.has(entry));
+    const unexpected = [...PACKED_COMPILED_ADDITIONS_V8_ONLY, ...PACKED_COMPILED_ADDITIONS_V11_ONLY].find(
+      (entry) => entries.has(entry),
+    );
     if (unexpected) {
       throw new Error("LaunchRig package contains an RC8 file outside its historical profile: " + unexpected);
     }
   } else {
-    const unexpected = PACKED_COMPILED_ADDITIONS_V8.find((entry) => entries.has(entry));
+    const unexpected = [...PACKED_COMPILED_ADDITIONS_V8, ...PACKED_COMPILED_ADDITIONS_V11_ONLY].find(
+      (entry) => entries.has(entry),
+    );
     if (unexpected) {
       throw new Error("LaunchRig package contains a newer release file outside its historical profile: " + unexpected);
     }
@@ -591,6 +708,7 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
     ["documentation", inventory.documents, "package/docs/"],
     ["schema", inventory.schemas, "package/schemas/"],
     ["template", PACKED_TEMPLATES, "package/templates/"],
+    ["runtime verifier", inventory.runtimeFiles ?? [], "package/scripts/"],
   ]) {
     const actual = [...entries.keys()]
       .filter((entry) => entry.startsWith(prefix))
@@ -692,15 +810,17 @@ function validateManifest(manifest) {
     "Bundle manifest",
   );
   const expectedRehearsalChecks =
-    manifest.profile === BUNDLE_PROFILE_V10
-      ? REHEARSAL_CHECKS_V10
-      : manifest.profile === BUNDLE_PROFILE_V9
-        ? REHEARSAL_CHECKS_V9
-        : manifest.profile === BUNDLE_PROFILE_V8
-          ? REHEARSAL_CHECKS_V8
-          : manifest.profile === BUNDLE_PROFILE_V7
-            ? REHEARSAL_CHECKS_V7
-            : LEGACY_REHEARSAL_CHECKS;
+    manifest.profile === BUNDLE_PROFILE_V11
+      ? REHEARSAL_CHECKS_V11
+      : manifest.profile === BUNDLE_PROFILE_V10
+        ? REHEARSAL_CHECKS_V10
+        : manifest.profile === BUNDLE_PROFILE_V9
+          ? REHEARSAL_CHECKS_V9
+          : manifest.profile === BUNDLE_PROFILE_V8
+            ? REHEARSAL_CHECKS_V8
+            : manifest.profile === BUNDLE_PROFILE_V7
+              ? REHEARSAL_CHECKS_V7
+              : LEGACY_REHEARSAL_CHECKS;
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
@@ -715,6 +835,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V8,
       BUNDLE_PROFILE_V9,
       BUNDLE_PROFILE_V10,
+      BUNDLE_PROFILE_V11,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");
@@ -825,20 +946,27 @@ function validateManifest(manifest) {
   }
 }
 
-export async function verifyPublisherBundle(directory) {
+async function verifyPublisherBundleDetails(directory, expectedRootIdentity) {
   const requestedRoot = path.resolve(directory);
-  const rootMetadata = await lstat(requestedRoot);
+  const rootMetadata = await lstat(requestedRoot, { bigint: true });
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
     throw new Error("Bundle root must be a non-symlink directory.");
   }
   const bundleRoot = await realpath(requestedRoot);
-  const resolvedRootMetadata = await lstat(bundleRoot);
+  const resolvedRootMetadata = await lstat(bundleRoot, { bigint: true });
   if (
     resolvedRootMetadata.isSymbolicLink() ||
     !resolvedRootMetadata.isDirectory() ||
-    !sameFileIdentity(rootMetadata, resolvedRootMetadata)
+    !sameFileIdentity(rootMetadata, resolvedRootMetadata) ||
+    (expectedRootIdentity &&
+      (resolvedRootMetadata.dev !== expectedRootIdentity.dev ||
+        resolvedRootMetadata.ino !== expectedRootIdentity.ino))
   ) {
     throw new Error("Bundle root changed while being resolved.");
+  }
+  const initialTree = await captureBundleTree(bundleRoot);
+  if (!treeRootMatchesMetadata(initialTree, resolvedRootMetadata)) {
+    throw new Error("Bundle root changed before its tree was captured.");
   }
   const manifestBytes = await readRegularFile(bundleRoot, "manifest.json", MAX_MANIFEST_BYTES);
   let manifest;
@@ -851,7 +979,7 @@ export async function verifyPublisherBundle(directory) {
   if (!manifestBytes.equals(normalizedManifest)) throw new Error("Bundle manifest must use canonical formatting.");
   validateManifest(manifest);
 
-  const actualFiles = await collectFiles(bundleRoot);
+  const actualFiles = initialTree.files;
   const expectedFiles = [...manifest.files.map((file) => file.path), "manifest.json", "SHA256SUMS"].sort();
   if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
     throw new Error("Bundle contains missing or unlisted files.");
@@ -871,21 +999,57 @@ export async function verifyPublisherBundle(directory) {
     manifest.files.map((file) => file.sha256 + "  " + file.path).join("\n") + "\n";
   const sums = await readRegularFile(bundleRoot, "SHA256SUMS", MAX_MANIFEST_BYTES);
   if (!sums.equals(Buffer.from(expectedSums, "utf8"))) throw new Error("SHA256SUMS does not match the manifest.");
-  const finalRootMetadata = await lstat(requestedRoot);
-  const finalResolvedRootMetadata = await lstat(bundleRoot);
+  const finalTree = await captureBundleTree(bundleRoot);
+  const finalRootMetadata = await lstat(requestedRoot, { bigint: true });
+  const finalResolvedRootMetadata = await lstat(bundleRoot, { bigint: true });
   if (
     finalRootMetadata.isSymbolicLink() ||
     !finalRootMetadata.isDirectory() ||
-    !sameFileIdentity(rootMetadata, finalRootMetadata) ||
+    !sameMetadata(rootMetadata, finalRootMetadata, "directory") ||
     finalResolvedRootMetadata.isSymbolicLink() ||
     !finalResolvedRootMetadata.isDirectory() ||
-    !sameFileIdentity(resolvedRootMetadata, finalResolvedRootMetadata) ||
-    rootMetadata.mtimeMs !== finalRootMetadata.mtimeMs ||
-    resolvedRootMetadata.mtimeMs !== finalResolvedRootMetadata.mtimeMs
+    !sameMetadata(resolvedRootMetadata, finalResolvedRootMetadata, "directory") ||
+    !treeRootMatchesMetadata(finalTree, finalResolvedRootMetadata) ||
+    JSON.stringify(initialTree) !== JSON.stringify(finalTree)
   ) {
-    throw new Error("Bundle root changed while being verified.");
+    throw new Error("Bundle tree changed while being verified.");
   }
-  return manifest;
+  const snapshot = Object.freeze({
+    profile: manifest.profile,
+    bundleId: manifest.bundleId,
+    manifestSha256: sha256(manifestBytes),
+    sha256SumsSha256: sha256(sums),
+    packageSha256: manifest.package.sha256,
+  });
+  if (
+    !/^sha256:[a-f0-9]{64}$/.test(snapshot.bundleId) ||
+    !/^[a-f0-9]{64}$/.test(snapshot.manifestSha256) ||
+    !/^[a-f0-9]{64}$/.test(snapshot.sha256SumsSha256) ||
+    !/^[a-f0-9]{64}$/.test(snapshot.packageSha256)
+  ) {
+    throw new Error("Verified bundle snapshot contains an invalid digest.");
+  }
+  return { manifest, snapshot };
+}
+
+export async function verifyPublisherBundle(directory) {
+  return (await verifyPublisherBundleDetails(directory)).manifest;
+}
+
+export async function verifyPublisherBundleSnapshot(directory) {
+  return (await verifyPublisherBundleDetails(directory)).snapshot;
+}
+
+export async function verifyPublisherBundleAtIdentity(directory, expectedRootIdentity) {
+  if (
+    !expectedRootIdentity ||
+    typeof expectedRootIdentity !== "object" ||
+    typeof expectedRootIdentity.dev !== "bigint" ||
+    typeof expectedRootIdentity.ino !== "bigint"
+  ) {
+    throw new Error("Expected bundle root identity is invalid.");
+  }
+  return (await verifyPublisherBundleDetails(directory, expectedRootIdentity)).manifest;
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
