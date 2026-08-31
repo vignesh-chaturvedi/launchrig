@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-human-send-decision.schema.json",
+  "title": "LaunchRig private human send decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "privacyProfile",
+    "decisionRef",
+    "decidedOn",
+    "authorizerRef",
+    "claimStatus",
+    "humanSendDecisionConfirmed",
+    "humanNoAdditionalRelatedReviewConfirmed",
+    "humanAuthorizerAuthenticated",
+    "reviewSetCompleteness",
+    "conflictStatus",
+    "latestStatus",
+    "reviewSetCount",
+    "request",
+    "review",
+    "prospect",
+    "draft",
+    "decision",
+    "reasonCodes",
+    "sourceRecheck",
+    "routeRecheck",
+    "relationshipDisclosureRecheck",
+    "compensationDisclosureRecheck",
+    "safetyRecheck",
+    "authorizationExpiresOn",
+    "sendAuthorization",
+    "authorizationScope",
+    "contact",
+    "messageDispatched",
+    "lifecycle",
+    "candidateCreated",
+    "interestRecorded",
+    "projectModificationAuthorized",
+    "phoneAccessAuthorized",
+    "pilotStateChecked",
+    "deviceEnvironmentChecked",
+    "publisherIdentity",
+    "publisherAuthority",
+    "publisherConsent",
+    "publisherIndependence",
+    "externalGrantGate",
+    "grantReady",
+    "limitations",
+    "integritySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-human-send-decision" },
+    "profile": { "const": "phase-2n-human-send-decision-v1" },
+    "privacyProfile": { "const": "opaque-authorizer-digests-decision-v1" },
+    "decisionRef": { "$ref": "#/$defs/decisionRef" },
+    "decidedOn": { "$ref": "#/$defs/date" },
+    "authorizerRef": { "$ref": "#/$defs/reviewerRef" },
+    "claimStatus": { "const": "human-operator-recorded-unattested" },
+    "humanSendDecisionConfirmed": { "const": true },
+    "humanNoAdditionalRelatedReviewConfirmed": { "const": true },
+    "humanAuthorizerAuthenticated": { "const": false },
+    "reviewSetCompleteness": { "const": "operator-asserted-unattested" },
+    "conflictStatus": { "const": "none-detected-in-operator-supplied-set" },
+    "latestStatus": { "const": "not-established" },
+    "reviewSetCount": { "const": 1 },
+    "request": { "$ref": "#/$defs/requestBinding" },
+    "review": { "$ref": "#/$defs/reviewBinding" },
+    "prospect": { "$ref": "#/$defs/fileBinding" },
+    "draft": { "$ref": "#/$defs/fileBinding" },
+    "decision": {
+      "enum": ["authorize-exact-reviewed-draft", "require-revision", "defer", "do-not-send"]
+    },
+    "reasonCodes": { "$ref": "#/$defs/reasonCodes" },
+    "sourceRecheck": { "$ref": "#/$defs/sourceRecheck" },
+    "routeRecheck": { "$ref": "#/$defs/routeRecheck" },
+    "relationshipDisclosureRecheck": { "$ref": "#/$defs/disclosureRecheck" },
+    "compensationDisclosureRecheck": { "$ref": "#/$defs/disclosureRecheck" },
+    "safetyRecheck": { "$ref": "#/$defs/safetyRecheck" },
+    "authorizationExpiresOn": {
+      "anyOf": [
+        { "$ref": "#/$defs/date" },
+        { "type": "null" }
+      ]
+    },
+    "sendAuthorization": {
+      "enum": ["authorized-for-one-exact-manual-fit-check-send", "not-authorized"]
+    },
+    "authorizationScope": {
+      "enum": ["one-manual-send-of-exact-reviewed-draft", "none"]
+    },
+    "contact": { "const": "not-contacted" },
+    "messageDispatched": { "const": false },
+    "lifecycle": { "const": "screening" },
+    "candidateCreated": { "const": false },
+    "interestRecorded": { "const": false },
+    "projectModificationAuthorized": { "const": false },
+    "phoneAccessAuthorized": { "const": false },
+    "pilotStateChecked": { "const": false },
+    "deviceEnvironmentChecked": { "const": false },
+    "publisherIdentity": { "const": "not-established" },
+    "publisherAuthority": { "const": "not-established" },
+    "publisherConsent": { "const": "not-established" },
+    "publisherIndependence": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": { "$ref": "#/$defs/limitations" },
+    "integritySha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/decisionMatrix" },
+    { "$ref": "#/$defs/recheckReasonMatrix" }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "size": { "type": "integer", "minimum": 1, "maximum": 262144 },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "reviewerRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:reviewer:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "reviewRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:prospect-review:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "decisionRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:send-decision:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "fileBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileSha256", "sizeBytes"],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "sizeBytes": { "$ref": "#/$defs/size" }
+      }
+    },
+    "requestBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileSha256", "contentSha256", "preparedOn", "reviewSetSha256"],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "contentSha256": { "$ref": "#/$defs/hash" },
+        "preparedOn": { "$ref": "#/$defs/date" },
+        "reviewSetSha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "reviewBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileSha256", "contentSha256", "reviewRef", "reviewedOn"],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "contentSha256": { "$ref": "#/$defs/hash" },
+        "reviewRef": { "$ref": "#/$defs/reviewRef" },
+        "reviewedOn": { "$ref": "#/$defs/date" }
+      }
+    },
+    "decision": {
+      "enum": ["authorize-exact-reviewed-draft", "require-revision", "defer", "do-not-send"]
+    },
+    "reasonCodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "exact-fit-check-send-authorized",
+          "draft-revision-required",
+          "timing-deferred",
+          "source-recheck-incomplete",
+          "route-recheck-incomplete",
+          "inappropriate-route",
+          "relationship-disclosure-incomplete",
+          "compensation-disclosure-incomplete",
+          "safety-recheck-incomplete",
+          "explicit-contact-restriction",
+          "operator-do-not-send"
+        ]
+      }
+    },
+    "sourceRecheck": { "enum": ["reopened-and-fact-confirmed", "incomplete-or-stale"] },
+    "routeRecheck": { "enum": ["appropriate", "inappropriate", "unresolved"] },
+    "disclosureRecheck": { "enum": ["complete-or-not-applicable", "incomplete"] },
+    "safetyRecheck": {
+      "enum": ["fit-check-only-boundaries-confirmed", "incomplete-or-unsafe"]
+    },
+    "decisionMatrix": {
+      "allOf": [
+        {
+          "if": { "properties": { "decision": { "const": "authorize-exact-reviewed-draft" } } },
+          "then": {
+            "properties": {
+              "reasonCodes": { "const": ["exact-fit-check-send-authorized"] },
+              "sourceRecheck": { "const": "reopened-and-fact-confirmed" },
+              "routeRecheck": { "const": "appropriate" },
+              "relationshipDisclosureRecheck": { "const": "complete-or-not-applicable" },
+              "compensationDisclosureRecheck": { "const": "complete-or-not-applicable" },
+              "safetyRecheck": { "const": "fit-check-only-boundaries-confirmed" },
+              "authorizationExpiresOn": { "$ref": "#/$defs/date" },
+              "sendAuthorization": { "const": "authorized-for-one-exact-manual-fit-check-send" },
+              "authorizationScope": { "const": "one-manual-send-of-exact-reviewed-draft" }
+            }
+          },
+          "else": {
+            "properties": {
+              "authorizationExpiresOn": { "type": "null" },
+              "sendAuthorization": { "const": "not-authorized" },
+              "authorizationScope": { "const": "none" },
+              "reasonCodes": {
+                "not": { "contains": { "const": "exact-fit-check-send-authorized" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "decision": { "const": "require-revision" } } },
+          "then": {
+            "properties": {
+              "reasonCodes": {
+                "allOf": [
+                  { "contains": { "const": "draft-revision-required" } },
+                  { "not": { "contains": { "enum": ["timing-deferred", "explicit-contact-restriction", "operator-do-not-send"] } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "decision": { "const": "defer" } } },
+          "then": {
+            "properties": {
+              "reasonCodes": {
+                "allOf": [
+                  { "contains": { "const": "timing-deferred" } },
+                  { "not": { "contains": { "enum": ["draft-revision-required", "explicit-contact-restriction", "operator-do-not-send"] } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "decision": { "const": "do-not-send" } } },
+          "then": {
+            "properties": {
+              "reasonCodes": {
+                "allOf": [
+                  { "contains": { "enum": ["inappropriate-route", "safety-recheck-incomplete", "explicit-contact-restriction", "operator-do-not-send"] } },
+                  { "not": { "contains": { "enum": ["draft-revision-required", "timing-deferred"] } } }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "recheckReasonMatrix": {
+      "allOf": [
+        {
+          "if": { "properties": { "sourceRecheck": { "const": "incomplete-or-stale" } } },
+          "then": { "properties": { "reasonCodes": { "contains": { "const": "source-recheck-incomplete" } } } },
+          "else": { "properties": { "reasonCodes": { "not": { "contains": { "const": "source-recheck-incomplete" } } } } }
+        },
+        {
+          "if": { "properties": { "routeRecheck": { "const": "unresolved" } } },
+          "then": { "properties": { "reasonCodes": { "contains": { "const": "route-recheck-incomplete" } } } },
+          "else": { "properties": { "reasonCodes": { "not": { "contains": { "const": "route-recheck-incomplete" } } } } }
+        },
+        {
+          "if": { "properties": { "routeRecheck": { "const": "inappropriate" } } },
+          "then": { "properties": { "reasonCodes": { "contains": { "const": "inappropriate-route" } } } },
+          "else": { "properties": { "reasonCodes": { "not": { "contains": { "const": "inappropriate-route" } } } } }
+        },
+        {
+          "if": { "properties": { "relationshipDisclosureRecheck": { "const": "incomplete" } } },
+          "then": { "properties": { "reasonCodes": { "contains": { "const": "relationship-disclosure-incomplete" } } } },
+          "else": { "properties": { "reasonCodes": { "not": { "contains": { "const": "relationship-disclosure-incomplete" } } } } }
+        },
+        {
+          "if": { "properties": { "compensationDisclosureRecheck": { "const": "incomplete" } } },
+          "then": { "properties": { "reasonCodes": { "contains": { "const": "compensation-disclosure-incomplete" } } } },
+          "else": { "properties": { "reasonCodes": { "not": { "contains": { "const": "compensation-disclosure-incomplete" } } } } }
+        },
+        {
+          "if": { "properties": { "safetyRecheck": { "const": "incomplete-or-unsafe" } } },
+          "then": { "properties": { "reasonCodes": { "contains": { "const": "safety-recheck-incomplete" } } } },
+          "else": { "properties": { "reasonCodes": { "not": { "contains": { "const": "safety-recheck-incomplete" } } } } }
+        }
+      ]
+    },
+    "limitations": {
+      "const": [
+        "This private record binds one human operator decision to exact request, review, prospect, and draft bytes. It does not authenticate the operator, authorizer, reviewer, publisher, source, route, disclosures, or safety assertions.",
+        "A positive decision authorizes only one manual send of the exact reviewed draft before the recorded expiry. It does not automate, perform, or prove contact or dispatch.",
+        "The no-additional-related-review confirmation is an unattested human assertion. Any changed input or newly discovered related review invalidates the decision and requires a new review, request, and decision.",
+        "Source, route, relationship disclosure, compensation disclosure, and safety rechecks are human assertions recorded at decision time and are not independently verified.",
+        "This decision does not establish delivery, reply, interest, candidacy, project permission, phone access, pilot state, device state, publisher identity, authority, consent, or independence.",
+        "File ownership and mode checks do not prove ACL, backup, sync, process-list, shell-history, or cloud-storage privacy.",
+        "External testing, confirmed defects, external grant gates, and grant readiness remain not established."
+      ]
+    }
+  }
+}

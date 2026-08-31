@@ -83,6 +83,7 @@ const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
 const BUNDLE_PROFILE_V12 = "phase-2i-recruitment-register-rc-v12";
 const BUNDLE_PROFILE_V13 = "phase-2l-human-prospect-review-rc-v13";
 const BUNDLE_PROFILE_V14 = "phase-2m-send-decision-preparation-rc-v14";
+const BUNDLE_PROFILE_V15 = "phase-2n-human-send-decision-rc-v15";
 const LEGACY_REHEARSAL_CHECKS = [
   "offline-package-install",
   "installed-version-match",
@@ -124,6 +125,10 @@ const V14_REHEARSAL_CHECKS = [
   ...V13_REHEARSAL_CHECKS,
   "device-free-private-send-decision-preparation-confirmation-refusal",
 ];
+const V15_REHEARSAL_CHECKS = [
+  ...V14_REHEARSAL_CHECKS,
+  "device-free-private-human-send-decision-confirmation-refusal",
+];
 const REQUIRED_PAYLOADS_V11 = [
   "README.md",
   "docs/publisher-pilot-quickstart.md",
@@ -153,6 +158,10 @@ const REQUIRED_PAYLOADS_V13 = [
 const REQUIRED_PAYLOADS_V14 = [
   ...REQUIRED_PAYLOADS_V13,
   "docs/publisher-send-decision-preparation.md",
+].sort();
+const REQUIRED_PAYLOADS_V15 = [
+  ...REQUIRED_PAYLOADS_V14,
+  "docs/publisher-send-decision-recording.md",
 ].sort();
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
@@ -253,6 +262,10 @@ const PACKED_DOCUMENTS_V14 = [
   ...PACKED_DOCUMENTS_V13,
   "docs/publisher-send-decision-preparation.md",
 ].sort();
+const PACKED_DOCUMENTS_V15 = [
+  ...PACKED_DOCUMENTS_V14,
+  "docs/publisher-send-decision-recording.md",
+].sort();
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -332,6 +345,11 @@ const PACKED_SCHEMAS_V14 = [
   "schemas/launchrig-private-send-decision-request-result.schema.json",
   "schemas/launchrig-private-send-decision-request.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V15 = [
+  ...PACKED_SCHEMAS_V14,
+  "schemas/launchrig-private-human-send-decision-result.schema.json",
+  "schemas/launchrig-private-human-send-decision.schema.json",
+].sort();
 const PACKED_TEMPLATES_V11 = [
   "templates/defect-evidence.md",
   "templates/pilot-consent.md",
@@ -381,6 +399,11 @@ const PACKED_COMPILED_ADDITIONS_V14_ONLY = [
   "package/dist/src/pilot/send-decision-preparation.d.ts",
   "package/dist/src/pilot/send-decision-preparation.js",
   "package/dist/src/pilot/send-decision-preparation.js.map",
+];
+const PACKED_COMPILED_ADDITIONS_V15_ONLY = [
+  "package/dist/src/pilot/send-decision-recording.d.ts",
+  "package/dist/src/pilot/send-decision-recording.js",
+  "package/dist/src/pilot/send-decision-recording.js.map",
 ];
 const PACKED_RUNTIME_FILES_V11 = [
   "scripts/runtime-contract.mjs",
@@ -433,7 +456,7 @@ const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.
 
 function createTestPackageArchive(
   extraPaths: string[] = [],
-  profile = BUNDLE_PROFILE_V14,
+  profile = BUNDLE_PROFILE_V15,
   omittedPaths: string[] = [],
 ): Buffer {
   const inventories = {
@@ -521,6 +544,12 @@ function createTestPackageArchive(
       actionFiles: PACKED_ACTION_FILES_V6,
       runtimeFiles: PACKED_RUNTIME_FILES_V11,
     },
+    [BUNDLE_PROFILE_V15]: {
+      documents: PACKED_DOCUMENTS_V15,
+      schemas: PACKED_SCHEMAS_V15,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
+    },
   };
   const inventory = inventories[profile as keyof typeof inventories];
   if (!inventory) throw new Error("Unsupported synthetic bundle profile.");
@@ -529,7 +558,8 @@ function createTestPackageArchive(
   const packedTemplates =
     profile === BUNDLE_PROFILE_V12 ||
     profile === BUNDLE_PROFILE_V13 ||
-    profile === BUNDLE_PROFILE_V14
+    profile === BUNDLE_PROFILE_V14 ||
+    profile === BUNDLE_PROFILE_V15
       ? PACKED_TEMPLATES_V12
       : PACKED_TEMPLATES_V11;
   const packageMetadata = {
@@ -546,7 +576,16 @@ function createTestPackageArchive(
     "package/dist/src/cli.js",
     "package/dist/src/fixtures/matrix.js",
     "package/package.json",
-    ...(profile === BUNDLE_PROFILE_V14
+    ...(profile === BUNDLE_PROFILE_V15
+      ? [
+          ...PACKED_COMPILED_ADDITIONS_V8,
+          ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+          ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+          ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
+          ...PACKED_COMPILED_ADDITIONS_V14_ONLY,
+          ...PACKED_COMPILED_ADDITIONS_V15_ONLY,
+        ]
+      : profile === BUNDLE_PROFILE_V14
       ? [
           ...PACKED_COMPILED_ADDITIONS_V8,
           ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
@@ -608,16 +647,18 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
-  profile = BUNDLE_PROFILE_V14,
+  profile = BUNDLE_PROFILE_V15,
 ): Promise<BundleManifest> {
   const requiredPayloads =
-    profile === BUNDLE_PROFILE_V14
-      ? REQUIRED_PAYLOADS_V14
-      : profile === BUNDLE_PROFILE_V13
-      ? REQUIRED_PAYLOADS_V13
-      : profile === BUNDLE_PROFILE_V12
-        ? REQUIRED_PAYLOADS_V12
-        : REQUIRED_PAYLOADS_V11;
+    profile === BUNDLE_PROFILE_V15
+      ? REQUIRED_PAYLOADS_V15
+      : profile === BUNDLE_PROFILE_V14
+        ? REQUIRED_PAYLOADS_V14
+        : profile === BUNDLE_PROFILE_V13
+          ? REQUIRED_PAYLOADS_V13
+          : profile === BUNDLE_PROFILE_V12
+            ? REQUIRED_PAYLOADS_V12
+            : REQUIRED_PAYLOADS_V11;
   for (const relativePath of [...requiredPayloads, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
     await mkdir(path.dirname(target), { recursive: true });
@@ -701,6 +742,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     BUNDLE_PROFILE_V12,
     BUNDLE_PROFILE_V13,
     BUNDLE_PROFILE_V14,
+    BUNDLE_PROFILE_V15,
   ]) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
     try {
@@ -714,23 +756,25 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
       assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
       assert.deepEqual(
         verified.consumerRehearsal.checks,
-        profile === BUNDLE_PROFILE_V14
-          ? V14_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V13
-          ? V13_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V12
-          ? V12_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V11
-            ? V11_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V10
-            ? V10_REHEARSAL_CHECKS
-            : profile === BUNDLE_PROFILE_V9
-              ? V9_REHEARSAL_CHECKS
-              : profile === BUNDLE_PROFILE_V8
-                ? V8_REHEARSAL_CHECKS
-                : profile === BUNDLE_PROFILE_V7
-                  ? V7_REHEARSAL_CHECKS
-                  : LEGACY_REHEARSAL_CHECKS,
+        profile === BUNDLE_PROFILE_V15
+          ? V15_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V14
+            ? V14_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V13
+              ? V13_REHEARSAL_CHECKS
+              : profile === BUNDLE_PROFILE_V12
+                ? V12_REHEARSAL_CHECKS
+                : profile === BUNDLE_PROFILE_V11
+                  ? V11_REHEARSAL_CHECKS
+                  : profile === BUNDLE_PROFILE_V10
+                    ? V10_REHEARSAL_CHECKS
+                    : profile === BUNDLE_PROFILE_V9
+                      ? V9_REHEARSAL_CHECKS
+                      : profile === BUNDLE_PROFILE_V8
+                        ? V8_REHEARSAL_CHECKS
+                        : profile === BUNDLE_PROFILE_V7
+                          ? V7_REHEARSAL_CHECKS
+                          : LEGACY_REHEARSAL_CHECKS,
       );
       assert.deepEqual(verified.sourceVerification, {
         status: "passed",
@@ -765,7 +809,7 @@ test("publisher bundle snapshot returns only verified identity fields from exact
       "packageSha256",
     ]);
     assert.deepEqual(snapshot, {
-      profile: BUNDLE_PROFILE_V14,
+      profile: BUNDLE_PROFILE_V15,
       bundleId: expected.bundleId,
       manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
       sha256SumsSha256: createHash("sha256").update(sumsBytes).digest("hex"),
@@ -792,7 +836,7 @@ test("publisher bundle snapshot returns only verified identity fields from exact
   }
 });
 
-test("publisher bundle defaults to the RC14 send decision preparation confirmation gate", () => {
+test("publisher bundle defaults to the RC15 human send decision confirmation gate", () => {
   const packageEntry = {
     path: ARCHIVE,
     sizeBytes: 1,
@@ -807,9 +851,25 @@ test("publisher bundle defaults to the RC14 send decision preparation confirmati
     packagePath: ARCHIVE,
     files: [packageEntry],
   });
-  assert.equal(manifest.profile, BUNDLE_PROFILE_V14);
-  assert.deepEqual(manifest.consumerRehearsal.checks, V14_REHEARSAL_CHECKS);
-  assert.deepEqual(V14_REHEARSAL_CHECKS.slice(0, -1), V13_REHEARSAL_CHECKS);
+  assert.equal(manifest.profile, BUNDLE_PROFILE_V15);
+  assert.deepEqual(manifest.consumerRehearsal.checks, V15_REHEARSAL_CHECKS);
+  assert.deepEqual(V15_REHEARSAL_CHECKS.slice(0, -1), V14_REHEARSAL_CHECKS);
+});
+
+test("publisher bundle v14 rejects the RC15-only rehearsal claim", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v14-rehearsal-"));
+  try {
+    const archive = createTestPackageArchive([], BUNDLE_PROFILE_V14);
+    const manifest = await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V14);
+    manifest.consumerRehearsal.checks = [...V15_REHEARSAL_CHECKS];
+    await writeFile(path.join(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /consumer rehearsal contract is invalid/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("publisher bundle v13 rejects the RC14-only rehearsal claim", async () => {
@@ -1161,6 +1221,48 @@ test("publisher bundle v14 requires its send decision preparation confirmation-g
   }
 });
 
+test("publisher bundle v15 requires its human send decision confirmation-gate inventory", async () => {
+  for (const omittedPath of [
+    ...PACKED_COMPILED_ADDITIONS_V15_ONLY,
+    "package/docs/publisher-send-decision-recording.md",
+    "package/schemas/launchrig-private-human-send-decision-result.schema.json",
+    "package/schemas/launchrig-private-human-send-decision.schema.json",
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v15-required-"));
+    try {
+      const archive = createTestPackageArchive([], BUNDLE_PROFILE_V15, [omittedPath]);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V15);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /RC15 is missing|inventory does not match the release allowlist/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v14 rejects the RC15-only human send decision inventory", async () => {
+  for (const addedPath of [
+    ...PACKED_COMPILED_ADDITIONS_V15_ONLY,
+    "package/docs/publisher-send-decision-recording.md",
+    "package/schemas/launchrig-private-human-send-decision-result.schema.json",
+    "package/schemas/launchrig-private-human-send-decision.schema.json",
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v14-frozen-"));
+    try {
+      const archive = createTestPackageArchive([addedPath], BUNDLE_PROFILE_V14);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V14);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /outside the release allowlist|RC15 file outside its historical profile/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
 test("publisher bundle v13 rejects the RC14-only send decision preparation inventory", async () => {
   for (const addedPath of [
     ...PACKED_COMPILED_ADDITIONS_V14_ONLY,
@@ -1375,7 +1477,7 @@ test("bundle quickstart local guide links resolve inside the handoff layout", as
   assert.ok(links.includes("cohort-audit.md"));
   for (const link of links) {
     const resolved = path.posix.normalize(path.posix.join("docs", link));
-    assert.ok(REQUIRED_PAYLOADS_V14.includes(resolved), "missing outer payload for " + link);
+    assert.ok(REQUIRED_PAYLOADS_V15.includes(resolved), "missing outer payload for " + link);
   }
 });
 

@@ -30,6 +30,7 @@ const OUTER_BUNDLE_COPY_MAP = [
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
   ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
+  ["docs/publisher-send-decision-recording.md", "docs/publisher-send-decision-recording.md"],
   ["docs/publisher-send-decision-preparation.md", "docs/publisher-send-decision-preparation.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
@@ -303,6 +304,9 @@ try {
   if (!installedFiles.includes("dist/src/pilot/send-decision-preparation.js")) {
     throw new Error("Packed private send decision preparation implementation is missing.");
   }
+  if (!installedFiles.includes("dist/src/pilot/send-decision-recording.js")) {
+    throw new Error("Packed private human send decision implementation is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
   }
@@ -332,6 +336,12 @@ try {
   }
   if (!installedFiles.includes("schemas/launchrig-private-send-decision-request-result.schema.json")) {
     throw new Error("Packed private send decision request result schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-private-human-send-decision.schema.json")) {
+    throw new Error("Packed private human send decision schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-private-human-send-decision-result.schema.json")) {
+    throw new Error("Packed private human send decision result schema is missing.");
   }
   if (!installedFiles.includes("schemas/fixtures/launchrig-config-v1.conformance.json")) {
     throw new Error("Packed config v1 conformance corpus is missing.");
@@ -394,6 +404,10 @@ try {
     ...v13RehearsalChecks,
     "device-free-private-send-decision-preparation-confirmation-refusal",
   ];
+  const v15RehearsalChecks = [
+    ...v14RehearsalChecks,
+    "device-free-private-human-send-decision-confirmation-refusal",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -414,39 +428,44 @@ try {
         "phase-2i-recruitment-register-rc-v12",
         "phase-2l-human-prospect-review-rc-v13",
         "phase-2m-send-decision-preparation-rc-v14",
+        "phase-2n-human-send-decision-rc-v15",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v14RehearsalChecks) ||
+    ) !== JSON.stringify(v15RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[1]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
-    ) !== JSON.stringify(v13RehearsalChecks) ||
+    ) !== JSON.stringify(v14RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[2]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v13RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[3]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v12RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[3]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+      publisherBundleSchema.allOf?.[4]?.else?.then?.properties?.consumerRehearsal?.properties?.checks
+        ?.const,
     ) !== JSON.stringify(v11RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[3]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
+      publisherBundleSchema.allOf?.[4]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
         ?.const,
     ) !== JSON.stringify(v10RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[3]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
-        ?.const,
+      publisherBundleSchema.allOf?.[4]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
+        ?.checks?.const,
     ) !== JSON.stringify(v9RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[3]?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
+      publisherBundleSchema.allOf?.[4]?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
         ?.checks?.const,
     ) !== JSON.stringify(v8RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[3]?.else?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
+      publisherBundleSchema.allOf?.[4]?.else?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
         ?.checks?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[3]?.else?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
+      publisherBundleSchema.allOf?.[4]?.else?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
         ?.checks?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
@@ -603,12 +622,30 @@ try {
       "utf8",
     ),
   );
+  const privateHumanSendDecisionSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-private-human-send-decision.schema.json"),
+      "utf8",
+    ),
+  );
+  const privateHumanSendDecisionResultSchema = JSON.parse(
+    await readFile(
+      path.join(
+        installedDirectory,
+        "schemas",
+        "launchrig-private-human-send-decision-result.schema.json",
+      ),
+      "utf8",
+    ),
+  );
   const privateReviewSchemaAjv = new Ajv2020({ strict: true, strictTypes: false });
   privateReviewSchemaAjv.addFormat("date", /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
   privateReviewSchemaAjv.compile(privateProspectReviewSchema);
   privateReviewSchemaAjv.compile(privateProspectReviewResultSchema);
   privateReviewSchemaAjv.compile(privateSendDecisionRequestSchema);
   privateReviewSchemaAjv.compile(privateSendDecisionRequestResultSchema);
+  privateReviewSchemaAjv.compile(privateHumanSendDecisionSchema);
+  privateReviewSchemaAjv.compile(privateHumanSendDecisionResultSchema);
   const coreRuleCatalogSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-core-rule-catalog.schema.json"), "utf8"),
   );
@@ -803,6 +840,65 @@ try {
   ) {
     throw new Error("Packed private send decision schemas do not preserve the bounded review-set contract.");
   }
+  for (const [label, schema, expectedId, expectedKind] of [
+    [
+      "record",
+      privateHumanSendDecisionSchema,
+      "https://launchrig.dev/schemas/launchrig-private-human-send-decision.schema.json",
+      "launchrig-private-human-send-decision",
+    ],
+    [
+      "result",
+      privateHumanSendDecisionResultSchema,
+      "https://launchrig.dev/schemas/launchrig-private-human-send-decision-result.schema.json",
+      "launchrig-private-human-send-decision-result",
+    ],
+  ]) {
+    if (
+      schema.$id !== expectedId ||
+      schema.additionalProperties !== false ||
+      schema.properties?.kind?.const !== expectedKind ||
+      schema.properties?.profile?.const !== "phase-2n-human-send-decision-v1" ||
+      schema.properties?.claimStatus?.const !== "human-operator-recorded-unattested" ||
+      schema.properties?.humanSendDecisionConfirmed?.const !== true ||
+      schema.properties?.humanNoAdditionalRelatedReviewConfirmed?.const !== true ||
+      schema.properties?.humanAuthorizerAuthenticated?.const !== false ||
+      schema.properties?.reviewSetCompleteness?.const !== "operator-asserted-unattested" ||
+      schema.properties?.conflictStatus?.const !== "none-detected-in-operator-supplied-set" ||
+      schema.properties?.latestStatus?.const !== "not-established" ||
+      schema.properties?.reviewSetCount?.const !== 1 ||
+      schema.properties?.contact?.const !== "not-contacted" ||
+      schema.properties?.messageDispatched?.const !== false ||
+      schema.properties?.lifecycle?.const !== "screening" ||
+      schema.properties?.candidateCreated?.const !== false ||
+      schema.properties?.interestRecorded?.const !== false ||
+      schema.properties?.projectModificationAuthorized?.const !== false ||
+      schema.properties?.phoneAccessAuthorized?.const !== false ||
+      schema.properties?.pilotStateChecked?.const !== false ||
+      schema.properties?.deviceEnvironmentChecked?.const !== false ||
+      schema.properties?.publisherIdentity?.const !== "not-established" ||
+      schema.properties?.publisherAuthority?.const !== "not-established" ||
+      schema.properties?.publisherConsent?.const !== "not-established" ||
+      schema.properties?.publisherIndependence?.const !== "not-established" ||
+      schema.properties?.externalGrantGate?.const !== "not-established" ||
+      schema.properties?.grantReady?.const !== false ||
+      JSON.stringify(schema.properties?.decision?.enum) !==
+        JSON.stringify(["authorize-exact-reviewed-draft", "require-revision", "defer", "do-not-send"]) ||
+      JSON.stringify(schema.properties?.sendAuthorization?.enum) !==
+        JSON.stringify(["authorized-for-one-exact-manual-fit-check-send", "not-authorized"]) ||
+      JSON.stringify(schema.properties?.authorizationScope?.enum) !==
+        JSON.stringify(["one-manual-send-of-exact-reviewed-draft", "none"])
+    ) {
+      throw new Error("Packed private human send decision " + label + " schema does not preserve the claim limit.");
+    }
+  }
+  if (
+    privateHumanSendDecisionSchema.properties?.privacyProfile?.const !==
+      "opaque-authorizer-digests-decision-v1" ||
+    privateHumanSendDecisionResultSchema.properties?.status?.const !== "created"
+  ) {
+    throw new Error("Packed private human send decision schemas do not preserve the private result contract.");
+  }
   const expectedDocuments = [
     "docs/cohort-audit.md",
     "docs/cohort-verification.md",
@@ -816,6 +912,7 @@ try {
     "docs/publisher-pilot-quickstart.md",
     "docs/publisher-prospect-review.md",
     "docs/publisher-recruitment.md",
+    "docs/publisher-send-decision-recording.md",
     "docs/publisher-send-decision-preparation.md",
     "docs/supported-environment.md",
     "docs/flows/mwa-authorize.md",
@@ -891,6 +988,8 @@ try {
     "schemas/launchrig-private-cohort-register.schema.json",
     "schemas/launchrig-private-prospect-review-result.schema.json",
     "schemas/launchrig-private-prospect-review.schema.json",
+    "schemas/launchrig-private-human-send-decision-result.schema.json",
+    "schemas/launchrig-private-human-send-decision.schema.json",
     "schemas/launchrig-private-send-decision-request-result.schema.json",
     "schemas/launchrig-private-send-decision-request.schema.json",
     "schemas/launchrig-publisher-bundle.schema.json",
@@ -1022,6 +1121,13 @@ try {
     )
   ) {
     throw new Error("Installed CLI help is missing the Phase 2M private send decision preparation command.");
+  }
+  if (
+    !help.stdout.includes(
+      "launchrig cohort record-send-decision --request FILE --expected-request-sha256 HASH --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH --authorizer-ref REF --decided-on YYYY-MM-DD --decision DECISION --reason-code CODE --source-recheck STATUS --route-recheck STATUS --relationship-disclosure-recheck STATUS --compensation-disclosure-recheck STATUS --safety-recheck STATUS [--authorization-expires-on YYYY-MM-DD] --confirm-human-send-decision --output FILE [--json]",
+    )
+  ) {
+    throw new Error("Installed CLI help is missing the Phase 2N private human send decision command.");
   }
   if (!help.stdout.includes("launchrig rules [--json]")) {
     throw new Error("Installed CLI help is missing the core rule catalog.");
@@ -1224,6 +1330,75 @@ try {
     sendDecisionRefusal.includes("Android/MWA Ready")
   ) {
     throw new Error("Installed send decision preparation did not refuse before reading private inputs.");
+  }
+
+  const humanSendDecisionOutputPath = path.join(
+    temporaryDirectory,
+    "private-human-send-decision.json",
+  );
+  let humanSendDecisionRefusal = "";
+  try {
+    await run(
+      executable,
+      [
+        "cohort",
+        "record-send-decision",
+        "--request",
+        path.join(temporaryDirectory, "unreadable-send-decision-request.json"),
+        "--expected-request-sha256",
+        "e".repeat(64),
+        "--review",
+        path.join(temporaryDirectory, "unreadable-send-decision-review.json"),
+        "--expected-review-sha256",
+        "f".repeat(64),
+        "--prospect",
+        path.join(temporaryDirectory, "unreadable-send-decision-prospect.md"),
+        "--expected-prospect-sha256",
+        "a".repeat(64),
+        "--draft",
+        path.join(temporaryDirectory, "unreadable-send-decision-draft.md"),
+        "--expected-draft-sha256",
+        "b".repeat(64),
+        "--authorizer-ref",
+        smokeRef("reviewer", 952),
+        "--decided-on",
+        new Date().toISOString().slice(0, 10),
+        "--decision",
+        "authorize-exact-reviewed-draft",
+        "--reason-code",
+        "exact-fit-check-send-authorized",
+        "--source-recheck",
+        "reopened-and-fact-confirmed",
+        "--route-recheck",
+        "appropriate",
+        "--relationship-disclosure-recheck",
+        "complete-or-not-applicable",
+        "--compensation-disclosure-recheck",
+        "complete-or-not-applicable",
+        "--safety-recheck",
+        "fit-check-only-boundaries-confirmed",
+        "--authorization-expires-on",
+        new Date().toISOString().slice(0, 10),
+        "--output",
+        humanSendDecisionOutputPath,
+        "--json",
+      ],
+      { cwd: installDirectory },
+    );
+  } catch (error) {
+    humanSendDecisionRefusal = error instanceof Error ? error.message : String(error);
+  }
+  const humanSendDecisionOutputExists = await lstat(humanSendDecisionOutputPath).then(
+    () => true,
+    () => false,
+  );
+  if (
+    !humanSendDecisionRefusal.includes("Explicit human send decision confirmation is required") ||
+    humanSendDecisionOutputExists ||
+    humanSendDecisionRefusal.includes("Android Device Ready") ||
+    humanSendDecisionRefusal.includes("Android/MWA Ready")
+  ) {
+    throw new Error("Installed human send decision did not refuse before reading private inputs.");
   }
 
   const privateRegisterCore = {

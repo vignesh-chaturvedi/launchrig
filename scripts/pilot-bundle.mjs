@@ -39,6 +39,7 @@ const COPY_MAP = [
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
   ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
+  ["docs/publisher-send-decision-recording.md", "docs/publisher-send-decision-recording.md"],
   ["docs/publisher-send-decision-preparation.md", "docs/publisher-send-decision-preparation.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
@@ -512,6 +513,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "dist/src/pilot/binding.js",
       "dist/src/pilot/cohort-preparation.js",
       "dist/src/pilot/prospect-review.js",
+      "dist/src/pilot/send-decision-recording.js",
       "dist/src/pilot/send-decision-preparation.js",
       "dist/src/pilot/session-scope.js",
       "dist/src/pilot/scope-preparation.js",
@@ -523,6 +525,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "docs/publisher-pilot-quickstart.md",
       "docs/publisher-prospect-review.md",
       "docs/publisher-recruitment.md",
+      "docs/publisher-send-decision-recording.md",
       "docs/publisher-send-decision-preparation.md",
       "docs/supported-environment.md",
       "docs/flows/mwa-authorize.md",
@@ -538,6 +541,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-private-cohort-register-draft-result.schema.json",
       "schemas/launchrig-private-prospect-review-result.schema.json",
       "schemas/launchrig-private-prospect-review.schema.json",
+      "schemas/launchrig-private-human-send-decision-result.schema.json",
+      "schemas/launchrig-private-human-send-decision.schema.json",
       "schemas/launchrig-private-send-decision-request-result.schema.json",
       "schemas/launchrig-private-send-decision-request.schema.json",
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
@@ -635,6 +640,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "launchrig cohort prepare-register --output FILE",
       "launchrig cohort record-prospect-review --prospect FILE",
       "launchrig cohort prepare-send-decision --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH [--related-review FILE --expected-related-review-sha256 HASH ...] --operator-ref REF --prepared-on YYYY-MM-DD --confirm-related-review-set-complete --output FILE [--json]",
+      "launchrig cohort record-send-decision --request FILE --expected-request-sha256 HASH --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH --authorizer-ref REF --decided-on YYYY-MM-DD --decision DECISION --reason-code CODE --source-recheck STATUS --route-recheck STATUS --relationship-disclosure-recheck STATUS --compensation-disclosure-recheck STATUS --safety-recheck STATUS [--authorization-expires-on YYYY-MM-DD] --confirm-human-send-decision --output FILE [--json]",
     ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
     }
@@ -825,6 +831,73 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       sendDecisionRefusalOutput.includes("Android/MWA Ready")
     ) {
       throw new Error("Clean consumer send decision preparation did not refuse before reading private inputs.");
+    }
+
+    const humanSendDecisionOutputPath = path.join(
+      temporaryDirectory,
+      "private-human-send-decision.json",
+    );
+    const humanSendDecisionRefusal = await run(
+      executable,
+      [
+        "cohort",
+        "record-send-decision",
+        "--request",
+        path.join(temporaryDirectory, "unreadable-send-decision-request.json"),
+        "--expected-request-sha256",
+        "e".repeat(64),
+        "--review",
+        path.join(temporaryDirectory, "unreadable-send-decision-review.json"),
+        "--expected-review-sha256",
+        "f".repeat(64),
+        "--prospect",
+        path.join(temporaryDirectory, "unreadable-send-decision-prospect.md"),
+        "--expected-prospect-sha256",
+        "a".repeat(64),
+        "--draft",
+        path.join(temporaryDirectory, "unreadable-send-decision-draft.md"),
+        "--expected-draft-sha256",
+        "b".repeat(64),
+        "--authorizer-ref",
+        "urn:launchrig:reviewer:000003b8-0000-4000-a000-0000000003b8",
+        "--decided-on",
+        new Date().toISOString().slice(0, 10),
+        "--decision",
+        "authorize-exact-reviewed-draft",
+        "--reason-code",
+        "exact-fit-check-send-authorized",
+        "--source-recheck",
+        "reopened-and-fact-confirmed",
+        "--route-recheck",
+        "appropriate",
+        "--relationship-disclosure-recheck",
+        "complete-or-not-applicable",
+        "--compensation-disclosure-recheck",
+        "complete-or-not-applicable",
+        "--safety-recheck",
+        "fit-check-only-boundaries-confirmed",
+        "--authorization-expires-on",
+        new Date().toISOString().slice(0, 10),
+        "--output",
+        humanSendDecisionOutputPath,
+        "--json",
+      ],
+      { cwd: installDirectory, env: rehearsalEnvironment, acceptedExitCodes: [2] },
+    );
+    const humanSendDecisionRefusalOutput =
+      humanSendDecisionRefusal.stdout + "\n" + humanSendDecisionRefusal.stderr;
+    if (
+      !humanSendDecisionRefusalOutput.includes(
+        "Explicit human send decision confirmation is required",
+      ) ||
+      await lstat(humanSendDecisionOutputPath).then(
+        () => true,
+        () => false,
+      ) ||
+      humanSendDecisionRefusalOutput.includes("Android Device Ready") ||
+      humanSendDecisionRefusalOutput.includes("Android/MWA Ready")
+    ) {
+      throw new Error("Clean consumer human send decision did not refuse before reading private inputs.");
     }
 
     await run(executable, ["pilot", "start", "--pilot", "bundle-rehearsal", "--config", "launchrig.yml"], {

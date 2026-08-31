@@ -20,7 +20,8 @@ const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
 const BUNDLE_PROFILE_V12 = "phase-2i-recruitment-register-rc-v12";
 const BUNDLE_PROFILE_V13 = "phase-2l-human-prospect-review-rc-v13";
 const BUNDLE_PROFILE_V14 = "phase-2m-send-decision-preparation-rc-v14";
-export const BUNDLE_PROFILE = BUNDLE_PROFILE_V14;
+const BUNDLE_PROFILE_V15 = "phase-2n-human-send-decision-rc-v15";
+export const BUNDLE_PROFILE = BUNDLE_PROFILE_V15;
 const SUPPORTED_BUNDLE_PROFILES = new Set([
   "phase-2a-publisher-rc-v1",
   "phase-2b-publisher-rc-v2",
@@ -36,6 +37,7 @@ const SUPPORTED_BUNDLE_PROFILES = new Set([
   BUNDLE_PROFILE_V12,
   BUNDLE_PROFILE_V13,
   BUNDLE_PROFILE_V14,
+  BUNDLE_PROFILE_V15,
 ]);
 export const LEGACY_REHEARSAL_CHECKS = Object.freeze([
   "offline-package-install",
@@ -74,9 +76,13 @@ export const V13_REHEARSAL_CHECKS = Object.freeze([
   ...V12_REHEARSAL_CHECKS,
   "device-free-private-prospect-review-confirmation-refusal",
 ]);
-export const REHEARSAL_CHECKS = Object.freeze([
+export const V14_REHEARSAL_CHECKS = Object.freeze([
   ...V13_REHEARSAL_CHECKS,
   "device-free-private-send-decision-preparation-confirmation-refusal",
+]);
+export const REHEARSAL_CHECKS = Object.freeze([
+  ...V14_REHEARSAL_CHECKS,
+  "device-free-private-human-send-decision-confirmation-refusal",
 ]);
 export const SOURCE_VERIFICATION_CHECKS = Object.freeze([
   "package-manager-version",
@@ -262,23 +268,25 @@ export function createPublisherManifest({
   if (!packageFile) throw new Error("Packed LaunchRig archive is missing from the bundle payload.");
   const payloadSha256 = sha256Value(sortedFiles);
   const rehearsalChecks =
-    profile === BUNDLE_PROFILE_V14
+    profile === BUNDLE_PROFILE_V15
       ? REHEARSAL_CHECKS
-      : profile === BUNDLE_PROFILE_V13
-        ? V13_REHEARSAL_CHECKS
-        : profile === BUNDLE_PROFILE_V12
-          ? V12_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V11
-            ? V11_REHEARSAL_CHECKS
-            : profile === BUNDLE_PROFILE_V10
-              ? V10_REHEARSAL_CHECKS
-              : profile === BUNDLE_PROFILE_V9
-                ? V9_REHEARSAL_CHECKS
-                : profile === BUNDLE_PROFILE_V8
-                  ? V8_REHEARSAL_CHECKS
-                  : profile === BUNDLE_PROFILE_V7
-                    ? V7_REHEARSAL_CHECKS
-                    : LEGACY_REHEARSAL_CHECKS;
+      : profile === BUNDLE_PROFILE_V14
+        ? V14_REHEARSAL_CHECKS
+        : profile === BUNDLE_PROFILE_V13
+          ? V13_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V12
+            ? V12_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V11
+              ? V11_REHEARSAL_CHECKS
+              : profile === BUNDLE_PROFILE_V10
+                ? V10_REHEARSAL_CHECKS
+                : profile === BUNDLE_PROFILE_V9
+                  ? V9_REHEARSAL_CHECKS
+                  : profile === BUNDLE_PROFILE_V8
+                    ? V8_REHEARSAL_CHECKS
+                    : profile === BUNDLE_PROFILE_V7
+                      ? V7_REHEARSAL_CHECKS
+                      : LEGACY_REHEARSAL_CHECKS;
   const manifestCore = {
     schemaVersion: BUNDLE_SCHEMA_VERSION,
     kind: BUNDLE_KIND,

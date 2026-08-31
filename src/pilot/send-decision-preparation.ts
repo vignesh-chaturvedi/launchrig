@@ -18,6 +18,10 @@ import { sha256Value } from "./store.js";
 const SHA256 = /^[a-f0-9]{64}$/;
 const UUID_V4 = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const OPERATOR_REF = new RegExp("^urn:launchrig:reviewer:" + UUID_V4.source.slice(1, -1) + "$");
+const PROSPECT_REVIEW_REF = new RegExp(
+  "^urn:launchrig:prospect-review:" + UUID_V4.source.slice(1, -1) + "$",
+);
+const MAX_PRIVATE_INPUT_BYTES = 256 * 1024;
 
 export const SEND_DECISION_PREPARATION_LIMITATIONS = [
   "This private request records an operator-supplied review set for exact prospect, draft, and review bytes. It does not authenticate the operator, reviewer, publisher, source, route, disclosure, or safety findings.",
@@ -381,6 +385,251 @@ export function sendDecisionReviewSetSha256(
   entries: readonly SendDecisionReviewSetEntryV1[],
 ): string {
   return sha256Value(sortedReviewSet(entries));
+}
+
+function requestRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new SendDecisionPreparationError(label + " is invalid");
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertExactRequestKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(value);
+  if (actual.length !== expected.length || actual.some((key) => !expected.includes(key))) {
+    throw new SendDecisionPreparationError(label + " contains unsupported or missing fields");
+  }
+}
+
+function storedRequestDate(value: unknown, label: string): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new SendDecisionPreparationError(label + " is invalid");
+  }
+  const parsed = new Date(value + "T00:00:00.000Z");
+  if (!Number.isFinite(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new SendDecisionPreparationError(label + " is invalid");
+  }
+  return value;
+}
+
+function storedRequestSize(value: unknown, label: string): number {
+  if (
+    !Number.isSafeInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > MAX_PRIVATE_INPUT_BYTES
+  ) {
+    throw new SendDecisionPreparationError(label + " is invalid");
+  }
+  return value as number;
+}
+
+function parseReviewSetEntry(value: unknown, label: string): SendDecisionReviewSetEntryV1 {
+  const entry = requestRecord(value, label);
+  assertExactRequestKeys(
+    entry,
+    [
+      "reviewFileSha256",
+      "reviewContentSha256",
+      "reviewRef",
+      "reviewedOn",
+      "prospectFileSha256",
+      "draftFileSha256",
+      "prospectLabel",
+      "draftLabel",
+    ],
+    label,
+  );
+  strictHash(entry.reviewFileSha256, label + " file SHA-256");
+  strictHash(entry.reviewContentSha256, label + " content SHA-256");
+  strictHash(entry.prospectFileSha256, label + " prospect SHA-256");
+  strictHash(entry.draftFileSha256, label + " draft SHA-256");
+  if (typeof entry.reviewRef !== "string" || !PROSPECT_REVIEW_REF.test(entry.reviewRef)) {
+    throw new SendDecisionPreparationError(label + " review reference is invalid");
+  }
+  storedRequestDate(entry.reviewedOn, label + " review date");
+  if (
+    entry.prospectLabel !== "operator-reviewed-consider-outreach" ||
+    entry.draftLabel !== "operator-reviewed-awaiting-separate-send-authorization"
+  ) {
+    throw new SendDecisionPreparationError(label + " reviewed labels are invalid");
+  }
+  return entry as unknown as SendDecisionReviewSetEntryV1;
+}
+
+function sameReviewSetEntry(
+  left: SendDecisionReviewSetEntryV1,
+  right: SendDecisionReviewSetEntryV1,
+): boolean {
+  return (
+    left.reviewFileSha256 === right.reviewFileSha256 &&
+    left.reviewContentSha256 === right.reviewContentSha256 &&
+    left.reviewRef === right.reviewRef &&
+    left.reviewedOn === right.reviewedOn &&
+    left.prospectFileSha256 === right.prospectFileSha256 &&
+    left.draftFileSha256 === right.draftFileSha256 &&
+    left.prospectLabel === right.prospectLabel &&
+    left.draftLabel === right.draftLabel
+  );
+}
+
+export function parsePrivateSendDecisionRequestV1(value: unknown): PrivateSendDecisionRequestV1 {
+  const request = requestRecord(value, "Private send decision request");
+  assertExactRequestKeys(
+    request,
+    [
+      "schemaVersion",
+      "kind",
+      "profile",
+      "privacyProfile",
+      "preparedOn",
+      "operatorRef",
+      "claimStatus",
+      "reviewSetCompleteness",
+      "conflictStatus",
+      "latestStatus",
+      "preparationStatus",
+      "humanRelatedReviewSetConfirmed",
+      "humanSendDecisionRecorded",
+      "humanAuthorizerAuthenticated",
+      "selectedReview",
+      "reviewSet",
+      "reviewSetSha256",
+      "prospect",
+      "draft",
+      "sourceRecheck",
+      "routeRecheck",
+      "relationshipDisclosureRecheck",
+      "compensationDisclosureRecheck",
+      "safetyRecheck",
+      "contact",
+      "sendAuthorization",
+      "messageDispatched",
+      "lifecycle",
+      "candidateCreated",
+      "interestRecorded",
+      "projectModificationAuthorized",
+      "phoneAccessAuthorized",
+      "pilotStateChecked",
+      "deviceEnvironmentChecked",
+      "publisherIdentity",
+      "publisherAuthority",
+      "publisherConsent",
+      "publisherIndependence",
+      "externalGrantGate",
+      "grantReady",
+      "limitations",
+      "integritySha256",
+    ],
+    "Private send decision request",
+  );
+  if (
+    request.schemaVersion !== 1 ||
+    request.kind !== "launchrig-private-send-decision-request" ||
+    request.profile !== "phase-2m-send-decision-preparation-v1" ||
+    request.privacyProfile !== "opaque-operator-digests-dates-v1" ||
+    request.claimStatus !== "operator-prepared-unattested" ||
+    request.reviewSetCompleteness !== "operator-asserted-unattested" ||
+    request.conflictStatus !== "none-detected-in-operator-supplied-set" ||
+    request.latestStatus !== "not-established" ||
+    request.preparationStatus !== "awaiting-exact-human-send-decision" ||
+    request.humanRelatedReviewSetConfirmed !== true ||
+    request.humanSendDecisionRecorded !== false ||
+    request.humanAuthorizerAuthenticated !== false ||
+    request.sourceRecheck !== "not-recorded" ||
+    request.routeRecheck !== "not-recorded" ||
+    request.relationshipDisclosureRecheck !== "not-recorded" ||
+    request.compensationDisclosureRecheck !== "not-recorded" ||
+    request.safetyRecheck !== "not-recorded" ||
+    request.contact !== "not-contacted" ||
+    request.sendAuthorization !== "not-authorized" ||
+    request.messageDispatched !== false ||
+    request.lifecycle !== "screening" ||
+    request.candidateCreated !== false ||
+    request.interestRecorded !== false ||
+    request.projectModificationAuthorized !== false ||
+    request.phoneAccessAuthorized !== false ||
+    request.pilotStateChecked !== false ||
+    request.deviceEnvironmentChecked !== false ||
+    request.publisherIdentity !== "not-established" ||
+    request.publisherAuthority !== "not-established" ||
+    request.publisherConsent !== "not-established" ||
+    request.publisherIndependence !== "not-established" ||
+    request.externalGrantGate !== "not-established" ||
+    request.grantReady !== false
+  ) {
+    throw new SendDecisionPreparationError("Private send decision request contract is invalid");
+  }
+  const preparedOn = storedRequestDate(request.preparedOn, "Private send decision request date");
+  if (typeof request.operatorRef !== "string" || !OPERATOR_REF.test(request.operatorRef)) {
+    throw new SendDecisionPreparationError("Private send decision request operator reference is invalid");
+  }
+
+  const selectedReview = parseReviewSetEntry(
+    request.selectedReview,
+    "Private send decision request selected review",
+  );
+  if (!Array.isArray(request.reviewSet) || request.reviewSet.length !== 1) {
+    throw new SendDecisionPreparationError("Private send decision request review set is invalid");
+  }
+  const reviewSet = request.reviewSet.map((entry, index) =>
+    parseReviewSetEntry(entry, "Private send decision request review set entry " + String(index + 1)),
+  );
+  if (!sameReviewSetEntry(reviewSet[0]!, selectedReview)) {
+    throw new SendDecisionPreparationError("Private send decision request selected review is inconsistent");
+  }
+  if (selectedReview.reviewedOn > preparedOn) {
+    throw new SendDecisionPreparationError("Private send decision request review date is inconsistent");
+  }
+  strictHash(request.reviewSetSha256, "Private send decision request review-set SHA-256");
+  if (request.reviewSetSha256 !== sendDecisionReviewSetSha256(reviewSet)) {
+    throw new SendDecisionPreparationError("Private send decision request review-set integrity check failed");
+  }
+
+  const prospect = requestRecord(request.prospect, "Private send decision request prospect binding");
+  const draft = requestRecord(request.draft, "Private send decision request draft binding");
+  assertExactRequestKeys(
+    prospect,
+    ["fileSha256", "sizeBytes"],
+    "Private send decision request prospect binding",
+  );
+  assertExactRequestKeys(
+    draft,
+    ["fileSha256", "sizeBytes"],
+    "Private send decision request draft binding",
+  );
+  strictHash(prospect.fileSha256, "Private send decision request prospect SHA-256");
+  strictHash(draft.fileSha256, "Private send decision request draft SHA-256");
+  storedRequestSize(prospect.sizeBytes, "Private send decision request prospect size");
+  storedRequestSize(draft.sizeBytes, "Private send decision request draft size");
+  if (
+    selectedReview.prospectFileSha256 !== prospect.fileSha256 ||
+    selectedReview.draftFileSha256 !== draft.fileSha256
+  ) {
+    throw new SendDecisionPreparationError("Private send decision request input bindings are inconsistent");
+  }
+  if (
+    selectedReview.reviewFileSha256 === prospect.fileSha256 ||
+    selectedReview.reviewFileSha256 === draft.fileSha256 ||
+    prospect.fileSha256 === draft.fileSha256
+  ) {
+    throw new SendDecisionPreparationError("Private send decision request input digests are not distinct");
+  }
+  if (
+    !Array.isArray(request.limitations) ||
+    JSON.stringify(request.limitations) !== JSON.stringify(SEND_DECISION_PREPARATION_LIMITATIONS)
+  ) {
+    throw new SendDecisionPreparationError("Private send decision request limitations are invalid");
+  }
+  strictHash(request.integritySha256, "Private send decision request integrity SHA-256");
+  const { integritySha256: _integritySha256, ...core } = request;
+  if (request.integritySha256 !== sha256Value(core)) {
+    throw new SendDecisionPreparationError("Private send decision request integrity check failed");
+  }
+  return request as unknown as PrivateSendDecisionRequestV1;
 }
 
 function assertDistinctSnapshots(snapshots: readonly PrivateReviewInputSnapshot[], label: string): void {

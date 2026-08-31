@@ -58,6 +58,12 @@ import {
   SendDecisionPreparationError,
   type SendDecisionRequestResultV1,
 } from "./pilot/send-decision-preparation.js";
+import {
+  HumanSendDecisionError,
+  recordHumanSendDecision,
+  type HumanSendDecisionResultV1,
+  type RecordHumanSendDecisionOptions,
+} from "./pilot/send-decision-recording.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { getCoreRuleCatalog, type CoreRuleCatalog } from "./rules/catalog.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
@@ -84,6 +90,7 @@ export interface CliDependencies {
   preparePrivateCohortRegister?: typeof preparePrivateCohortRegister;
   recordProspectReview?: typeof recordProspectReview;
   prepareSendDecisionRequest?: typeof prepareSendDecisionRequest;
+  recordHumanSendDecision?: typeof recordHumanSendDecision;
 }
 
 const defaultIO: CliIO = {
@@ -117,6 +124,7 @@ const HELP = [
   "  launchrig cohort prepare-register --output FILE [--json]",
   "  launchrig cohort record-prospect-review --prospect FILE --draft FILE --expected-prospect-sha256 HASH --expected-draft-sha256 HASH --reviewer-ref REF --reviewed-on YYYY-MM-DD --prospect-label LABEL --draft-label LABEL --reason-code CODE --finding KEY=VALUE --confirm-human-review --output FILE [--json]",
   "  launchrig cohort prepare-send-decision --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH [--related-review FILE --expected-related-review-sha256 HASH ...] --operator-ref REF --prepared-on YYYY-MM-DD --confirm-related-review-set-complete --output FILE [--json]",
+  "  launchrig cohort record-send-decision --request FILE --expected-request-sha256 HASH --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH --authorizer-ref REF --decided-on YYYY-MM-DD --decision DECISION --reason-code CODE --source-recheck STATUS --route-recheck STATUS --relationship-disclosure-recheck STATUS --compensation-disclosure-recheck STATUS --safety-recheck STATUS [--authorization-expires-on YYYY-MM-DD] --confirm-human-send-decision --output FILE [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -507,6 +515,73 @@ function humanSendDecisionRequestResult(value: SendDecisionRequestResultV1): str
   return lines.join("\n");
 }
 
+function humanSendDecisionResult(value: HumanSendDecisionResultV1): string {
+  const lines = [
+    "Private human send decision receipt created",
+    "decision file SHA-256: " + value.decisionFileSha256,
+    "decision content SHA-256: " + value.decisionContentSha256,
+    "request file SHA-256: " + value.requestFileSha256,
+    "request content SHA-256: " + value.requestContentSha256,
+    "review file SHA-256: " + value.reviewFileSha256,
+    "review content SHA-256: " + value.reviewContentSha256,
+    "prospect file SHA-256: " + value.prospectFileSha256,
+    "draft file SHA-256: " + value.draftFileSha256,
+    "review set count: " + value.reviewSetCount,
+    "review set SHA-256: " + value.reviewSetSha256,
+    "decision: " + value.decision,
+    "reason codes: " + value.reasonCodes.join(", "),
+    "source recheck: " + value.sourceRecheck,
+    "route recheck: " + value.routeRecheck,
+    "relationship disclosure recheck: " + value.relationshipDisclosureRecheck,
+    "compensation disclosure recheck: " + value.compensationDisclosureRecheck,
+    "safety recheck: " + value.safetyRecheck,
+    "human send decision confirmed: " + (value.humanSendDecisionConfirmed ? "yes" : "no"),
+    "no additional related review confirmed: " +
+      (value.humanNoAdditionalRelatedReviewConfirmed ? "yes" : "no"),
+    "human authorizer authenticated: " +
+      (value.humanAuthorizerAuthenticated ? "yes" : "no"),
+    "review set completeness: " + value.reviewSetCompleteness,
+    "conflict status: " + value.conflictStatus,
+    "latest status: " + value.latestStatus,
+    "send authorization: " + value.sendAuthorization,
+    "authorization scope: " + value.authorizationScope,
+    "authorization expires on: " + (value.authorizationExpiresOn ?? "none"),
+    "contact: " + value.contact,
+    "message dispatched: " + (value.messageDispatched ? "yes" : "no"),
+    "lifecycle: " + value.lifecycle,
+    "candidate created: " + (value.candidateCreated ? "yes" : "no"),
+    "interest recorded: " + (value.interestRecorded ? "yes" : "no"),
+    "project modification authorized: " +
+      (value.projectModificationAuthorized ? "yes" : "no"),
+    "phone access authorized: " + (value.phoneAccessAuthorized ? "yes" : "no"),
+    "pilot state checked: " + (value.pilotStateChecked ? "yes" : "no"),
+    "device environment checked: " + (value.deviceEnvironmentChecked ? "yes" : "no"),
+    "publisher identity: " + value.publisherIdentity,
+    "publisher authority: " + value.publisherAuthority,
+    "publisher consent: " + value.publisherConsent,
+    "publisher independence: " + value.publisherIndependence,
+    "external grant gate: " + value.externalGrantGate,
+    "grant ready: " + (value.grantReady ? "yes" : "no"),
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  if (value.decision === "authorize-exact-reviewed-draft") {
+    lines.push(
+      "Next: keep the receipt private. A separate named human may manually send only the exact unchanged reviewed draft through the reviewed route before expiry. This command contacted nobody and dispatched nothing.",
+    );
+  } else if (value.decision === "require-revision") {
+    lines.push(
+      "Next: revise the draft and complete a new human review, request, and decision. This command authorized no contact and dispatched nothing.",
+    );
+  } else if (value.decision === "defer") {
+    lines.push(
+      "Next: keep the receipt private and recheck the exact inputs before any later decision. This command authorized no contact and dispatched nothing.",
+    );
+  } else {
+    lines.push("Next: keep the receipt private and do not send this draft.");
+  }
+  return lines.join("\n");
+}
+
 function parseProspectReviewFindings(entries: string[] | undefined): ProspectReviewFindings {
   if (!entries || entries.length === 0) {
     throw new ProspectReviewError("cohort record-prospect-review requires every fixed --finding KEY=VALUE");
@@ -574,6 +649,42 @@ export async function runCli(
       return 2;
     }
   }
+  if (argv[0] === "cohort" && argv[1] === "record-send-decision") {
+    const rejectedOption = unsupportedOption(
+      argv,
+      new Set([
+        "--request",
+        "--expected-request-sha256",
+        "--review",
+        "--expected-review-sha256",
+        "--prospect",
+        "--expected-prospect-sha256",
+        "--draft",
+        "--expected-draft-sha256",
+        "--authorizer-ref",
+        "--decided-on",
+        "--decision",
+        "--reason-code",
+        "--source-recheck",
+        "--route-recheck",
+        "--relationship-disclosure-recheck",
+        "--compensation-disclosure-recheck",
+        "--safety-recheck",
+        "--authorization-expires-on",
+        "--confirm-human-send-decision",
+        "--output",
+        "--json",
+        "--help",
+        "-h",
+        "--version",
+        "-v",
+      ]),
+    );
+    if (rejectedOption) {
+      io.error("Human send decision error: cohort record-send-decision does not accept " + rejectedOption);
+      return 2;
+    }
+  }
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -600,6 +711,8 @@ export async function runCli(
         prospect: { type: "string" },
         draft: { type: "string" },
         review: { type: "string" },
+        request: { type: "string" },
+        "expected-request-sha256": { type: "string" },
         "expected-review-sha256": { type: "string" },
         "related-review": { type: "string", multiple: true },
         "expected-related-review-sha256": { type: "string", multiple: true },
@@ -615,6 +728,16 @@ export async function runCli(
         "reason-code": { type: "string", multiple: true },
         finding: { type: "string", multiple: true },
         "confirm-human-review": { type: "boolean", default: false },
+        "authorizer-ref": { type: "string" },
+        "decided-on": { type: "string" },
+        decision: { type: "string" },
+        "source-recheck": { type: "string" },
+        "route-recheck": { type: "string" },
+        "relationship-disclosure-recheck": { type: "string" },
+        "compensation-disclosure-recheck": { type: "string" },
+        "safety-recheck": { type: "string" },
+        "authorization-expires-on": { type: "string" },
+        "confirm-human-send-decision": { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -653,6 +776,12 @@ export async function runCli(
   const draftPath = typeof parsed.values.draft === "string" ? parsed.values.draft : undefined;
   const selectedReviewPath =
     typeof parsed.values.review === "string" ? parsed.values.review : undefined;
+  const sendDecisionRequestPath =
+    typeof parsed.values.request === "string" ? parsed.values.request : undefined;
+  const expectedSendDecisionRequestSha256 =
+    typeof parsed.values["expected-request-sha256"] === "string"
+      ? parsed.values["expected-request-sha256"]
+      : undefined;
   const expectedSelectedReviewSha256 =
     typeof parsed.values["expected-review-sha256"] === "string"
       ? parsed.values["expected-review-sha256"]
@@ -704,6 +833,38 @@ export async function runCli(
     Array.isArray(parsedFindings) &&
     parsedFindings.every((value): value is string => typeof value === "string")
       ? parsedFindings
+      : undefined;
+  const authorizerRef =
+    typeof parsed.values["authorizer-ref"] === "string"
+      ? parsed.values["authorizer-ref"]
+      : undefined;
+  const decidedOn =
+    typeof parsed.values["decided-on"] === "string" ? parsed.values["decided-on"] : undefined;
+  const sendDecision =
+    typeof parsed.values.decision === "string" ? parsed.values.decision : undefined;
+  const sourceRecheck =
+    typeof parsed.values["source-recheck"] === "string"
+      ? parsed.values["source-recheck"]
+      : undefined;
+  const routeRecheck =
+    typeof parsed.values["route-recheck"] === "string"
+      ? parsed.values["route-recheck"]
+      : undefined;
+  const relationshipDisclosureRecheck =
+    typeof parsed.values["relationship-disclosure-recheck"] === "string"
+      ? parsed.values["relationship-disclosure-recheck"]
+      : undefined;
+  const compensationDisclosureRecheck =
+    typeof parsed.values["compensation-disclosure-recheck"] === "string"
+      ? parsed.values["compensation-disclosure-recheck"]
+      : undefined;
+  const safetyRecheck =
+    typeof parsed.values["safety-recheck"] === "string"
+      ? parsed.values["safety-recheck"]
+      : undefined;
+  const authorizationExpiresOn =
+    typeof parsed.values["authorization-expires-on"] === "string"
+      ? parsed.values["authorization-expires-on"]
       : undefined;
 
   try {
@@ -802,6 +963,68 @@ export async function runCli(
 
     if (command === "cohort") {
       const subcommand = parsed.positionals[1];
+      if (subcommand === "record-send-decision") {
+        if (parsed.positionals.length !== 2) {
+          throw new HumanSendDecisionError(
+            "cohort record-send-decision does not accept positional arguments",
+          );
+        }
+        if (
+          !sendDecisionRequestPath ||
+          !expectedSendDecisionRequestSha256 ||
+          !selectedReviewPath ||
+          !expectedSelectedReviewSha256 ||
+          !prospectPath ||
+          !expectedProspectSha256 ||
+          !draftPath ||
+          !expectedDraftSha256 ||
+          !authorizerRef ||
+          !decidedOn ||
+          !sendDecision ||
+          !reasonCodes ||
+          !sourceRecheck ||
+          !routeRecheck ||
+          !relationshipDisclosureRecheck ||
+          !compensationDisclosureRecheck ||
+          !safetyRecheck ||
+          !outputPath
+        ) {
+          throw new HumanSendDecisionError(
+            "cohort record-send-decision requires the exact request, review, prospect, and draft with every digest, authorizer, date, decision, reason, five rechecks, confirmation, and output",
+          );
+        }
+        const recordDecision =
+          dependencies.recordHumanSendDecision ?? recordHumanSendDecision;
+        const options: RecordHumanSendDecisionOptions = {
+          requestPath: sendDecisionRequestPath,
+          expectedRequestSha256: expectedSendDecisionRequestSha256,
+          reviewPath: selectedReviewPath,
+          expectedReviewSha256: expectedSelectedReviewSha256,
+          prospectPath,
+          expectedProspectSha256,
+          draftPath,
+          expectedDraftSha256,
+          authorizerRef,
+          decidedOn,
+          decision: sendDecision as RecordHumanSendDecisionOptions["decision"],
+          reasonCodes: reasonCodes as RecordHumanSendDecisionOptions["reasonCodes"],
+          sourceRecheck: sourceRecheck as RecordHumanSendDecisionOptions["sourceRecheck"],
+          routeRecheck: routeRecheck as RecordHumanSendDecisionOptions["routeRecheck"],
+          relationshipDisclosureRecheck:
+            relationshipDisclosureRecheck as RecordHumanSendDecisionOptions["relationshipDisclosureRecheck"],
+          compensationDisclosureRecheck:
+            compensationDisclosureRecheck as RecordHumanSendDecisionOptions["compensationDisclosureRecheck"],
+          safetyRecheck: safetyRecheck as RecordHumanSendDecisionOptions["safetyRecheck"],
+          ...(authorizationExpiresOn ? { authorizationExpiresOn } : {}),
+          humanSendDecisionConfirmed:
+            parsed.values["confirm-human-send-decision"] === true,
+          outputPath,
+        };
+        const output = await recordDecision(options);
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanSendDecisionResult(output));
+        return 0;
+      }
+
       if (subcommand === "prepare-send-decision") {
         if (parsed.positionals.length !== 2) {
           throw new SendDecisionPreparationError(
@@ -966,7 +1189,7 @@ export async function runCli(
         return 0;
       }
       throw new CohortError(
-        "cohort command must be verify, audit, prepare-register, record-prospect-review, or prepare-send-decision",
+        "cohort command must be verify, audit, prepare-register, record-prospect-review, prepare-send-decision, or record-send-decision",
       );
     }
 
@@ -1336,6 +1559,10 @@ export async function runCli(
     }
     if (error instanceof SendDecisionPreparationError) {
       io.error("Send decision preparation error: " + error.message);
+      return error.exitCode;
+    }
+    if (error instanceof HumanSendDecisionError) {
+      io.error("Human send decision error: " + error.message);
       return error.exitCode;
     }
     io.error(error instanceof Error ? error.message : String(error));

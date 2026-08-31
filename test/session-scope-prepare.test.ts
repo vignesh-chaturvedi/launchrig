@@ -30,6 +30,7 @@ const OUTER_BUNDLE_COPY_MAP = [
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
   ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
+  ["docs/publisher-send-decision-recording.md", "docs/publisher-send-decision-recording.md"],
   ["docs/publisher-send-decision-preparation.md", "docs/publisher-send-decision-preparation.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
@@ -306,7 +307,7 @@ test("prepare-scope derives exact private inputs with safe defaults and a strict
   }
 });
 
-test("prepare-scope accepts RC10 through RC14 without changing claim limits", async () => {
+test("prepare-scope accepts RC10 through RC15 without changing claim limits", async () => {
   const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "launchrig-prepare-scope-profiles-")));
   try {
     const bundleDirectory = path.join(directory, "verified-bundle");
@@ -318,6 +319,7 @@ test("prepare-scope accepts RC10 through RC14 without changing claim limits", as
       "phase-2i-recruitment-register-rc-v12",
       "phase-2l-human-prospect-review-rc-v13",
       "phase-2m-send-decision-preparation-rc-v14",
+      "phase-2n-human-send-decision-rc-v15",
     ];
     const limitationSnapshots = new Set<string>();
 
@@ -383,7 +385,7 @@ test("prepare-scope accepts RC10 through RC14 without changing claim limits", as
           },
           {
             verifyPublisherBundleSnapshot: async () => ({
-              profile: "phase-2n-unknown-rc-v15",
+              profile: "phase-2o-unknown-rc-v16",
               bundleId: "sha256:" + "a".repeat(64),
               manifestSha256: "b".repeat(64),
               sha256SumsSha256: "c".repeat(64),
