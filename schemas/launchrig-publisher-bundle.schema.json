@@ -36,7 +36,8 @@
         "phase-2f-scope-enforced-pilot-rc-v9",
         "phase-2g-operational-contract-rc-v10",
         "phase-2h-consent-safe-scope-rc-v11",
-        "phase-2i-recruitment-register-rc-v12"
+        "phase-2i-recruitment-register-rc-v12",
+        "phase-2l-human-prospect-review-rc-v13"
       ]
     },
     "bundleId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
@@ -146,6 +147,40 @@
     {
       "if": {
         "properties": {
+          "profile": { "const": "phase-2l-human-prospect-review-rc-v13" }
+        }
+      },
+      "then": {
+        "properties": {
+          "consumerRehearsal": {
+            "type": "object",
+            "properties": {
+              "checks": {
+                "const": [
+                  "offline-package-install",
+                  "installed-version-match",
+                  "installed-help-contract",
+                  "pilot-timer-start",
+                  "starter-generation",
+                  "starter-validation",
+                  "device-free-preflight-refusal",
+                  "device-free-pilot-policy-lint-refusal",
+                  "device-free-session-scope-receipt",
+                  "device-free-approved-scope-enforcement",
+                  "installed-scope-linked-governance-contract",
+                  "device-free-consent-safe-scope-preparation",
+                  "device-free-private-recruitment-register-preparation",
+                  "device-free-private-prospect-review-confirmation-refusal"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "profile": { "const": "phase-2i-recruitment-register-rc-v12" }
         }
       },
@@ -171,6 +206,28 @@
                   "device-free-private-recruitment-register-preparation"
                 ]
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "phase-2i-recruitment-register-rc-v12",
+              "phase-2l-human-prospect-review-rc-v13"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "consumerRehearsal": {
+            "type": "object",
+            "properties": {
+              "checks": { "type": "array" }
             }
           }
         }

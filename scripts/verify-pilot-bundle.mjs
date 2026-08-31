@@ -53,6 +53,10 @@ const REHEARSAL_CHECKS_V12 = [
   ...REHEARSAL_CHECKS_V11,
   "device-free-private-recruitment-register-preparation",
 ];
+const REHEARSAL_CHECKS_V13 = [
+  ...REHEARSAL_CHECKS_V12,
+  "device-free-private-prospect-review-confirmation-refusal",
+];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
   "frozen-offline-dependency-restore",
@@ -77,6 +81,7 @@ const BUNDLE_PROFILE_V9 = "phase-2f-scope-enforced-pilot-rc-v9";
 const BUNDLE_PROFILE_V10 = "phase-2g-operational-contract-rc-v10";
 const BUNDLE_PROFILE_V11 = "phase-2h-consent-safe-scope-rc-v11";
 const BUNDLE_PROFILE_V12 = "phase-2i-recruitment-register-rc-v12";
+const BUNDLE_PROFILE_V13 = "phase-2l-human-prospect-review-rc-v13";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -168,6 +173,10 @@ const PACKED_DOCUMENTS_V12 = [
   ...PACKED_DOCUMENTS_V6,
   "docs/publisher-recruitment.md",
 ].sort();
+const PACKED_DOCUMENTS_V13 = [
+  ...PACKED_DOCUMENTS_V12,
+  "docs/publisher-prospect-review.md",
+].sort();
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -237,6 +246,11 @@ const PACKED_SCHEMAS_V12 = [
   ...PACKED_SCHEMAS_V11,
   "schemas/launchrig-private-cohort-register-draft-result.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V13 = [
+  ...PACKED_SCHEMAS_V12,
+  "schemas/launchrig-private-prospect-review-result.schema.json",
+  "schemas/launchrig-private-prospect-review.schema.json",
+].sort();
 const PACKED_ACTION_FILES_V6 = [
   "action.yml",
   "action/run-validation.mjs",
@@ -265,6 +279,11 @@ const PACKED_COMPILED_ADDITIONS_V12_ONLY = [
   "package/dist/src/pilot/cohort-preparation.d.ts",
   "package/dist/src/pilot/cohort-preparation.js",
   "package/dist/src/pilot/cohort-preparation.js.map",
+];
+const PACKED_COMPILED_ADDITIONS_V13_ONLY = [
+  "package/dist/src/pilot/prospect-review.d.ts",
+  "package/dist/src/pilot/prospect-review.js",
+  "package/dist/src/pilot/prospect-review.js.map",
 ];
 const PACKED_TEMPLATES_V11 = [
   "templates/defect-evidence.md",
@@ -339,12 +358,22 @@ function packedInventory(profile) {
       actionFiles: PACKED_ACTION_FILES_V6,
       runtimeFiles: PACKED_RUNTIME_FILES_V11,
     };
+  } else if (profile === BUNDLE_PROFILE_V13) {
+    inventory = {
+      documents: PACKED_DOCUMENTS_V13,
+      schemas: PACKED_SCHEMAS_V13,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
+    };
   } else {
     throw new Error("Unsupported bundle manifest.");
   }
   return {
     ...inventory,
-    templates: profile === BUNDLE_PROFILE_V12 ? PACKED_TEMPLATES_V12 : PACKED_TEMPLATES_V11,
+    templates:
+      profile === BUNDLE_PROFILE_V12 || profile === BUNDLE_PROFILE_V13
+        ? PACKED_TEMPLATES_V12
+        : PACKED_TEMPLATES_V11,
   };
 }
 
@@ -540,9 +569,14 @@ function expectedPayloadFiles(version, profile) {
   const inventory = packedInventory(profile);
   return [
     "README.md",
-    ...(profile === BUNDLE_PROFILE_V12 ? ["docs/cohort-audit.md"] : []),
+    ...(profile === BUNDLE_PROFILE_V12 || profile === BUNDLE_PROFILE_V13
+      ? ["docs/cohort-audit.md"]
+      : []),
     "docs/publisher-pilot-quickstart.md",
-    ...(profile === BUNDLE_PROFILE_V12 ? ["docs/publisher-recruitment.md"] : []),
+    ...(profile === BUNDLE_PROFILE_V12 || profile === BUNDLE_PROFILE_V13
+      ? ["docs/publisher-recruitment.md"]
+      : []),
+    ...(profile === BUNDLE_PROFILE_V13 ? ["docs/publisher-prospect-review.md"] : []),
     "docs/supported-environment.md",
     "docs/flows/mwa-authorize.md",
     "docs/flows/mwa-reject.md",
@@ -687,7 +721,18 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
-  if (manifest.profile === BUNDLE_PROFILE_V12) {
+  if (manifest.profile === BUNDLE_PROFILE_V13) {
+    for (const required of [
+      ...PACKED_COMPILED_ADDITIONS_V8,
+      ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
+    ]) {
+      if (!entries.has(required)) {
+        throw new Error("LaunchRig package RC13 is missing " + required + ".");
+      }
+    }
+  } else if (manifest.profile === BUNDLE_PROFILE_V12) {
     for (const required of [
       ...PACKED_COMPILED_ADDITIONS_V8,
       ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
@@ -697,13 +742,20 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
         throw new Error("LaunchRig package RC12 is missing " + required + ".");
       }
     }
+    const unexpected = PACKED_COMPILED_ADDITIONS_V13_ONLY.find((entry) => entries.has(entry));
+    if (unexpected) {
+      throw new Error("LaunchRig package contains an RC13 file outside its historical profile: " + unexpected);
+    }
   } else if (manifest.profile === BUNDLE_PROFILE_V11) {
     for (const required of [...PACKED_COMPILED_ADDITIONS_V8, ...PACKED_COMPILED_ADDITIONS_V11_ONLY]) {
       if (!entries.has(required)) {
         throw new Error("LaunchRig package RC11 is missing " + required + ".");
       }
     }
-    const unexpected = PACKED_COMPILED_ADDITIONS_V12_ONLY.find((entry) => entries.has(entry));
+    const unexpected = [
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
+    ].find((entry) => entries.has(entry));
     if (unexpected) {
       throw new Error("LaunchRig package contains an RC12 file outside its historical profile: " + unexpected);
     }
@@ -717,9 +769,11 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
         throw new Error("LaunchRig package scope-capable profile is missing " + required + ".");
       }
     }
-    const unexpected = [...PACKED_COMPILED_ADDITIONS_V11_ONLY, ...PACKED_COMPILED_ADDITIONS_V12_ONLY].find(
-      (entry) => entries.has(entry),
-    );
+    const unexpected = [
+      ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
+    ].find((entry) => entries.has(entry));
     if (unexpected) {
       throw new Error("LaunchRig package contains an RC11 file outside its historical profile: " + unexpected);
     }
@@ -733,6 +787,7 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
       ...PACKED_COMPILED_ADDITIONS_V8_ONLY,
       ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
       ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
     ].find((entry) => entries.has(entry));
     if (unexpected) {
       throw new Error("LaunchRig package contains an RC8 file outside its historical profile: " + unexpected);
@@ -742,6 +797,7 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
       ...PACKED_COMPILED_ADDITIONS_V8,
       ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
       ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
     ].find((entry) => entries.has(entry));
     if (unexpected) {
       throw new Error("LaunchRig package contains a newer release file outside its historical profile: " + unexpected);
@@ -854,7 +910,9 @@ function validateManifest(manifest) {
     "Bundle manifest",
   );
   const expectedRehearsalChecks =
-    manifest.profile === BUNDLE_PROFILE_V12
+    manifest.profile === BUNDLE_PROFILE_V13
+      ? REHEARSAL_CHECKS_V13
+      : manifest.profile === BUNDLE_PROFILE_V12
       ? REHEARSAL_CHECKS_V12
       : manifest.profile === BUNDLE_PROFILE_V11
         ? REHEARSAL_CHECKS_V11
@@ -883,6 +941,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V10,
       BUNDLE_PROFILE_V11,
       BUNDLE_PROFILE_V12,
+      BUNDLE_PROFILE_V13,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");

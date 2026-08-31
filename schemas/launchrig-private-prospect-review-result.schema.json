@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-prospect-review-result.schema.json",
+  "title": "LaunchRig private prospect review result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "status",
+    "claimStatus",
+    "humanReviewConfirmed",
+    "humanReviewerAuthenticated",
+    "reviewFileSha256",
+    "reviewContentSha256",
+    "prospectFileSha256",
+    "draftFileSha256",
+    "prospectLabel",
+    "draftLabel",
+    "contact",
+    "sendAuthorization",
+    "lifecycle",
+    "candidateCreated",
+    "interestRecorded",
+    "projectModificationAuthorized",
+    "phoneAccessAuthorized",
+    "pilotStateChecked",
+    "deviceEnvironmentChecked",
+    "publisherIdentity",
+    "publisherAuthority",
+    "publisherConsent",
+    "publisherIndependence",
+    "externalGrantGate",
+    "grantReady",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-prospect-review-result" },
+    "profile": { "const": "phase-2l-human-prospect-review-v1" },
+    "status": { "const": "created" },
+    "claimStatus": { "const": "human-operator-recorded-unattested" },
+    "humanReviewConfirmed": { "const": true },
+    "humanReviewerAuthenticated": { "const": false },
+    "reviewFileSha256": { "$ref": "#/$defs/hash" },
+    "reviewContentSha256": { "$ref": "#/$defs/hash" },
+    "prospectFileSha256": { "$ref": "#/$defs/hash" },
+    "draftFileSha256": { "$ref": "#/$defs/hash" },
+    "prospectLabel": {
+      "enum": [
+        "operator-reviewed-consider-outreach",
+        "operator-reviewed-defer",
+        "operator-reviewed-do-not-contact"
+      ]
+    },
+    "draftLabel": {
+      "enum": [
+        "operator-reviewed-needs-revision",
+        "operator-reviewed-awaiting-separate-send-authorization",
+        "operator-reviewed-do-not-send"
+      ]
+    },
+    "contact": { "const": "not-contacted" },
+    "sendAuthorization": { "const": "not-authorized" },
+    "lifecycle": { "const": "screening" },
+    "candidateCreated": { "const": false },
+    "interestRecorded": { "const": false },
+    "projectModificationAuthorized": { "const": false },
+    "phoneAccessAuthorized": { "const": false },
+    "pilotStateChecked": { "const": false },
+    "deviceEnvironmentChecked": { "const": false },
+    "publisherIdentity": { "const": "not-established" },
+    "publisherAuthority": { "const": "not-established" },
+    "publisherConsent": { "const": "not-established" },
+    "publisherIndependence": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": {
+      "const": [
+        "This record preserves an explicit operator assertion about exact private prospect and draft bytes. It does not authenticate the reviewer, publisher, project, source, contact route, or findings.",
+        "The record performs no contact and grants no send authorization, candidate status, publisher interest, consent, project access, installation, device access, wallet action, or pilot execution.",
+        "Any change to either exact input invalidates this review for the changed bytes and requires a new human review record.",
+        "File ownership and mode checks do not prove ACL, backup, sync, process-list, shell-history, or cloud-storage privacy.",
+        "Publisher identity, authority, consent, independence, external testing, Seeker evidence, confirmed defects, and grant readiness remain not established.",
+        "The command does not detect duplicate or conflicting review records, and no record is implicitly the latest. Any later send decision must bind one exact review-file SHA-256 plus the unchanged prospect and draft SHA-256 values."
+      ]
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

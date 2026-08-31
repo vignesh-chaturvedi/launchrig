@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-prospect-review.schema.json",
+  "title": "LaunchRig private prospect review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "privacyProfile",
+    "reviewRef",
+    "reviewedOn",
+    "reviewerRef",
+    "claimStatus",
+    "humanReviewConfirmed",
+    "humanReviewerAuthenticated",
+    "prospect",
+    "draft",
+    "reasonCodes",
+    "findings",
+    "contact",
+    "sendAuthorization",
+    "lifecycle",
+    "candidateCreated",
+    "interestRecorded",
+    "projectModificationAuthorized",
+    "phoneAccessAuthorized",
+    "pilotStateChecked",
+    "deviceEnvironmentChecked",
+    "publisherIdentity",
+    "publisherAuthority",
+    "publisherConsent",
+    "publisherIndependence",
+    "externalGrantGate",
+    "grantReady",
+    "limitations",
+    "integritySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-prospect-review" },
+    "profile": { "const": "phase-2l-human-prospect-review-v1" },
+    "privacyProfile": { "const": "opaque-reviewer-digests-labels-v1" },
+    "reviewRef": { "$ref": "#/$defs/reviewRef" },
+    "reviewedOn": { "$ref": "#/$defs/date" },
+    "reviewerRef": { "$ref": "#/$defs/reviewerRef" },
+    "claimStatus": { "const": "human-operator-recorded-unattested" },
+    "humanReviewConfirmed": { "const": true },
+    "humanReviewerAuthenticated": { "const": false },
+    "prospect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileSha256", "sizeBytes", "label"],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "sizeBytes": { "$ref": "#/$defs/size" },
+        "label": { "$ref": "#/$defs/prospectLabel" }
+      }
+    },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileSha256", "sizeBytes", "label"],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "sizeBytes": { "$ref": "#/$defs/size" },
+        "label": { "$ref": "#/$defs/draftLabel" }
+      }
+    },
+    "reasonCodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 13,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/reasonCode" }
+    },
+    "findings": { "$ref": "#/$defs/findings" },
+    "contact": { "const": "not-contacted" },
+    "sendAuthorization": { "const": "not-authorized" },
+    "lifecycle": { "const": "screening" },
+    "candidateCreated": { "const": false },
+    "interestRecorded": { "const": false },
+    "projectModificationAuthorized": { "const": false },
+    "phoneAccessAuthorized": { "const": false },
+    "pilotStateChecked": { "const": false },
+    "deviceEnvironmentChecked": { "const": false },
+    "publisherIdentity": { "const": "not-established" },
+    "publisherAuthority": { "const": "not-established" },
+    "publisherConsent": { "const": "not-established" },
+    "publisherIndependence": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": { "$ref": "#/$defs/limitations" },
+    "integritySha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "prospect": {
+            "properties": {
+              "label": { "const": "operator-reviewed-consider-outreach" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "draft": {
+            "properties": {
+              "label": {
+                "enum": [
+                  "operator-reviewed-needs-revision",
+                  "operator-reviewed-awaiting-separate-send-authorization"
+                ]
+              }
+            }
+          },
+          "findings": { "$ref": "#/$defs/positiveProspectFindings" }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "draft": {
+                  "properties": {
+                    "label": { "const": "operator-reviewed-awaiting-separate-send-authorization" }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reasonCodes": { "const": ["fit-check-boundary-reviewed"] },
+                "findings": { "$ref": "#/$defs/positiveAllFindings" }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "draft": {
+                  "properties": {
+                    "label": { "const": "operator-reviewed-needs-revision" }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reasonCodes": { "const": ["draft-needs-revision"] }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "prospect": {
+            "properties": {
+              "label": { "const": "operator-reviewed-defer" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "draft": {
+            "properties": {
+              "label": { "const": "operator-reviewed-do-not-send" }
+            }
+          },
+          "reasonCodes": {
+            "items": {
+              "enum": [
+                "source-review-incomplete",
+                "route-review-incomplete",
+                "draft-needs-revision",
+                "timing-deferred",
+                "relationship-review-incomplete",
+                "safety-review-incomplete"
+              ]
+            }
+          },
+          "findings": {
+            "properties": {
+              "contactRoute": { "enum": ["appropriate", "unresolved"] }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "findings": {
+                  "anyOf": [
+                    { "properties": { "citedSource": { "const": "incomplete" } } },
+                    { "properties": { "unobservedDetails": { "const": "incomplete" } } }
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reasonCodes": { "contains": { "const": "source-review-incomplete" } }
+              }
+            },
+            "else": {
+              "properties": {
+                "reasonCodes": { "not": { "contains": { "const": "source-review-incomplete" } } }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "findings": {
+                  "properties": {
+                    "contactRoute": { "const": "unresolved" }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reasonCodes": { "contains": { "const": "route-review-incomplete" } }
+              }
+            },
+            "else": {
+              "properties": {
+                "reasonCodes": { "not": { "contains": { "const": "route-review-incomplete" } } }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "findings": {
+                  "anyOf": [
+                    { "properties": { "relationshipDisclosure": { "const": "incomplete" } } },
+                    { "properties": { "compensationDisclosure": { "const": "incomplete" } } }
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "reasonCodes": { "contains": { "const": "relationship-review-incomplete" } }
+              }
+            },
+            "else": {
+              "properties": {
+                "reasonCodes": { "not": { "contains": { "const": "relationship-review-incomplete" } } }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "findings": { "$ref": "#/$defs/unsafeFinding" }
+              }
+            },
+            "then": {
+              "properties": {
+                "reasonCodes": { "contains": { "const": "safety-review-incomplete" } }
+              }
+            },
+            "else": {
+              "properties": {
+                "reasonCodes": { "not": { "contains": { "const": "safety-review-incomplete" } } }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "prospect": {
+            "properties": {
+              "label": { "const": "operator-reviewed-do-not-contact" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "draft": {
+            "properties": {
+              "label": { "const": "operator-reviewed-do-not-send" }
+            }
+          },
+          "reasonCodes": {
+            "items": {
+              "enum": [
+                "inappropriate-route",
+                "explicit-contact-restriction",
+                "inactive-target",
+                "out-of-scope",
+                "unacceptable-conflict",
+                "unsafe-product-boundary"
+              ]
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "reasonCodes": { "contains": { "const": "inappropriate-route" } }
+              }
+            },
+            "then": {
+              "properties": {
+                "findings": {
+                  "properties": {
+                    "contactRoute": { "const": "inappropriate" }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "reasonCodes": { "contains": { "const": "unsafe-product-boundary" } }
+              }
+            },
+            "then": {
+              "properties": {
+                "findings": { "$ref": "#/$defs/unsafeFinding" }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "size": { "type": "integer", "minimum": 1, "maximum": 262144 },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "reviewRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:prospect-review:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "reviewerRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:reviewer:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "prospectLabel": {
+      "enum": [
+        "operator-reviewed-consider-outreach",
+        "operator-reviewed-defer",
+        "operator-reviewed-do-not-contact"
+      ]
+    },
+    "draftLabel": {
+      "enum": [
+        "operator-reviewed-needs-revision",
+        "operator-reviewed-awaiting-separate-send-authorization",
+        "operator-reviewed-do-not-send"
+      ]
+    },
+    "reasonCode": {
+      "enum": [
+        "fit-check-boundary-reviewed",
+        "source-review-incomplete",
+        "route-review-incomplete",
+        "draft-needs-revision",
+        "timing-deferred",
+        "relationship-review-incomplete",
+        "safety-review-incomplete",
+        "inappropriate-route",
+        "explicit-contact-restriction",
+        "inactive-target",
+        "out-of-scope",
+        "unacceptable-conflict",
+        "unsafe-product-boundary"
+      ]
+    },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "citedSource",
+        "unobservedDetails",
+        "contactRoute",
+        "relationshipDisclosure",
+        "compensationDisclosure",
+        "messageScope",
+        "installationOrAccessRequest",
+        "financialRisk",
+        "biometricRisk",
+        "credentialRisk",
+        "deviceControlRisk",
+        "locationRisk",
+        "productionAccountRisk",
+        "mainnetRisk",
+        "valuableFundsRisk"
+      ],
+      "properties": {
+        "citedSource": { "enum": ["reopened-and-fact-confirmed", "incomplete"] },
+        "unobservedDetails": { "enum": ["preserved-as-unknown", "incomplete"] },
+        "contactRoute": { "enum": ["appropriate", "inappropriate", "unresolved"] },
+        "relationshipDisclosure": { "enum": ["complete-or-not-applicable", "incomplete"] },
+        "compensationDisclosure": { "enum": ["complete-or-not-applicable", "incomplete"] },
+        "messageScope": { "enum": ["fit-check-only", "broader-request-present"] },
+        "installationOrAccessRequest": { "enum": ["absent", "present"] },
+        "financialRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "biometricRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "credentialRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "deviceControlRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "locationRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "productionAccountRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "mainnetRisk": { "enum": ["excluded", "present-or-unresolved"] },
+        "valuableFundsRisk": { "enum": ["excluded", "present-or-unresolved"] }
+      }
+    },
+    "positiveProspectFindings": {
+      "properties": {
+        "citedSource": { "const": "reopened-and-fact-confirmed" },
+        "unobservedDetails": { "const": "preserved-as-unknown" },
+        "contactRoute": { "const": "appropriate" },
+        "relationshipDisclosure": { "const": "complete-or-not-applicable" },
+        "compensationDisclosure": { "const": "complete-or-not-applicable" },
+        "financialRisk": { "const": "excluded" },
+        "biometricRisk": { "const": "excluded" },
+        "credentialRisk": { "const": "excluded" },
+        "deviceControlRisk": { "const": "excluded" },
+        "locationRisk": { "const": "excluded" },
+        "productionAccountRisk": { "const": "excluded" },
+        "mainnetRisk": { "const": "excluded" },
+        "valuableFundsRisk": { "const": "excluded" }
+      }
+    },
+    "positiveAllFindings": {
+      "allOf": [
+        { "$ref": "#/$defs/positiveProspectFindings" },
+        {
+          "properties": {
+            "messageScope": { "const": "fit-check-only" },
+            "installationOrAccessRequest": { "const": "absent" }
+          }
+        }
+      ]
+    },
+    "unsafeFinding": {
+      "anyOf": [
+        { "properties": { "messageScope": { "const": "broader-request-present" } } },
+        { "properties": { "installationOrAccessRequest": { "const": "present" } } },
+        { "properties": { "financialRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "biometricRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "credentialRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "deviceControlRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "locationRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "productionAccountRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "mainnetRisk": { "const": "present-or-unresolved" } } },
+        { "properties": { "valuableFundsRisk": { "const": "present-or-unresolved" } } }
+      ]
+    },
+    "limitations": {
+      "const": [
+        "This record preserves an explicit operator assertion about exact private prospect and draft bytes. It does not authenticate the reviewer, publisher, project, source, contact route, or findings.",
+        "The record performs no contact and grants no send authorization, candidate status, publisher interest, consent, project access, installation, device access, wallet action, or pilot execution.",
+        "Any change to either exact input invalidates this review for the changed bytes and requires a new human review record.",
+        "File ownership and mode checks do not prove ACL, backup, sync, process-list, shell-history, or cloud-storage privacy.",
+        "Publisher identity, authority, consent, independence, external testing, Seeker evidence, confirmed defects, and grant readiness remain not established.",
+        "The command does not detect duplicate or conflicting review records, and no record is implicitly the latest. Any later send decision must bind one exact review-file SHA-256 plus the unchanged prospect and draft SHA-256 values."
+      ]
+    }
+  }
+}

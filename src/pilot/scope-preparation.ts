@@ -41,6 +41,7 @@ const ACCEPTED_BUNDLE_PROFILES = new Set([
   "phase-2g-operational-contract-rc-v10",
   "phase-2h-consent-safe-scope-rc-v11",
   "phase-2i-recruitment-register-rc-v12",
+  "phase-2l-human-prospect-review-rc-v13",
 ]);
 
 const DRAFT_LIMITATIONS = [
@@ -63,6 +64,10 @@ interface PublisherBundleSnapshot {
 type PublisherBundleSnapshotVerifier = (
   directory: string,
 ) => Promise<PublisherBundleSnapshot>;
+
+export interface PilotScopePreparationDependencies {
+  verifyPublisherBundleSnapshot?: PublisherBundleSnapshotVerifier;
+}
 
 export interface PreparePilotSessionScopeOptions {
   configPath: string;
@@ -369,6 +374,7 @@ async function assertOutputOutsideBundle(bundleDirectory: string, outputPath: st
 
 export async function preparePilotSessionScope(
   options: PreparePilotSessionScopeOptions,
+  dependencies: PilotScopePreparationDependencies = {},
 ): Promise<PilotSessionScopeDraftResultV1> {
   const configPath = safeString(options.configPath, "Pilot scope configuration");
   const bundleDirectory = safeString(options.bundleDirectory, "Publisher bundle directory");
@@ -380,7 +386,7 @@ export async function preparePilotSessionScope(
   if (!Number.isFinite(now.valueOf())) throw new PilotSessionScopeError("Current date is invalid", 3);
   const expiresOn = strictDate(options.expiresOn, now.toISOString().slice(0, 10));
   const retentionDeletionMethod = deletionMethod(options.deletionMethod);
-  const verify = defaultVerifyBundleSnapshot;
+  const verify = dependencies.verifyPublisherBundleSnapshot ?? defaultVerifyBundleSnapshot;
 
   const firstBundle = await verifiedBundleSnapshot(bundleDirectory, verify);
   const firstInputs = await captureScopeInputs(configPath);

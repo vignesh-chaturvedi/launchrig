@@ -46,6 +46,13 @@ import {
   preparePrivateCohortRegister,
   type PrivateCohortRegisterDraftResultV1,
 } from "./pilot/cohort-preparation.js";
+import {
+  PROSPECT_REVIEW_FINDING_VALUES,
+  ProspectReviewError,
+  recordProspectReview,
+  type ProspectReviewFindings,
+  type ProspectReviewResultV1,
+} from "./pilot/prospect-review.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { getCoreRuleCatalog, type CoreRuleCatalog } from "./rules/catalog.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
@@ -70,6 +77,7 @@ export interface CliDependencies {
   verifyCohortEvidence?: typeof verifyCohortEvidence;
   auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
   preparePrivateCohortRegister?: typeof preparePrivateCohortRegister;
+  recordProspectReview?: typeof recordProspectReview;
 }
 
 const defaultIO: CliIO = {
@@ -101,6 +109,7 @@ const HELP = [
   "  launchrig cohort verify FILE... [--json]",
   "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
   "  launchrig cohort prepare-register --output FILE [--json]",
+  "  launchrig cohort record-prospect-review --prospect FILE --draft FILE --expected-prospect-sha256 HASH --expected-draft-sha256 HASH --reviewer-ref REF --reviewed-on YYYY-MM-DD --prospect-label LABEL --draft-label LABEL --reason-code CODE --finding KEY=VALUE --confirm-human-review --output FILE [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -405,6 +414,61 @@ function humanPrivateCohortRegisterDraft(value: PrivateCohortRegisterDraftResult
   return lines.join("\n");
 }
 
+function humanProspectReviewResult(value: ProspectReviewResultV1): string {
+  const lines = [
+    "Private prospect and draft review receipt created",
+    "review file SHA-256: " + value.reviewFileSha256,
+    "review content SHA-256: " + value.reviewContentSha256,
+    "prospect file SHA-256: " + value.prospectFileSha256,
+    "draft file SHA-256: " + value.draftFileSha256,
+    "prospect label: " + value.prospectLabel,
+    "draft label: " + value.draftLabel,
+    "operator assertion recorded: " + (value.humanReviewConfirmed ? "yes" : "no"),
+    "human reviewer authenticated: " + (value.humanReviewerAuthenticated ? "yes" : "no"),
+    "contact: " + value.contact,
+    "send authorization: " + value.sendAuthorization,
+    "lifecycle: " + value.lifecycle,
+    "candidate created: no",
+    "project modification authorized: no",
+    "phone access authorized: no",
+    "device environment checked: no",
+    "external grant gate: " + value.externalGrantGate,
+    "grant ready: no",
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  if (value.prospectLabel === "operator-reviewed-do-not-contact") {
+    lines.push("Next: keep the receipt private and do not send this draft.");
+  } else if (value.draftLabel === "operator-reviewed-needs-revision") {
+    lines.push("Next: revise the draft, calculate its new SHA-256, and complete a new human review before any send decision.");
+  } else if (value.prospectLabel === "operator-reviewed-defer") {
+    lines.push("Next: keep the receipt private and complete a new human review if the deferred conditions change.");
+  } else if (value.draftLabel === "operator-reviewed-do-not-send") {
+    lines.push("Next: keep the receipt private and do not send this draft.");
+  } else {
+    lines.push(
+      "Next: keep the receipt private. A separate exact human decision may authorize only this unchanged reviewed draft.",
+    );
+  }
+  return lines.join("\n");
+}
+
+function parseProspectReviewFindings(entries: string[] | undefined): ProspectReviewFindings {
+  if (!entries || entries.length === 0) {
+    throw new ProspectReviewError("cohort record-prospect-review requires every fixed --finding KEY=VALUE");
+  }
+  const result: Record<string, string> = {};
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+    const key = separator > 0 ? entry.slice(0, separator) : "";
+    const value = separator > 0 ? entry.slice(separator + 1) : "";
+    if (!(key in PROSPECT_REVIEW_FINDING_VALUES) || value.length === 0 || key in result) {
+      throw new ProspectReviewError("cohort record-prospect-review findings are invalid or duplicated");
+    }
+    result[key] = value;
+  }
+  return result as unknown as ProspectReviewFindings;
+}
+
 function unsupportedOption(argv: string[], allowed: ReadonlySet<string>): string | undefined {
   for (const argument of argv) {
     if (!argument.startsWith("-")) continue;
@@ -447,6 +511,17 @@ export async function runCli(
         bundle: { type: "string" },
         "expires-on": { type: "string" },
         "deletion-method": { type: "string" },
+        prospect: { type: "string" },
+        draft: { type: "string" },
+        "expected-prospect-sha256": { type: "string" },
+        "expected-draft-sha256": { type: "string" },
+        "reviewer-ref": { type: "string" },
+        "reviewed-on": { type: "string" },
+        "prospect-label": { type: "string" },
+        "draft-label": { type: "string" },
+        "reason-code": { type: "string", multiple: true },
+        finding: { type: "string", multiple: true },
+        "confirm-human-review": { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -481,6 +556,36 @@ export async function runCli(
   const expiresOn = typeof parsed.values["expires-on"] === "string" ? parsed.values["expires-on"] : undefined;
   const deletionMethod =
     typeof parsed.values["deletion-method"] === "string" ? parsed.values["deletion-method"] : undefined;
+  const prospectPath = typeof parsed.values.prospect === "string" ? parsed.values.prospect : undefined;
+  const draftPath = typeof parsed.values.draft === "string" ? parsed.values.draft : undefined;
+  const expectedProspectSha256 =
+    typeof parsed.values["expected-prospect-sha256"] === "string"
+      ? parsed.values["expected-prospect-sha256"]
+      : undefined;
+  const expectedDraftSha256 =
+    typeof parsed.values["expected-draft-sha256"] === "string"
+      ? parsed.values["expected-draft-sha256"]
+      : undefined;
+  const reviewerRef =
+    typeof parsed.values["reviewer-ref"] === "string" ? parsed.values["reviewer-ref"] : undefined;
+  const reviewedOn =
+    typeof parsed.values["reviewed-on"] === "string" ? parsed.values["reviewed-on"] : undefined;
+  const prospectLabel =
+    typeof parsed.values["prospect-label"] === "string" ? parsed.values["prospect-label"] : undefined;
+  const draftLabel =
+    typeof parsed.values["draft-label"] === "string" ? parsed.values["draft-label"] : undefined;
+  const parsedReasonCodes = parsed.values["reason-code"];
+  const reasonCodes =
+    Array.isArray(parsedReasonCodes) &&
+    parsedReasonCodes.every((value): value is string => typeof value === "string")
+      ? parsedReasonCodes
+      : undefined;
+  const parsedFindings = parsed.values.finding;
+  const findings =
+    Array.isArray(parsedFindings) &&
+    parsedFindings.every((value): value is string => typeof value === "string")
+      ? parsedFindings
+      : undefined;
 
   try {
     if (command === "rules") {
@@ -578,6 +683,70 @@ export async function runCli(
 
     if (command === "cohort") {
       const subcommand = parsed.positionals[1];
+      if (subcommand === "record-prospect-review") {
+        const rejectedOption = unsupportedOption(
+          argv,
+          new Set([
+            "--prospect",
+            "--draft",
+            "--expected-prospect-sha256",
+            "--expected-draft-sha256",
+            "--reviewer-ref",
+            "--reviewed-on",
+            "--prospect-label",
+            "--draft-label",
+            "--reason-code",
+            "--finding",
+            "--confirm-human-review",
+            "--output",
+            "--json",
+            "--help",
+            "-h",
+            "--version",
+            "-v",
+          ]),
+        );
+        if (rejectedOption) {
+          throw new ProspectReviewError("cohort record-prospect-review does not accept " + rejectedOption);
+        }
+        if (parsed.positionals.length !== 2) {
+          throw new ProspectReviewError("cohort record-prospect-review does not accept positional arguments");
+        }
+        if (
+          !prospectPath ||
+          !draftPath ||
+          !expectedProspectSha256 ||
+          !expectedDraftSha256 ||
+          !reviewerRef ||
+          !reviewedOn ||
+          !prospectLabel ||
+          !draftLabel ||
+          !reasonCodes ||
+          !outputPath
+        ) {
+          throw new ProspectReviewError(
+            "cohort record-prospect-review requires both exact inputs, expected digests, reviewer, date, labels, reason code, findings, confirmation, and output",
+          );
+        }
+        const recordReview = dependencies.recordProspectReview ?? recordProspectReview;
+        const output = await recordReview({
+          prospectPath,
+          expectedProspectSha256,
+          draftPath,
+          expectedDraftSha256,
+          reviewerRef,
+          reviewedOn,
+          prospectLabel,
+          draftLabel,
+          reasonCodes,
+          findings: parseProspectReviewFindings(findings),
+          humanReviewConfirmed: parsed.values["confirm-human-review"] === true,
+          outputPath,
+        });
+        io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanProspectReviewResult(output));
+        return 0;
+      }
+
       if (subcommand === "prepare-register") {
         const rejectedOption = unsupportedOption(
           argv,
@@ -626,7 +795,7 @@ export async function runCli(
         io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortRegisterAudit(output));
         return 0;
       }
-      throw new CohortError("cohort command must be verify, audit, or prepare-register");
+      throw new CohortError("cohort command must be verify, audit, prepare-register, or record-prospect-review");
     }
 
     if (command === "pilot") {
@@ -987,6 +1156,10 @@ export async function runCli(
     }
     if (error instanceof CohortRegisterError) {
       io.error("Cohort register error: " + error.message);
+      return error.exitCode;
+    }
+    if (error instanceof ProspectReviewError) {
+      io.error("Prospect review error: " + error.message);
       return error.exitCode;
     }
     io.error(error instanceof Error ? error.message : String(error));

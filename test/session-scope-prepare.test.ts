@@ -28,6 +28,7 @@ const OUTER_BUNDLE_COPY_MAP = [
   ["docs/publisher-bundle-readme.md", "README.md"],
   ["docs/cohort-audit.md", "docs/cohort-audit.md"],
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
@@ -299,6 +300,98 @@ test("prepare-scope derives exact private inputs with safe defaults and a strict
     assert.equal(validate(result), true, JSON.stringify(validate.errors));
     assert.equal(validate({ ...result, grantReady: true }), false);
     assert.equal(validate({ ...result, outputPath: prepareOptions.outputPath }), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("prepare-scope accepts RC10 through RC13 without changing claim limits", async () => {
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "launchrig-prepare-scope-profiles-")));
+  try {
+    const bundleDirectory = path.join(directory, "verified-bundle");
+    await mkdir(bundleDirectory, { mode: 0o700 });
+    const project = await writePublisherProject(directory);
+    const profiles = [
+      "phase-2g-operational-contract-rc-v10",
+      "phase-2h-consent-safe-scope-rc-v11",
+      "phase-2i-recruitment-register-rc-v12",
+      "phase-2l-human-prospect-review-rc-v13",
+    ];
+    const limitationSnapshots = new Set<string>();
+
+    for (const [index, profile] of profiles.entries()) {
+      let verificationCalls = 0;
+      const result = await preparePilotSessionScope(
+        {
+          ...options(directory, project.configPath, "scope-profile-" + index + ".json"),
+          bundleDirectory,
+        },
+        {
+          verifyPublisherBundleSnapshot: async (receivedDirectory) => {
+            verificationCalls += 1;
+            assert.equal(receivedDirectory, bundleDirectory);
+            return {
+              profile,
+              bundleId: "sha256:" + "a".repeat(64),
+              manifestSha256: "b".repeat(64),
+              sha256SumsSha256: "c".repeat(64),
+              packageSha256: "d".repeat(64),
+            };
+          },
+        },
+      );
+
+      assert.equal(verificationCalls, 2);
+      assert.deepEqual(
+        {
+          reviewRequired: result.reviewRequired,
+          approvalReceiptCreated: result.approvalReceiptCreated,
+          pilotStateChecked: result.pilotStateChecked,
+          deviceEnvironmentChecked: result.deviceEnvironmentChecked,
+          publisherIdentity: result.publisherIdentity,
+          consentAuthenticity: result.consentAuthenticity,
+          bundleAuthenticity: result.bundleAuthenticity,
+          externalGrantGate: result.externalGrantGate,
+          grantReady: result.grantReady,
+        },
+        {
+          reviewRequired: true,
+          approvalReceiptCreated: false,
+          pilotStateChecked: false,
+          deviceEnvironmentChecked: false,
+          publisherIdentity: "not-established",
+          consentAuthenticity: "not-established",
+          bundleAuthenticity: "not-established",
+          externalGrantGate: "not-established",
+          grantReady: false,
+        },
+      );
+      limitationSnapshots.add(JSON.stringify(result.limitations));
+    }
+
+    assert.equal(limitationSnapshots.size, 1);
+
+    const rejectedOutput = path.join(directory, "scope-profile-rejected.json");
+    await assert.rejects(
+      () =>
+        preparePilotSessionScope(
+          {
+            ...options(directory, project.configPath, "scope-profile-rejected.json"),
+            bundleDirectory,
+          },
+          {
+            verifyPublisherBundleSnapshot: async () => ({
+              profile: "phase-2m-unknown-rc-v14",
+              bundleId: "sha256:" + "a".repeat(64),
+              manifestSha256: "b".repeat(64),
+              sha256SumsSha256: "c".repeat(64),
+              packageSha256: "d".repeat(64),
+            }),
+          },
+        ),
+      /profile is not accepted for scope preparation/,
+    );
+    await assert.rejects(() => lstat(rejectedOutput));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

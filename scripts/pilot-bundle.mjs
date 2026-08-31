@@ -37,6 +37,7 @@ const COPY_MAP = [
   ["docs/publisher-bundle-readme.md", "README.md"],
   ["docs/cohort-audit.md", "docs/cohort-audit.md"],
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
@@ -509,6 +510,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "dist/src/cli.js",
       "dist/src/pilot/binding.js",
       "dist/src/pilot/cohort-preparation.js",
+      "dist/src/pilot/prospect-review.js",
       "dist/src/pilot/session-scope.js",
       "dist/src/pilot/scope-preparation.js",
       "docs/cohort-audit.md",
@@ -517,6 +519,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "docs/github-action.md",
       "docs/phase-3-foundation.md",
       "docs/publisher-pilot-quickstart.md",
+      "docs/publisher-prospect-review.md",
       "docs/publisher-recruitment.md",
       "docs/supported-environment.md",
       "docs/flows/mwa-authorize.md",
@@ -530,6 +533,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
       "schemas/launchrig-private-cohort-register-draft-result.schema.json",
+      "schemas/launchrig-private-prospect-review-result.schema.json",
+      "schemas/launchrig-private-prospect-review.schema.json",
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
@@ -623,6 +628,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "launchrig cohort verify FILE...",
       "launchrig cohort audit REGISTER [EVIDENCE...]",
       "launchrig cohort prepare-register --output FILE",
+      "launchrig cohort record-prospect-review --prospect FILE",
     ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
     }
@@ -693,6 +699,81 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       preparedRegisterAudit.grantReady !== false
     ) {
       throw new Error("Clean consumer prepared register audit elevated an external claim.");
+    }
+
+    const prospectReviewInputPath = path.join(temporaryDirectory, "unreviewed-prospect-input.md");
+    const draftReviewInputPath = path.join(temporaryDirectory, "unreviewed-draft-input.md");
+    const privateProspectReviewPath = path.join(temporaryDirectory, "private-prospect-review.json");
+    const prospectReviewInputBytes = Buffer.from("# Synthetic unreviewed prospect\n\nSource review incomplete.\n", "utf8");
+    const draftReviewInputBytes = Buffer.from("# Synthetic do-not-send draft\n\nNo message is authorized.\n", "utf8");
+    await writeFile(prospectReviewInputPath, prospectReviewInputBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(draftReviewInputPath, draftReviewInputBytes, { flag: "wx", mode: 0o600 });
+    await chmod(prospectReviewInputPath, 0o600);
+    await chmod(draftReviewInputPath, 0o600);
+    const prospectReviewInputSha256 = createHash("sha256").update(prospectReviewInputBytes).digest("hex");
+    const draftReviewInputSha256 = createHash("sha256").update(draftReviewInputBytes).digest("hex");
+    const reviewFindings = {
+      citedSource: "incomplete",
+      unobservedDetails: "preserved-as-unknown",
+      contactRoute: "appropriate",
+      relationshipDisclosure: "complete-or-not-applicable",
+      compensationDisclosure: "complete-or-not-applicable",
+      messageScope: "fit-check-only",
+      installationOrAccessRequest: "absent",
+      financialRisk: "excluded",
+      biometricRisk: "excluded",
+      credentialRisk: "excluded",
+      deviceControlRisk: "excluded",
+      locationRisk: "excluded",
+      productionAccountRisk: "excluded",
+      mainnetRisk: "excluded",
+      valuableFundsRisk: "excluded",
+    };
+    const reviewFindingArguments = Object.entries(reviewFindings).flatMap(([key, value]) => [
+      "--finding",
+      key + "=" + value,
+    ]);
+    const reviewRefusal = await run(
+      executable,
+      [
+        "cohort",
+        "record-prospect-review",
+        "--prospect",
+        prospectReviewInputPath,
+        "--draft",
+        draftReviewInputPath,
+        "--expected-prospect-sha256",
+        prospectReviewInputSha256,
+        "--expected-draft-sha256",
+        draftReviewInputSha256,
+        "--reviewer-ref",
+        "urn:launchrig:reviewer:000003b6-0000-4000-a000-0000000003b6",
+        "--reviewed-on",
+        new Date().toISOString().slice(0, 10),
+        "--prospect-label",
+        "operator-reviewed-defer",
+        "--draft-label",
+        "operator-reviewed-do-not-send",
+        "--reason-code",
+        "source-review-incomplete",
+        ...reviewFindingArguments,
+        "--output",
+        privateProspectReviewPath,
+        "--json",
+      ],
+      { cwd: installDirectory, env: rehearsalEnvironment, acceptedExitCodes: [2] },
+    );
+    const reviewRefusalOutput = reviewRefusal.stdout + "\n" + reviewRefusal.stderr;
+    if (
+      !reviewRefusalOutput.includes("Explicit human review confirmation is required") ||
+      await lstat(privateProspectReviewPath).then(
+        () => true,
+        () => false,
+      ) ||
+      reviewRefusalOutput.includes("Android Device Ready") ||
+      reviewRefusalOutput.includes("Android/MWA Ready")
+    ) {
+      throw new Error("Clean consumer prospect review did not refuse missing human confirmation safely.");
     }
 
     await run(executable, ["pilot", "start", "--pilot", "bundle-rehearsal", "--config", "launchrig.yml"], {

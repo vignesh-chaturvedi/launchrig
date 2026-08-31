@@ -28,6 +28,7 @@ const OUTER_BUNDLE_COPY_MAP = [
   ["docs/publisher-bundle-readme.md", "README.md"],
   ["docs/cohort-audit.md", "docs/cohort-audit.md"],
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
+  ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
@@ -295,6 +296,9 @@ try {
   if (!installedFiles.includes("dist/src/pilot/cohort-preparation.js")) {
     throw new Error("Packed private cohort register preparation implementation is missing.");
   }
+  if (!installedFiles.includes("dist/src/pilot/prospect-review.js")) {
+    throw new Error("Packed private prospect review implementation is missing.");
+  }
   if (!installedFiles.includes("schemas/launchrig-publisher-bundle.schema.json")) {
     throw new Error("Packed publisher bundle schema is missing.");
   }
@@ -312,6 +316,12 @@ try {
   }
   if (!installedFiles.includes("schemas/launchrig-private-cohort-audit.schema.json")) {
     throw new Error("Packed private cohort audit schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-private-prospect-review.schema.json")) {
+    throw new Error("Packed private prospect review schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/launchrig-private-prospect-review-result.schema.json")) {
+    throw new Error("Packed private prospect review result schema is missing.");
   }
   if (!installedFiles.includes("schemas/fixtures/launchrig-config-v1.conformance.json")) {
     throw new Error("Packed config v1 conformance corpus is missing.");
@@ -366,6 +376,10 @@ try {
     ...v11RehearsalChecks,
     "device-free-private-recruitment-register-preparation",
   ];
+  const v13RehearsalChecks = [
+    ...v12RehearsalChecks,
+    "device-free-private-prospect-review-confirmation-refusal",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -384,32 +398,37 @@ try {
         "phase-2g-operational-contract-rc-v10",
         "phase-2h-consent-safe-scope-rc-v11",
         "phase-2i-recruitment-register-rc-v12",
+        "phase-2l-human-prospect-review-rc-v13",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v13RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.[1]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v12RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+      publisherBundleSchema.allOf?.[2]?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v11RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+      publisherBundleSchema.allOf?.[2]?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
+        ?.const,
     ) !== JSON.stringify(v10RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
+      publisherBundleSchema.allOf?.[2]?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
         ?.const,
     ) !== JSON.stringify(v9RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties?.checks
-        ?.const,
+      publisherBundleSchema.allOf?.[2]?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
+        ?.checks?.const,
     ) !== JSON.stringify(v8RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
+      publisherBundleSchema.allOf?.[2]?.else?.else?.else?.else?.else?.then?.properties?.consumerRehearsal?.properties
         ?.checks?.const,
     ) !== JSON.stringify(v7RehearsalChecks) ||
     JSON.stringify(
-      publisherBundleSchema.allOf?.[0]?.else?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
+      publisherBundleSchema.allOf?.[2]?.else?.else?.else?.else?.else?.else?.properties?.consumerRehearsal?.properties
         ?.checks?.const,
     ) !== JSON.stringify(legacyRehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.properties?.sourceVerification?.properties?.checks?.const) !==
@@ -538,6 +557,22 @@ try {
   const privateAuditSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-private-cohort-audit.schema.json"), "utf8"),
   );
+  const privateProspectReviewSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-private-prospect-review.schema.json"),
+      "utf8",
+    ),
+  );
+  const privateProspectReviewResultSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-private-prospect-review-result.schema.json"),
+      "utf8",
+    ),
+  );
+  const privateReviewSchemaAjv = new Ajv2020({ strict: true, strictTypes: false });
+  privateReviewSchemaAjv.addFormat("date", /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+  privateReviewSchemaAjv.compile(privateProspectReviewSchema);
+  privateReviewSchemaAjv.compile(privateProspectReviewResultSchema);
   const coreRuleCatalogSchema = JSON.parse(
     await readFile(path.join(installedDirectory, "schemas", "launchrig-core-rule-catalog.schema.json"), "utf8"),
   );
@@ -638,6 +673,38 @@ try {
   ) {
     throw new Error("Packed private cohort audit schema does not preserve the claim-limited contract.");
   }
+  if (
+    privateProspectReviewSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-private-prospect-review.schema.json" ||
+    privateProspectReviewSchema.additionalProperties !== false ||
+    privateProspectReviewSchema.properties?.humanReviewConfirmed?.const !== true ||
+    privateProspectReviewSchema.properties?.humanReviewerAuthenticated?.const !== false ||
+    privateProspectReviewSchema.properties?.contact?.const !== "not-contacted" ||
+    privateProspectReviewSchema.properties?.sendAuthorization?.const !== "not-authorized" ||
+    privateProspectReviewSchema.properties?.lifecycle?.const !== "screening" ||
+    privateProspectReviewSchema.properties?.candidateCreated?.const !== false ||
+    privateProspectReviewSchema.properties?.projectModificationAuthorized?.const !== false ||
+    privateProspectReviewSchema.properties?.phoneAccessAuthorized?.const !== false ||
+    privateProspectReviewSchema.properties?.externalGrantGate?.const !== "not-established" ||
+    privateProspectReviewSchema.properties?.grantReady?.const !== false ||
+    privateProspectReviewSchema.$defs?.draftLabel?.enum?.includes("operator-prepared-unreviewed")
+  ) {
+    throw new Error("Packed private prospect review schema does not preserve the human-review claim limit.");
+  }
+  if (
+    privateProspectReviewResultSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-private-prospect-review-result.schema.json" ||
+    privateProspectReviewResultSchema.additionalProperties !== false ||
+    privateProspectReviewResultSchema.properties?.humanReviewConfirmed?.const !== true ||
+    privateProspectReviewResultSchema.properties?.humanReviewerAuthenticated?.const !== false ||
+    privateProspectReviewResultSchema.properties?.contact?.const !== "not-contacted" ||
+    privateProspectReviewResultSchema.properties?.sendAuthorization?.const !== "not-authorized" ||
+    privateProspectReviewResultSchema.properties?.phoneAccessAuthorized?.const !== false ||
+    privateProspectReviewResultSchema.properties?.externalGrantGate?.const !== "not-established" ||
+    privateProspectReviewResultSchema.properties?.grantReady?.const !== false
+  ) {
+    throw new Error("Packed private prospect review result schema does not preserve the claim limit.");
+  }
   const expectedDocuments = [
     "docs/cohort-audit.md",
     "docs/cohort-verification.md",
@@ -649,6 +716,7 @@ try {
     "docs/physical-device.md",
     "docs/publisher-bundle-readme.md",
     "docs/publisher-pilot-quickstart.md",
+    "docs/publisher-prospect-review.md",
     "docs/publisher-recruitment.md",
     "docs/supported-environment.md",
     "docs/flows/mwa-authorize.md",
@@ -722,6 +790,8 @@ try {
     "schemas/launchrig-private-cohort-audit.schema.json",
     "schemas/launchrig-private-cohort-register-draft-result.schema.json",
     "schemas/launchrig-private-cohort-register.schema.json",
+    "schemas/launchrig-private-prospect-review-result.schema.json",
+    "schemas/launchrig-private-prospect-review.schema.json",
     "schemas/launchrig-publisher-bundle.schema.json",
     "schemas/launchrig.schema.json",
   ];
@@ -842,6 +912,9 @@ try {
   if (!help.stdout.includes("launchrig cohort prepare-register --output FILE")) {
     throw new Error("Installed CLI help is missing the Phase 2I private register preparation command.");
   }
+  if (!help.stdout.includes("launchrig cohort record-prospect-review --prospect FILE")) {
+    throw new Error("Installed CLI help is missing the Phase 2L private prospect review command.");
+  }
   if (!help.stdout.includes("launchrig rules [--json]")) {
     throw new Error("Installed CLI help is missing the core rule catalog.");
   }
@@ -913,6 +986,86 @@ try {
     preparedRegisterAudit.grantReady !== false
   ) {
     throw new Error("Installed prepared register audit elevated an external claim.");
+  }
+
+  const prospectReviewInputPath = path.join(temporaryDirectory, "review-prospect-input.md");
+  const draftReviewInputPath = path.join(temporaryDirectory, "review-draft-input.md");
+  const privateProspectReviewPath = path.join(temporaryDirectory, "private-prospect-review.json");
+  const prospectReviewInputBytes = Buffer.from("# Synthetic unreviewed prospect\n\nSource review incomplete.\n", "utf8");
+  const draftReviewInputBytes = Buffer.from("# Synthetic do-not-send draft\n\nNo message is authorized.\n", "utf8");
+  await writeFile(prospectReviewInputPath, prospectReviewInputBytes, { flag: "wx", mode: 0o600 });
+  await writeFile(draftReviewInputPath, draftReviewInputBytes, { flag: "wx", mode: 0o600 });
+  await chmod(prospectReviewInputPath, 0o600);
+  await chmod(draftReviewInputPath, 0o600);
+  const prospectReviewInputSha256 = createHash("sha256").update(prospectReviewInputBytes).digest("hex");
+  const draftReviewInputSha256 = createHash("sha256").update(draftReviewInputBytes).digest("hex");
+  const reviewFindings = {
+    citedSource: "incomplete",
+    unobservedDetails: "preserved-as-unknown",
+    contactRoute: "appropriate",
+    relationshipDisclosure: "complete-or-not-applicable",
+    compensationDisclosure: "complete-or-not-applicable",
+    messageScope: "fit-check-only",
+    installationOrAccessRequest: "absent",
+    financialRisk: "excluded",
+    biometricRisk: "excluded",
+    credentialRisk: "excluded",
+    deviceControlRisk: "excluded",
+    locationRisk: "excluded",
+    productionAccountRisk: "excluded",
+    mainnetRisk: "excluded",
+    valuableFundsRisk: "excluded",
+  };
+  const reviewFindingArguments = Object.entries(reviewFindings).flatMap(([key, value]) => [
+    "--finding",
+    key + "=" + value,
+  ]);
+  let prospectReviewRefusal = "";
+  try {
+    await run(
+      executable,
+      [
+        "cohort",
+        "record-prospect-review",
+        "--prospect",
+        prospectReviewInputPath,
+        "--draft",
+        draftReviewInputPath,
+        "--expected-prospect-sha256",
+        prospectReviewInputSha256,
+        "--expected-draft-sha256",
+        draftReviewInputSha256,
+        "--reviewer-ref",
+        smokeRef("reviewer", 950),
+        "--reviewed-on",
+        new Date().toISOString().slice(0, 10),
+        "--prospect-label",
+        "operator-reviewed-defer",
+        "--draft-label",
+        "operator-reviewed-do-not-send",
+        "--reason-code",
+        "source-review-incomplete",
+        ...reviewFindingArguments,
+        "--output",
+        privateProspectReviewPath,
+        "--json",
+      ],
+      { cwd: installDirectory },
+    );
+  } catch (error) {
+    prospectReviewRefusal = error instanceof Error ? error.message : String(error);
+  }
+  const reviewOutputExists = await lstat(privateProspectReviewPath).then(
+    () => true,
+    () => false,
+  );
+  if (
+    !prospectReviewRefusal.includes("Explicit human review confirmation is required") ||
+    reviewOutputExists ||
+    prospectReviewRefusal.includes("Android Device Ready") ||
+    prospectReviewRefusal.includes("Android/MWA Ready")
+  ) {
+    throw new Error("Installed private prospect review did not refuse missing human confirmation safely.");
   }
 
   const privateRegisterCore = {
