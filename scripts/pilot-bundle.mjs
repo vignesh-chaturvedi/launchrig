@@ -39,6 +39,7 @@ const COPY_MAP = [
   ["docs/publisher-pilot-quickstart.md", "docs/publisher-pilot-quickstart.md"],
   ["docs/publisher-prospect-review.md", "docs/publisher-prospect-review.md"],
   ["docs/publisher-recruitment.md", "docs/publisher-recruitment.md"],
+  ["docs/publisher-send-decision-preparation.md", "docs/publisher-send-decision-preparation.md"],
   ["docs/supported-environment.md", "docs/supported-environment.md"],
   ["docs/flows/mwa-authorize.md", "docs/flows/mwa-authorize.md"],
   ["docs/flows/mwa-reject.md", "docs/flows/mwa-reject.md"],
@@ -511,6 +512,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "dist/src/pilot/binding.js",
       "dist/src/pilot/cohort-preparation.js",
       "dist/src/pilot/prospect-review.js",
+      "dist/src/pilot/send-decision-preparation.js",
       "dist/src/pilot/session-scope.js",
       "dist/src/pilot/scope-preparation.js",
       "docs/cohort-audit.md",
@@ -521,6 +523,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "docs/publisher-pilot-quickstart.md",
       "docs/publisher-prospect-review.md",
       "docs/publisher-recruitment.md",
+      "docs/publisher-send-decision-preparation.md",
       "docs/supported-environment.md",
       "docs/flows/mwa-authorize.md",
       "docs/flows/mwa-reject.md",
@@ -535,6 +538,8 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-private-cohort-register-draft-result.schema.json",
       "schemas/launchrig-private-prospect-review-result.schema.json",
       "schemas/launchrig-private-prospect-review.schema.json",
+      "schemas/launchrig-private-send-decision-request-result.schema.json",
+      "schemas/launchrig-private-send-decision-request.schema.json",
       "schemas/launchrig-pilot-evidence-binding-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
@@ -629,6 +634,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "launchrig cohort audit REGISTER [EVIDENCE...]",
       "launchrig cohort prepare-register --output FILE",
       "launchrig cohort record-prospect-review --prospect FILE",
+      "launchrig cohort prepare-send-decision --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH [--related-review FILE --expected-related-review-sha256 HASH ...] --operator-ref REF --prepared-on YYYY-MM-DD --confirm-related-review-set-complete --output FILE [--json]",
     ]) {
       if (!help.stdout.includes(command)) throw new Error("Installed LaunchRig help is missing " + command + ".");
     }
@@ -774,6 +780,51 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       reviewRefusalOutput.includes("Android/MWA Ready")
     ) {
       throw new Error("Clean consumer prospect review did not refuse missing human confirmation safely.");
+    }
+
+    const sendDecisionOutputPath = path.join(temporaryDirectory, "private-send-decision-request.json");
+    const sendDecisionRefusal = await run(
+      executable,
+      [
+        "cohort",
+        "prepare-send-decision",
+        "--review",
+        path.join(temporaryDirectory, "unreadable-selected-review.json"),
+        "--expected-review-sha256",
+        "a".repeat(64),
+        "--prospect",
+        path.join(temporaryDirectory, "unreadable-prospect-input.md"),
+        "--expected-prospect-sha256",
+        "b".repeat(64),
+        "--draft",
+        path.join(temporaryDirectory, "unreadable-draft-input.md"),
+        "--expected-draft-sha256",
+        "c".repeat(64),
+        "--related-review",
+        path.join(temporaryDirectory, "unreadable-related-review.json"),
+        "--expected-related-review-sha256",
+        "d".repeat(64),
+        "--operator-ref",
+        "urn:launchrig:reviewer:000003b7-0000-4000-a000-0000000003b7",
+        "--prepared-on",
+        new Date().toISOString().slice(0, 10),
+        "--output",
+        sendDecisionOutputPath,
+        "--json",
+      ],
+      { cwd: installDirectory, env: rehearsalEnvironment, acceptedExitCodes: [2] },
+    );
+    const sendDecisionRefusalOutput = sendDecisionRefusal.stdout + "\n" + sendDecisionRefusal.stderr;
+    if (
+      !sendDecisionRefusalOutput.includes("Explicit related review set confirmation is required") ||
+      await lstat(sendDecisionOutputPath).then(
+        () => true,
+        () => false,
+      ) ||
+      sendDecisionRefusalOutput.includes("Android Device Ready") ||
+      sendDecisionRefusalOutput.includes("Android/MWA Ready")
+    ) {
+      throw new Error("Clean consumer send decision preparation did not refuse before reading private inputs.");
     }
 
     await run(executable, ["pilot", "start", "--pilot", "bundle-rehearsal", "--config", "launchrig.yml"], {

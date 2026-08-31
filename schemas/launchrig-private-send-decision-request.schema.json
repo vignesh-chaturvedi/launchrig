@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-private-send-decision-request.schema.json",
+  "title": "LaunchRig private send decision request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "privacyProfile",
+    "preparedOn",
+    "operatorRef",
+    "claimStatus",
+    "reviewSetCompleteness",
+    "conflictStatus",
+    "latestStatus",
+    "preparationStatus",
+    "humanRelatedReviewSetConfirmed",
+    "humanSendDecisionRecorded",
+    "humanAuthorizerAuthenticated",
+    "selectedReview",
+    "reviewSet",
+    "reviewSetSha256",
+    "prospect",
+    "draft",
+    "sourceRecheck",
+    "routeRecheck",
+    "relationshipDisclosureRecheck",
+    "compensationDisclosureRecheck",
+    "safetyRecheck",
+    "contact",
+    "sendAuthorization",
+    "messageDispatched",
+    "lifecycle",
+    "candidateCreated",
+    "interestRecorded",
+    "projectModificationAuthorized",
+    "phoneAccessAuthorized",
+    "pilotStateChecked",
+    "deviceEnvironmentChecked",
+    "publisherIdentity",
+    "publisherAuthority",
+    "publisherConsent",
+    "publisherIndependence",
+    "externalGrantGate",
+    "grantReady",
+    "limitations",
+    "integritySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-private-send-decision-request" },
+    "profile": { "const": "phase-2m-send-decision-preparation-v1" },
+    "privacyProfile": { "const": "opaque-operator-digests-dates-v1" },
+    "preparedOn": { "$ref": "#/$defs/date" },
+    "operatorRef": { "$ref": "#/$defs/operatorRef" },
+    "claimStatus": { "const": "operator-prepared-unattested" },
+    "reviewSetCompleteness": { "const": "operator-asserted-unattested" },
+    "conflictStatus": { "const": "none-detected-in-operator-supplied-set" },
+    "latestStatus": { "const": "not-established" },
+    "preparationStatus": { "const": "awaiting-exact-human-send-decision" },
+    "humanRelatedReviewSetConfirmed": { "const": true },
+    "humanSendDecisionRecorded": { "const": false },
+    "humanAuthorizerAuthenticated": { "const": false },
+    "selectedReview": { "$ref": "#/$defs/reviewEntry" },
+    "reviewSet": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/reviewEntry" }
+    },
+    "reviewSetSha256": { "$ref": "#/$defs/hash" },
+    "prospect": { "$ref": "#/$defs/fileBinding" },
+    "draft": { "$ref": "#/$defs/fileBinding" },
+    "sourceRecheck": { "const": "not-recorded" },
+    "routeRecheck": { "const": "not-recorded" },
+    "relationshipDisclosureRecheck": { "const": "not-recorded" },
+    "compensationDisclosureRecheck": { "const": "not-recorded" },
+    "safetyRecheck": { "const": "not-recorded" },
+    "contact": { "const": "not-contacted" },
+    "sendAuthorization": { "const": "not-authorized" },
+    "messageDispatched": { "const": false },
+    "lifecycle": { "const": "screening" },
+    "candidateCreated": { "const": false },
+    "interestRecorded": { "const": false },
+    "projectModificationAuthorized": { "const": false },
+    "phoneAccessAuthorized": { "const": false },
+    "pilotStateChecked": { "const": false },
+    "deviceEnvironmentChecked": { "const": false },
+    "publisherIdentity": { "const": "not-established" },
+    "publisherAuthority": { "const": "not-established" },
+    "publisherConsent": { "const": "not-established" },
+    "publisherIndependence": { "const": "not-established" },
+    "externalGrantGate": { "const": "not-established" },
+    "grantReady": { "const": false },
+    "limitations": { "$ref": "#/$defs/limitations" },
+    "integritySha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "operatorRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:reviewer:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "reviewRef": {
+      "type": "string",
+      "pattern": "^urn:launchrig:prospect-review:[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "fileBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileSha256", "sizeBytes"],
+      "properties": {
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        }
+      }
+    },
+    "reviewEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewFileSha256",
+        "reviewContentSha256",
+        "reviewRef",
+        "reviewedOn",
+        "prospectFileSha256",
+        "draftFileSha256",
+        "prospectLabel",
+        "draftLabel"
+      ],
+      "properties": {
+        "reviewFileSha256": { "$ref": "#/$defs/hash" },
+        "reviewContentSha256": { "$ref": "#/$defs/hash" },
+        "reviewRef": { "$ref": "#/$defs/reviewRef" },
+        "reviewedOn": { "$ref": "#/$defs/date" },
+        "prospectFileSha256": { "$ref": "#/$defs/hash" },
+        "draftFileSha256": { "$ref": "#/$defs/hash" },
+        "prospectLabel": { "const": "operator-reviewed-consider-outreach" },
+        "draftLabel": { "const": "operator-reviewed-awaiting-separate-send-authorization" }
+      }
+    },
+    "limitations": {
+      "const": [
+        "This private request records an operator-supplied review set for exact prospect, draft, and review bytes. It does not authenticate the operator, reviewer, publisher, source, route, disclosure, or safety findings.",
+        "Review-set completeness is an unattested operator assertion. No receipt is inferred to be latest, and any additional related receipt leaves the send decision unresolved.",
+        "Preparation records no human send decision, grants no send authorization, performs no contact, and dispatches no message.",
+        "Any change to the prospect, draft, selected review, or operator-supplied related review set invalidates this request and requires a new preparation.",
+        "Source, route, relationship disclosure, compensation disclosure, and safety rechecks remain not recorded for the later exact human send decision.",
+        "File ownership and mode checks do not prove ACL, backup, sync, process-list, shell-history, or cloud-storage privacy.",
+        "Publisher identity, authority, consent, independence, external testing, confirmed defects, and grant readiness remain not established."
+      ]
+    }
+  }
+}

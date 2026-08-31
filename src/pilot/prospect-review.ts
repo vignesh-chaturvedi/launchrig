@@ -61,7 +61,7 @@ export const PROSPECT_REVIEW_FINDING_VALUES = {
   valuableFundsRisk: ["excluded", "present-or-unresolved"],
 } as const;
 
-const REVIEW_LIMITATIONS = [
+export const PROSPECT_REVIEW_LIMITATIONS = [
   "This record preserves an explicit operator assertion about exact private prospect and draft bytes. It does not authenticate the reviewer, publisher, project, source, contact route, or findings.",
   "The record performs no contact and grants no send authorization, candidate status, publisher interest, consent, project access, installation, device access, wallet action, or pilot execution.",
   "Any change to either exact input invalidates this review for the changed bytes and requires a new human review record.",
@@ -567,6 +567,157 @@ function assertDecisionConsistency(
   }
 }
 
+function reviewRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProspectReviewError(label + " is invalid");
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertExactReviewKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(value);
+  if (
+    actual.length !== expected.length ||
+    actual.some((key) => !expected.includes(key))
+  ) {
+    throw new ProspectReviewError(label + " contains unsupported or missing fields");
+  }
+}
+
+function storedReviewDate(value: unknown, label: string): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new ProspectReviewError(label + " is invalid");
+  }
+  const parsed = new Date(value + "T00:00:00.000Z");
+  if (!Number.isFinite(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new ProspectReviewError(label + " is invalid");
+  }
+  return value;
+}
+
+function reviewSize(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > MAX_REVIEW_INPUT_BYTES) {
+    throw new ProspectReviewError(label + " is invalid");
+  }
+  return value as number;
+}
+
+function reviewHash(value: unknown, label: string): string {
+  if (typeof value !== "string" || !SHA256.test(value)) {
+    throw new ProspectReviewError(label + " is invalid");
+  }
+  return value;
+}
+
+export function parsePrivateProspectReviewV1(value: unknown): PrivateProspectReviewV1 {
+  const review = reviewRecord(value, "Private prospect review");
+  assertExactReviewKeys(
+    review,
+    [
+      "schemaVersion",
+      "kind",
+      "profile",
+      "privacyProfile",
+      "reviewRef",
+      "reviewedOn",
+      "reviewerRef",
+      "claimStatus",
+      "humanReviewConfirmed",
+      "humanReviewerAuthenticated",
+      "prospect",
+      "draft",
+      "reasonCodes",
+      "findings",
+      "contact",
+      "sendAuthorization",
+      "lifecycle",
+      "candidateCreated",
+      "interestRecorded",
+      "projectModificationAuthorized",
+      "phoneAccessAuthorized",
+      "pilotStateChecked",
+      "deviceEnvironmentChecked",
+      "publisherIdentity",
+      "publisherAuthority",
+      "publisherConsent",
+      "publisherIndependence",
+      "externalGrantGate",
+      "grantReady",
+      "limitations",
+      "integritySha256",
+    ],
+    "Private prospect review",
+  );
+  if (
+    review.schemaVersion !== 1 ||
+    review.kind !== "launchrig-private-prospect-review" ||
+    review.profile !== "phase-2l-human-prospect-review-v1" ||
+    review.privacyProfile !== "opaque-reviewer-digests-labels-v1" ||
+    review.claimStatus !== "human-operator-recorded-unattested" ||
+    review.humanReviewConfirmed !== true ||
+    review.humanReviewerAuthenticated !== false ||
+    review.contact !== "not-contacted" ||
+    review.sendAuthorization !== "not-authorized" ||
+    review.lifecycle !== "screening" ||
+    review.candidateCreated !== false ||
+    review.interestRecorded !== false ||
+    review.projectModificationAuthorized !== false ||
+    review.phoneAccessAuthorized !== false ||
+    review.pilotStateChecked !== false ||
+    review.deviceEnvironmentChecked !== false ||
+    review.publisherIdentity !== "not-established" ||
+    review.publisherAuthority !== "not-established" ||
+    review.publisherConsent !== "not-established" ||
+    review.publisherIndependence !== "not-established" ||
+    review.externalGrantGate !== "not-established" ||
+    review.grantReady !== false
+  ) {
+    throw new ProspectReviewError("Private prospect review contract is invalid");
+  }
+  if (typeof review.reviewRef !== "string" || !new RegExp(
+    "^urn:launchrig:prospect-review:" + UUID_V4.source.slice(1, -1) + "$",
+  ).test(review.reviewRef)) {
+    throw new ProspectReviewError("Private prospect review reference is invalid");
+  }
+  if (typeof review.reviewerRef !== "string" || !REVIEWER_REF.test(review.reviewerRef)) {
+    throw new ProspectReviewError("Private prospect reviewer reference is invalid");
+  }
+  storedReviewDate(review.reviewedOn, "Private prospect review date");
+
+  const prospect = reviewRecord(review.prospect, "Private prospect review prospect binding");
+  const draft = reviewRecord(review.draft, "Private prospect review draft binding");
+  assertExactReviewKeys(prospect, ["fileSha256", "sizeBytes", "label"], "Private prospect review prospect binding");
+  assertExactReviewKeys(draft, ["fileSha256", "sizeBytes", "label"], "Private prospect review draft binding");
+  reviewHash(prospect.fileSha256, "Private prospect review prospect hash");
+  reviewHash(draft.fileSha256, "Private prospect review draft hash");
+  reviewSize(prospect.sizeBytes, "Private prospect review prospect size");
+  reviewSize(draft.sizeBytes, "Private prospect review draft size");
+  const prospectLabel = enumValue(prospect.label, PROSPECT_REVIEW_LABELS, "Private prospect review prospect label");
+  const draftLabel = enumValue(draft.label, DRAFT_REVIEW_LABELS, "Private prospect review draft label");
+  const reasonCodes = validateReasonCodes(review.reasonCodes);
+  if (JSON.stringify(reasonCodes) !== JSON.stringify(review.reasonCodes)) {
+    throw new ProspectReviewError("Private prospect review reason codes are not canonical");
+  }
+  const findings = validateFindings(review.findings);
+  assertDecisionConsistency(prospectLabel, draftLabel, reasonCodes, findings);
+  if (
+    !Array.isArray(review.limitations) ||
+    JSON.stringify(review.limitations) !== JSON.stringify(PROSPECT_REVIEW_LIMITATIONS)
+  ) {
+    throw new ProspectReviewError("Private prospect review limitations are invalid");
+  }
+  reviewHash(review.integritySha256, "Private prospect review integrity hash");
+  const { integritySha256: _integritySha256, ...core } = review;
+  if (review.integritySha256 !== sha256Value(core)) {
+    throw new ProspectReviewError("Private prospect review integrity check failed");
+  }
+  return review as unknown as PrivateProspectReviewV1;
+}
+
 function currentUtcDate(): string {
   const now = new Date();
   if (!Number.isFinite(now.valueOf())) throw new ProspectReviewError("Current date is invalid", 3);
@@ -748,7 +899,7 @@ export async function recordProspectReview(
     publisherIndependence: "not-established" as const,
     externalGrantGate: "not-established" as const,
     grantReady: false as const,
-    limitations: [...REVIEW_LIMITATIONS],
+    limitations: [...PROSPECT_REVIEW_LIMITATIONS],
   };
   const review: PrivateProspectReviewV1 = {
     ...reviewCore,
@@ -830,6 +981,6 @@ export async function recordProspectReview(
     publisherIndependence: "not-established",
     externalGrantGate: "not-established",
     grantReady: false,
-    limitations: [...REVIEW_LIMITATIONS],
+    limitations: [...PROSPECT_REVIEW_LIMITATIONS],
   };
 }

@@ -53,6 +53,11 @@ import {
   type ProspectReviewFindings,
   type ProspectReviewResultV1,
 } from "./pilot/prospect-review.js";
+import {
+  prepareSendDecisionRequest,
+  SendDecisionPreparationError,
+  type SendDecisionRequestResultV1,
+} from "./pilot/send-decision-preparation.js";
 import { verifyPublicPilotEvidence } from "./pilot/public-evidence.js";
 import { getCoreRuleCatalog, type CoreRuleCatalog } from "./rules/catalog.js";
 import { LAUNCHRIG_VERSION } from "./version.js";
@@ -78,6 +83,7 @@ export interface CliDependencies {
   auditPrivateCohortRegister?: typeof auditPrivateCohortRegister;
   preparePrivateCohortRegister?: typeof preparePrivateCohortRegister;
   recordProspectReview?: typeof recordProspectReview;
+  prepareSendDecisionRequest?: typeof prepareSendDecisionRequest;
 }
 
 const defaultIO: CliIO = {
@@ -110,6 +116,7 @@ const HELP = [
   "  launchrig cohort audit REGISTER [EVIDENCE...] [--json]",
   "  launchrig cohort prepare-register --output FILE [--json]",
   "  launchrig cohort record-prospect-review --prospect FILE --draft FILE --expected-prospect-sha256 HASH --expected-draft-sha256 HASH --reviewer-ref REF --reviewed-on YYYY-MM-DD --prospect-label LABEL --draft-label LABEL --reason-code CODE --finding KEY=VALUE --confirm-human-review --output FILE [--json]",
+  "  launchrig cohort prepare-send-decision --review FILE --expected-review-sha256 HASH --prospect FILE --expected-prospect-sha256 HASH --draft FILE --expected-draft-sha256 HASH [--related-review FILE --expected-related-review-sha256 HASH ...] --operator-ref REF --prepared-on YYYY-MM-DD --confirm-related-review-set-complete --output FILE [--json]",
   "",
   "Tool overrides:",
   "  --adb PATH       ADB executable (or LAUNCHRIG_ADB_PATH)",
@@ -452,6 +459,54 @@ function humanProspectReviewResult(value: ProspectReviewResultV1): string {
   return lines.join("\n");
 }
 
+function humanSendDecisionRequestResult(value: SendDecisionRequestResultV1): string {
+  const lines = [
+    "Private send decision request prepared",
+    "request file SHA-256: " + value.requestFileSha256,
+    "request content SHA-256: " + value.requestContentSha256,
+    "selected review file SHA-256: " + value.selectedReviewFileSha256,
+    "selected review content SHA-256: " + value.selectedReviewContentSha256,
+    "prospect file SHA-256: " + value.prospectFileSha256,
+    "draft file SHA-256: " + value.draftFileSha256,
+    "review set count: " + value.reviewSetCount,
+    "review set SHA-256: " + value.reviewSetSha256,
+    "related review set confirmation recorded: " +
+      (value.humanRelatedReviewSetConfirmed ? "yes" : "no"),
+    "review set completeness: " + value.reviewSetCompleteness,
+    "conflict status: " + value.conflictStatus,
+    "latest status: " + value.latestStatus,
+    "preparation status: " + value.preparationStatus,
+    "source recheck: " + value.sourceRecheck,
+    "route recheck: " + value.routeRecheck,
+    "relationship disclosure recheck: " + value.relationshipDisclosureRecheck,
+    "compensation disclosure recheck: " + value.compensationDisclosureRecheck,
+    "safety recheck: " + value.safetyRecheck,
+    "human send decision recorded: " + (value.humanSendDecisionRecorded ? "yes" : "no"),
+    "human authorizer authenticated: " + (value.humanAuthorizerAuthenticated ? "yes" : "no"),
+    "contact: " + value.contact,
+    "send authorization: " + value.sendAuthorization,
+    "message dispatched: " + (value.messageDispatched ? "yes" : "no"),
+    "lifecycle: " + value.lifecycle,
+    "candidate created: " + (value.candidateCreated ? "yes" : "no"),
+    "interest recorded: " + (value.interestRecorded ? "yes" : "no"),
+    "project modification authorized: " + (value.projectModificationAuthorized ? "yes" : "no"),
+    "phone access authorized: " + (value.phoneAccessAuthorized ? "yes" : "no"),
+    "pilot state checked: " + (value.pilotStateChecked ? "yes" : "no"),
+    "device environment checked: " + (value.deviceEnvironmentChecked ? "yes" : "no"),
+    "publisher identity: " + value.publisherIdentity,
+    "publisher authority: " + value.publisherAuthority,
+    "publisher consent: " + value.publisherConsent,
+    "publisher independence: " + value.publisherIndependence,
+    "external grant gate: " + value.externalGrantGate,
+    "grant ready: " + (value.grantReady ? "yes" : "no"),
+  ];
+  for (const limitation of value.limitations) lines.push("- " + limitation);
+  lines.push(
+    "Next: keep the request private and complete a separate exact human send decision. This command did not authorize contact or send a message.",
+  );
+  return lines.join("\n");
+}
+
 function parseProspectReviewFindings(entries: string[] | undefined): ProspectReviewFindings {
   if (!entries || entries.length === 0) {
     throw new ProspectReviewError("cohort record-prospect-review requires every fixed --finding KEY=VALUE");
@@ -488,6 +543,37 @@ export async function runCli(
   io: CliIO = defaultIO,
   dependencies: CliDependencies = {},
 ): Promise<number> {
+  if (argv[0] === "cohort" && argv[1] === "prepare-send-decision") {
+    const rejectedOption = unsupportedOption(
+      argv,
+      new Set([
+        "--review",
+        "--expected-review-sha256",
+        "--prospect",
+        "--expected-prospect-sha256",
+        "--draft",
+        "--expected-draft-sha256",
+        "--related-review",
+        "--expected-related-review-sha256",
+        "--operator-ref",
+        "--prepared-on",
+        "--confirm-related-review-set-complete",
+        "--output",
+        "--json",
+        "--help",
+        "-h",
+        "--version",
+        "-v",
+      ]),
+    );
+    if (rejectedOption) {
+      io.error(
+        "Send decision preparation error: cohort prepare-send-decision does not accept " +
+          rejectedOption,
+      );
+      return 2;
+    }
+  }
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -513,6 +599,13 @@ export async function runCli(
         "deletion-method": { type: "string" },
         prospect: { type: "string" },
         draft: { type: "string" },
+        review: { type: "string" },
+        "expected-review-sha256": { type: "string" },
+        "related-review": { type: "string", multiple: true },
+        "expected-related-review-sha256": { type: "string", multiple: true },
+        "operator-ref": { type: "string" },
+        "prepared-on": { type: "string" },
+        "confirm-related-review-set-complete": { type: "boolean", default: false },
         "expected-prospect-sha256": { type: "string" },
         "expected-draft-sha256": { type: "string" },
         "reviewer-ref": { type: "string" },
@@ -558,6 +651,32 @@ export async function runCli(
     typeof parsed.values["deletion-method"] === "string" ? parsed.values["deletion-method"] : undefined;
   const prospectPath = typeof parsed.values.prospect === "string" ? parsed.values.prospect : undefined;
   const draftPath = typeof parsed.values.draft === "string" ? parsed.values.draft : undefined;
+  const selectedReviewPath =
+    typeof parsed.values.review === "string" ? parsed.values.review : undefined;
+  const expectedSelectedReviewSha256 =
+    typeof parsed.values["expected-review-sha256"] === "string"
+      ? parsed.values["expected-review-sha256"]
+      : undefined;
+  const parsedRelatedReviewPaths = parsed.values["related-review"];
+  const relatedReviewPaths =
+    Array.isArray(parsedRelatedReviewPaths) &&
+    parsedRelatedReviewPaths.every((value): value is string => typeof value === "string")
+      ? parsedRelatedReviewPaths
+      : undefined;
+  const parsedExpectedRelatedReviewSha256 = parsed.values["expected-related-review-sha256"];
+  const expectedRelatedReviewSha256 =
+    Array.isArray(parsedExpectedRelatedReviewSha256) &&
+    parsedExpectedRelatedReviewSha256.every(
+      (value): value is string => typeof value === "string",
+    )
+      ? parsedExpectedRelatedReviewSha256
+      : undefined;
+  const operatorRef =
+    typeof parsed.values["operator-ref"] === "string"
+      ? parsed.values["operator-ref"]
+      : undefined;
+  const preparedOn =
+    typeof parsed.values["prepared-on"] === "string" ? parsed.values["prepared-on"] : undefined;
   const expectedProspectSha256 =
     typeof parsed.values["expected-prospect-sha256"] === "string"
       ? parsed.values["expected-prospect-sha256"]
@@ -683,6 +802,57 @@ export async function runCli(
 
     if (command === "cohort") {
       const subcommand = parsed.positionals[1];
+      if (subcommand === "prepare-send-decision") {
+        if (parsed.positionals.length !== 2) {
+          throw new SendDecisionPreparationError(
+            "cohort prepare-send-decision does not accept positional arguments",
+          );
+        }
+        if (
+          !selectedReviewPath ||
+          !expectedSelectedReviewSha256 ||
+          !prospectPath ||
+          !expectedProspectSha256 ||
+          !draftPath ||
+          !expectedDraftSha256 ||
+          !operatorRef ||
+          !preparedOn ||
+          !outputPath
+        ) {
+          throw new SendDecisionPreparationError(
+            "cohort prepare-send-decision requires the selected review, exact prospect and draft, every expected digest, operator, date, complete related-review-set confirmation, and output",
+          );
+        }
+        if ((relatedReviewPaths?.length ?? 0) !== (expectedRelatedReviewSha256?.length ?? 0)) {
+          throw new SendDecisionPreparationError(
+            "cohort prepare-send-decision requires one --expected-related-review-sha256 for every --related-review",
+          );
+        }
+        const prepareRequest =
+          dependencies.prepareSendDecisionRequest ?? prepareSendDecisionRequest;
+        const output = await prepareRequest({
+          selectedReviewPath,
+          expectedSelectedReviewSha256,
+          prospectPath,
+          expectedProspectSha256,
+          draftPath,
+          expectedDraftSha256,
+          ...(relatedReviewPaths ? { relatedReviewPaths } : {}),
+          ...(expectedRelatedReviewSha256 ? { expectedRelatedReviewSha256 } : {}),
+          operatorRef,
+          preparedOn,
+          humanRelatedReviewSetConfirmed:
+            parsed.values["confirm-related-review-set-complete"] === true,
+          outputPath,
+        });
+        io.out(
+          parsed.values.json
+            ? JSON.stringify(output, null, 2)
+            : humanSendDecisionRequestResult(output),
+        );
+        return 0;
+      }
+
       if (subcommand === "record-prospect-review") {
         const rejectedOption = unsupportedOption(
           argv,
@@ -795,7 +965,9 @@ export async function runCli(
         io.out(parsed.values.json ? JSON.stringify(output, null, 2) : humanCohortRegisterAudit(output));
         return 0;
       }
-      throw new CohortError("cohort command must be verify, audit, prepare-register, or record-prospect-review");
+      throw new CohortError(
+        "cohort command must be verify, audit, prepare-register, record-prospect-review, or prepare-send-decision",
+      );
     }
 
     if (command === "pilot") {
@@ -1160,6 +1332,10 @@ export async function runCli(
     }
     if (error instanceof ProspectReviewError) {
       io.error("Prospect review error: " + error.message);
+      return error.exitCode;
+    }
+    if (error instanceof SendDecisionPreparationError) {
+      io.error("Send decision preparation error: " + error.message);
       return error.exitCode;
     }
     io.error(error instanceof Error ? error.message : String(error));
