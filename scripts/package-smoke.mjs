@@ -346,6 +346,15 @@ try {
   if (!installedFiles.includes("schemas/fixtures/launchrig-config-v1.conformance.json")) {
     throw new Error("Packed config v1 conformance corpus is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-config-validation-result.schema.json")) {
+    throw new Error("Packed structured configuration result schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/fixtures/launchrig-config-rule-fixtures.v1.json")) {
+    throw new Error("Packed configuration rule fixture corpus is missing.");
+  }
+  if (!installedFiles.includes("dist/src/config/diagnostics.js")) {
+    throw new Error("Packed structured configuration diagnostics implementation is missing.");
+  }
   if (!installedFiles.includes("docs/config-v1-compatibility.md")) {
     throw new Error("Packed config v1 compatibility guide is missing.");
   }
@@ -408,6 +417,10 @@ try {
     ...v14RehearsalChecks,
     "device-free-private-human-send-decision-confirmation-refusal",
   ];
+  const v16RehearsalChecks = [
+    ...v15RehearsalChecks,
+    "device-free-structured-config-diagnostics",
+  ];
   if (
     publisherBundleSchema.$id !== "https://launchrig.dev/schemas/launchrig-publisher-bundle.schema.json" ||
     publisherBundleSchema.additionalProperties !== false ||
@@ -429,12 +442,16 @@ try {
         "phase-2l-human-prospect-review-rc-v13",
         "phase-2m-send-decision-preparation-rc-v14",
         "phase-2n-human-send-decision-rc-v15",
+        "phase-3-config-diagnostics-rc-v16",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v15RehearsalChecks) ||
+    JSON.stringify(
+      publisherBundleSchema.allOf?.at(-1)?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v16RehearsalChecks) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[1]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v14RehearsalChecks) ||
@@ -655,6 +672,24 @@ try {
       "utf8",
     ),
   );
+  const configRuleResultSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-config-validation-result.schema.json"),
+      "utf8",
+    ),
+  );
+  const configRuleFixtures = JSON.parse(
+    await readFile(
+      path.join(
+        installedDirectory,
+        "schemas",
+        "fixtures",
+        "launchrig-config-rule-fixtures.v1.json",
+      ),
+      "utf8",
+    ),
+  );
+  new Ajv2020({ strict: true, strictTypes: false }).compile(configRuleResultSchema);
   if (
     coreRuleCatalogSchema.$id !== "https://launchrig.dev/schemas/launchrig-core-rule-catalog.schema.json" ||
     coreRuleCatalogSchema.additionalProperties !== false ||
@@ -706,6 +741,26 @@ try {
     )
   ) {
     throw new Error("Packed config v1 corpus does not preserve its executable pre-award contract.");
+  }
+  if (
+    configRuleResultSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-config-validation-result.schema.json" ||
+    configRuleResultSchema.additionalProperties !== false ||
+    configRuleResultSchema.properties?.kind?.const !== "launchrig-config-validation-result" ||
+    configRuleResultSchema.properties?.profile?.const !== "config-rules-v1" ||
+    configRuleResultSchema.properties?.grantMilestoneComplete?.const !== false ||
+    configRuleFixtures.schemaVersion !== 1 ||
+    configRuleFixtures.kind !== "launchrig-config-rule-fixtures" ||
+    configRuleFixtures.profile !== "config-rules-v1" ||
+    configRuleFixtures.status !== "pre-award-foundation" ||
+    configRuleFixtures.caseCount !== 10 ||
+    configRuleFixtures.cases?.length !== 10 ||
+    new Set(configRuleFixtures.cases?.map((entry) => entry.id)).size !== 10 ||
+    JSON.stringify(configRuleFixtures.ruleIds) !==
+      JSON.stringify(["LR001", "LR002", "LR003", "LR004", "LR005"]) ||
+    configRuleFixtures.grantMilestoneComplete !== false
+  ) {
+    throw new Error("Packed configuration diagnostics do not preserve the executable pre-award contract.");
   }
   if (
     privateRegisterSchema.$id !==
@@ -972,8 +1027,10 @@ try {
     }
   }
   const expectedSchemas = [
+    "schemas/fixtures/launchrig-config-rule-fixtures.v1.json",
     "schemas/fixtures/launchrig-config-v1.conformance.json",
     "schemas/launchrig-cohort-verification.schema.json",
+    "schemas/launchrig-config-validation-result.schema.json",
     "schemas/launchrig-core-rule-catalog.schema.json",
     "schemas/launchrig-pilot-evidence-v1.schema.json",
     "schemas/launchrig-pilot-evidence-v2.schema.json",

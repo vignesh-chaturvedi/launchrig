@@ -33,10 +33,28 @@ interface ActionResult {
   resultFile: string;
   scenarioCount: number | null;
   validation: null | {
-    project: string;
-    packageName: string;
-    scenarios: number;
+    schemaVersion: 1;
+    kind: "launchrig-config-validation-result";
+    profile: "config-rules-v1";
+    status: "pre-award-foundation";
+    project: string | null;
+    packageName: string | null;
+    scenarios: number | null;
     issues: string[];
+    diagnostics: Array<{
+      ruleId: string;
+      checkId: string;
+      code: string;
+      path: string;
+      message: string;
+    }>;
+    ruleResults: Array<{
+      ruleId: string;
+      checkId: string;
+      status: "passed" | "failed" | "not-evaluated";
+      diagnosticCount: number;
+    }>;
+    grantMilestoneComplete: false;
   };
   failureCode: string | null;
 }
@@ -103,13 +121,43 @@ function execution(value: Record<string, unknown>, exitCode = 0): CommandExecuti
 }
 
 function validation(configPath: string, valid = true) {
+  const rules = [
+    ["LR001", "config.schema"],
+    ["LR002", "config.network-safety"],
+    ["LR003", "config.wallet-safety"],
+    ["LR004", "config.privacy-safety"],
+    ["LR005", "config.input-files"],
+  ] as const;
+  const diagnostics = valid
+    ? []
+    : [
+        {
+          ruleId: "LR005",
+          checkId: "config.input-files",
+          code: "config.input-files.flow-unavailable",
+          path: "scenarios[0].flow",
+          message: "Scenario authorize flow cannot be read safely",
+        },
+      ];
   return {
+    schemaVersion: 1,
+    kind: "launchrig-config-validation-result",
+    profile: "config-rules-v1",
+    status: "pre-award-foundation",
     valid,
     configPath,
     project: "Action Fixture",
     packageName: "com.example.actionfixture",
     scenarios: 2,
-    issues: valid ? [] : ["Scenario flow cannot be read safely"],
+    issues: diagnostics.map((entry) => entry.message),
+    diagnostics,
+    ruleResults: rules.map(([ruleId, checkId]) => ({
+      ruleId,
+      checkId,
+      status: !valid && ruleId === "LR005" ? "failed" : "passed",
+      diagnosticCount: !valid && ruleId === "LR005" ? 1 : 0,
+    })),
+    grantMilestoneComplete: false,
   };
 }
 
@@ -123,10 +171,28 @@ function priorActionResult(configFile: string, resultFile: string): ActionResult
     resultFile,
     scenarioCount: 2,
     validation: {
+      schemaVersion: 1,
+      kind: "launchrig-config-validation-result",
+      profile: "config-rules-v1",
+      status: "pre-award-foundation",
       project: "Prior Action Fixture",
       packageName: "com.example.prioractionfixture",
       scenarios: 2,
       issues: [],
+      diagnostics: [],
+      ruleResults: ([
+        ["LR001", "config.schema"],
+        ["LR002", "config.network-safety"],
+        ["LR003", "config.wallet-safety"],
+        ["LR004", "config.privacy-safety"],
+        ["LR005", "config.input-files"],
+      ] as const).map(([ruleId, checkId]) => ({
+        ruleId,
+        checkId,
+        status: "passed" as const,
+        diagnosticCount: 0,
+      })),
+      grantMilestoneComplete: false,
     },
     failureCode: null,
   };
@@ -405,7 +471,12 @@ test("Action runner preserves structured invalid results and then fails the step
     assert.equal(outcome.exitCode, 1);
     assert.equal(outcome.result.status, "failed");
     assert.equal(outcome.result.failureCode, "configuration-invalid");
-    assert.deepEqual(outcome.result.validation?.issues, ["Scenario flow cannot be read safely"]);
+    assert.deepEqual(outcome.result.validation?.issues, [
+      "Scenario authorize flow cannot be read safely",
+    ]);
+    assert.equal(outcome.result.validation?.diagnostics[0]?.ruleId, "LR005");
+    assert.equal(outcome.result.validation?.ruleResults[4]?.status, "failed");
+    assert.equal(outcome.result.validation?.grantMilestoneComplete, false);
     assert.equal(
       await readFile(fixture.githubOutput, "utf8"),
       "valid=false\nscenario-count=2\nresult-file=app folder=one/.launchrig/reports=ci/result file.json\n",

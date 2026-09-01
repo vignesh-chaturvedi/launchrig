@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-config-validation-result.schema.json",
+  "title": "LaunchRig configuration validation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "status",
+    "valid",
+    "configPath",
+    "project",
+    "packageName",
+    "scenarios",
+    "issues",
+    "diagnostics",
+    "ruleResults",
+    "grantMilestoneComplete"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-config-validation-result" },
+    "profile": { "const": "config-rules-v1" },
+    "status": { "const": "pre-award-foundation" },
+    "valid": { "type": "boolean" },
+    "configPath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "project": { "$ref": "#/$defs/nullableString" },
+    "packageName": { "$ref": "#/$defs/nullableString" },
+    "scenarios": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0, "maximum": 50 },
+        { "type": "null" }
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "type": "string", "minLength": 1, "maxLength": 4000 }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "ruleResults": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "$ref": "#/$defs/lr001Result" },
+        { "$ref": "#/$defs/lr002Result" },
+        { "$ref": "#/$defs/lr003Result" },
+        { "$ref": "#/$defs/lr004Result" },
+        { "$ref": "#/$defs/lr005Result" }
+      ],
+      "items": false
+    },
+    "grantMilestoneComplete": { "const": false }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "valid": { "const": true } }, "required": ["valid"] },
+      "then": {
+        "properties": {
+          "project": { "type": "string", "minLength": 1 },
+          "packageName": { "type": "string", "minLength": 1 },
+          "scenarios": { "type": "integer", "minimum": 0, "maximum": 50 },
+          "issues": { "maxItems": 0 },
+          "diagnostics": { "maxItems": 0 },
+          "ruleResults": {
+            "contains": {
+              "type": "object",
+              "properties": { "status": { "const": "passed" } },
+              "required": ["status"]
+            },
+            "minContains": 5,
+            "maxContains": 5
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "issues": { "minItems": 1 },
+          "diagnostics": { "minItems": 1 },
+          "ruleResults": {
+            "contains": {
+              "type": "object",
+              "properties": { "status": { "const": "failed" } },
+              "required": ["status"]
+            },
+            "minContains": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nullableString": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 4096 },
+        { "type": "null" }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "checkId", "code", "path", "message"],
+      "properties": {
+        "ruleId": { "enum": ["LR001", "LR002", "LR003", "LR004", "LR005"] },
+        "checkId": {
+          "enum": [
+            "config.schema",
+            "config.network-safety",
+            "config.wallet-safety",
+            "config.privacy-safety",
+            "config.input-files"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^config\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*$",
+          "maxLength": 160
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:config|version|project|target|device|wallet|scenarios|artifacts|privacy|tooling)(?:\\[\\d+\\])?(?:\\.[A-Za-z0-9_-]+)?$",
+          "maxLength": 240
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "ruleId": { "const": "LR001" },
+            "checkId": { "const": "config.schema" }
+          }
+        },
+        {
+          "properties": {
+            "ruleId": { "const": "LR002" },
+            "checkId": { "const": "config.network-safety" }
+          }
+        },
+        {
+          "properties": {
+            "ruleId": { "const": "LR003" },
+            "checkId": { "const": "config.wallet-safety" }
+          }
+        },
+        {
+          "properties": {
+            "ruleId": { "const": "LR004" },
+            "checkId": { "const": "config.privacy-safety" }
+          }
+        },
+        {
+          "properties": {
+            "ruleId": { "const": "LR005" },
+            "checkId": { "const": "config.input-files" }
+          }
+        }
+      ]
+    },
+    "ruleResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "checkId", "status", "diagnosticCount"],
+      "properties": {
+        "ruleId": { "type": "string" },
+        "checkId": { "type": "string" },
+        "status": { "enum": ["passed", "failed", "not-evaluated"] },
+        "diagnosticCount": { "type": "integer", "minimum": 0, "maximum": 200 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "failed" } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "diagnosticCount": { "minimum": 1 } } },
+          "else": { "properties": { "diagnosticCount": { "const": 0 } } }
+        }
+      ]
+    },
+    "lr001Result": {
+      "allOf": [
+        { "$ref": "#/$defs/ruleResult" },
+        {
+          "properties": {
+            "ruleId": { "const": "LR001" },
+            "checkId": { "const": "config.schema" }
+          }
+        }
+      ]
+    },
+    "lr002Result": {
+      "allOf": [
+        { "$ref": "#/$defs/ruleResult" },
+        {
+          "properties": {
+            "ruleId": { "const": "LR002" },
+            "checkId": { "const": "config.network-safety" }
+          }
+        }
+      ]
+    },
+    "lr003Result": {
+      "allOf": [
+        { "$ref": "#/$defs/ruleResult" },
+        {
+          "properties": {
+            "ruleId": { "const": "LR003" },
+            "checkId": { "const": "config.wallet-safety" }
+          }
+        }
+      ]
+    },
+    "lr004Result": {
+      "allOf": [
+        { "$ref": "#/$defs/ruleResult" },
+        {
+          "properties": {
+            "ruleId": { "const": "LR004" },
+            "checkId": { "const": "config.privacy-safety" }
+          }
+        }
+      ]
+    },
+    "lr005Result": {
+      "allOf": [
+        { "$ref": "#/$defs/ruleResult" },
+        {
+          "properties": {
+            "ruleId": { "const": "LR005" },
+            "checkId": { "const": "config.input-files" }
+          }
+        }
+      ]
+    }
+  }
+}

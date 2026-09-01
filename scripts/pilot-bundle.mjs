@@ -510,6 +510,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
     if (installedPackage.private !== true) throw new Error("Packed LaunchRig package must remain private.");
     for (const relativePath of [
       "dist/src/cli.js",
+      "dist/src/config/diagnostics.js",
       "dist/src/pilot/binding.js",
       "dist/src/pilot/cohort-preparation.js",
       "dist/src/pilot/prospect-review.js",
@@ -914,6 +915,31 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
     });
     if (!validation.stdout.includes("Configuration valid")) {
       throw new Error("Clean consumer starter configuration did not validate.");
+    }
+    const structuredValidation = JSON.parse(
+      (
+        await run(executable, ["validate", "--config", "launchrig.yml", "--json"], {
+          cwd: installDirectory,
+          env: rehearsalEnvironment,
+        })
+      ).stdout,
+    );
+    const expectedRuleIds = ["LR001", "LR002", "LR003", "LR004", "LR005"];
+    if (
+      structuredValidation.schemaVersion !== 1 ||
+      structuredValidation.kind !== "launchrig-config-validation-result" ||
+      structuredValidation.profile !== "config-rules-v1" ||
+      structuredValidation.status !== "pre-award-foundation" ||
+      structuredValidation.valid !== true ||
+      structuredValidation.grantMilestoneComplete !== false ||
+      structuredValidation.diagnostics?.length !== 0 ||
+      JSON.stringify(structuredValidation.ruleResults?.map((entry) => entry.ruleId)) !==
+        JSON.stringify(expectedRuleIds) ||
+      structuredValidation.ruleResults?.some(
+        (entry) => entry.status !== "passed" || entry.diagnosticCount !== 0,
+      )
+    ) {
+      throw new Error("Clean consumer structured configuration diagnostics did not preserve the contract.");
     }
     const preflight = await run(
       executable,

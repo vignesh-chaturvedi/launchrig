@@ -5,6 +5,11 @@ import type { ResolvedLaunchRigConfig } from "../types.js";
 import { isRegularFileNoFollow, readBoundedRegularFile, readBoundedUtf8File } from "../security/file.js";
 import { validateMaestroFlowSafety } from "../security/flow.js";
 import { ConfigError, validateConfig } from "./schema.js";
+import {
+  configDiagnostic,
+  configDiagnosticMessages,
+  type ConfigDiagnostic,
+} from "./diagnostics.js";
 
 export interface LaunchRigConfigSnapshot {
   config: ResolvedLaunchRigConfig;
@@ -16,9 +21,18 @@ function resolveConfigSource(absolutePath: string, source: string): ResolvedLaun
   let raw: unknown;
   try {
     raw = parse(source);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new ConfigError(["YAML parsing failed: " + message]);
+  } catch {
+    throw new ConfigError(
+      [
+        configDiagnostic(
+          "LR001",
+          "config.schema.yaml-invalid",
+          "config",
+          "Configuration YAML cannot be parsed",
+        ),
+      ],
+      ["LR001"],
+    );
   }
 
   const config = validateConfig(raw);
@@ -42,15 +56,34 @@ export async function loadConfigSnapshot(configPath: string): Promise<LaunchRigC
   let bytes: Buffer;
   try {
     bytes = await readBoundedRegularFile(absolutePath, 1024 * 1024);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new ConfigError(["Cannot read " + absolutePath + ": " + message]);
+  } catch {
+    throw new ConfigError(
+      [
+        configDiagnostic(
+          "LR001",
+          "config.schema.source-unreadable",
+          "config",
+          "Cannot read configuration safely",
+        ),
+      ],
+      ["LR001"],
+    );
   }
   let source: string;
   try {
     source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    throw new ConfigError(["Configuration must use valid UTF-8"]);
+    throw new ConfigError(
+      [
+        configDiagnostic(
+          "LR001",
+          "config.schema.invalid-utf8",
+          "config",
+          "Configuration must use valid UTF-8",
+        ),
+      ],
+      ["LR001"],
+    );
   }
   return {
     config: resolveConfigSource(absolutePath, source),
@@ -63,27 +96,61 @@ export async function loadConfig(configPath: string): Promise<ResolvedLaunchRigC
   return (await loadConfigSnapshot(configPath)).config;
 }
 
-export async function validateConfigPaths(config: ResolvedLaunchRigConfig): Promise<string[]> {
-  const issues: string[] = [];
+export async function validateConfigPathDiagnostics(
+  config: ResolvedLaunchRigConfig,
+): Promise<ConfigDiagnostic[]> {
+  const diagnostics: ConfigDiagnostic[] = [];
   if (config.resolvedApk) {
     if (!(await isRegularFileNoFollow(config.resolvedApk))) {
-      issues.push("APK is missing or is not a regular file: " + config.resolvedApk);
+      diagnostics.push(
+        configDiagnostic(
+          "LR005",
+          "config.input-files.project-apk-unavailable",
+          "project.apk",
+          "APK is missing or is not a regular file",
+        ),
+      );
     }
   }
   if (config.resolvedWalletApk) {
     if (!(await isRegularFileNoFollow(config.resolvedWalletApk))) {
-      issues.push("Wallet fixture APK is missing or is not a regular file: " + config.resolvedWalletApk);
+      diagnostics.push(
+        configDiagnostic(
+          "LR005",
+          "config.input-files.wallet-apk-unavailable",
+          "wallet.apk",
+          "Wallet fixture APK is missing or is not a regular file",
+        ),
+      );
     }
   }
-  for (const scenario of config.scenarios) {
+  for (const [index, scenario] of config.scenarios.entries()) {
     try {
       const source = await readBoundedUtf8File(scenario.resolvedFlow, 512 * 1024);
       for (const issue of validateMaestroFlowSafety(source, config.project.packageName)) {
-        issues.push("Scenario " + scenario.id + " " + issue);
+        diagnostics.push(
+          configDiagnostic(
+            "LR005",
+            "config.input-files.unsafe-flow",
+            "scenarios[" + index + "].flow",
+            "Scenario " + scenario.id + " " + issue,
+          ),
+        );
       }
     } catch {
-      issues.push("Scenario flow cannot be read safely: " + scenario.resolvedFlow);
+      diagnostics.push(
+        configDiagnostic(
+          "LR005",
+          "config.input-files.flow-unavailable",
+          "scenarios[" + index + "].flow",
+          "Scenario " + scenario.id + " flow cannot be read safely",
+        ),
+      );
     }
   }
-  return issues;
+  return diagnostics;
+}
+
+export async function validateConfigPaths(config: ResolvedLaunchRigConfig): Promise<string[]> {
+  return configDiagnosticMessages(await validateConfigPathDiagnostics(config));
 }

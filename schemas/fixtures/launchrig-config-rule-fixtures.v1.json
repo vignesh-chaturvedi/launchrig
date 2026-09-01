@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "kind": "launchrig-config-rule-fixtures",
+  "profile": "config-rules-v1",
+  "status": "pre-award-foundation",
+  "ruleIds": ["LR001", "LR002", "LR003", "LR004", "LR005"],
+  "caseCount": 10,
+  "grantMilestoneComplete": false,
+  "base": {
+    "version": 1,
+    "project": {
+      "name": "Rule fixture",
+      "packageName": "com.example.rulefixture",
+      "apk": "./app.apk",
+      "install": false
+    },
+    "target": {
+      "network": "devnet"
+    },
+    "device": {
+      "requirePhysical": true,
+      "minimumApiLevel": 26
+    },
+    "wallet": {
+      "mode": "mock-mwa",
+      "packageName": "com.solana.mwallet",
+      "apk": "./wallet.apk",
+      "install": false
+    },
+    "scenarios": [
+      {
+        "id": "authorize",
+        "kind": "custom",
+        "name": "Safe local fixture",
+        "flow": "./flow.yaml"
+      }
+    ],
+    "artifacts": {
+      "directory": "./.launchrig/results",
+      "screenshots": "failure",
+      "retention": 5
+    },
+    "privacy": {
+      "includeLogcat": false,
+      "logcatLines": 200,
+      "redactPatterns": []
+    },
+    "tooling": {}
+  },
+  "baseFiles": {
+    "app.apk": "fixture-app-bytes",
+    "wallet.apk": "fixture-wallet-bytes",
+    "flow.yaml": "appId: com.example.rulefixture\n---\n- launchApp\n- assertVisible: Ready\n"
+  },
+  "cases": [
+    {
+      "id": "all-rules-pass",
+      "targetRule": "LR001",
+      "set": {},
+      "remove": [],
+      "omitFiles": [],
+      "replaceFiles": {},
+      "expectedValid": true,
+      "expectedStatuses": ["passed", "passed", "passed", "passed", "passed"],
+      "expectedDiagnosticCodes": []
+    },
+    {
+      "id": "lr001-invalid-android-application-id",
+      "targetRule": "LR001",
+      "set": {
+        "/project/packageName": "not-an-application-id"
+      },
+      "remove": [],
+      "omitFiles": [],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["failed", "passed", "passed", "passed", "not-evaluated"],
+      "expectedDiagnosticCodes": ["config.schema.android-application-id"]
+    },
+    {
+      "id": "lr002-mainnet-refused",
+      "targetRule": "LR002",
+      "set": {
+        "/target/network": "mainnet-beta"
+      },
+      "remove": [],
+      "omitFiles": [],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "failed", "passed", "passed", "not-evaluated"],
+      "expectedDiagnosticCodes": ["config.network-safety.unsupported-network"]
+    },
+    {
+      "id": "lr003-wallet-package-mismatch",
+      "targetRule": "LR003",
+      "set": {
+        "/wallet/packageName": "com.example.unsupportedwallet"
+      },
+      "remove": [],
+      "omitFiles": [],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "passed", "failed", "passed", "not-evaluated"],
+      "expectedDiagnosticCodes": ["config.wallet-safety.mode-package"]
+    },
+    {
+      "id": "lr004-invalid-redaction-pattern",
+      "targetRule": "LR004",
+      "set": {
+        "/privacy/redactPatterns": ["["]
+      },
+      "remove": [],
+      "omitFiles": [],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "passed", "passed", "failed", "not-evaluated"],
+      "expectedDiagnosticCodes": ["config.privacy-safety.invalid-redaction-pattern"]
+    },
+    {
+      "id": "lr005-project-apk-missing",
+      "targetRule": "LR005",
+      "set": {},
+      "remove": [],
+      "omitFiles": ["app.apk"],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "passed", "passed", "passed", "failed"],
+      "expectedDiagnosticCodes": ["config.input-files.project-apk-unavailable"]
+    },
+    {
+      "id": "lr005-wallet-apk-missing",
+      "targetRule": "LR005",
+      "set": {},
+      "remove": [],
+      "omitFiles": ["wallet.apk"],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "passed", "passed", "passed", "failed"],
+      "expectedDiagnosticCodes": ["config.input-files.wallet-apk-unavailable"]
+    },
+    {
+      "id": "lr005-flow-missing",
+      "targetRule": "LR005",
+      "set": {},
+      "remove": [],
+      "omitFiles": ["flow.yaml"],
+      "replaceFiles": {},
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "passed", "passed", "passed", "failed"],
+      "expectedDiagnosticCodes": ["config.input-files.flow-unavailable"]
+    },
+    {
+      "id": "lr005-flow-policy-unsafe",
+      "targetRule": "LR005",
+      "set": {},
+      "remove": [],
+      "omitFiles": [],
+      "replaceFiles": {
+        "flow.yaml": "appId: com.example.rulefixture\n---\n- clearState\n"
+      },
+      "expectedValid": false,
+      "expectedStatuses": ["passed", "passed", "passed", "passed", "failed"],
+      "expectedDiagnosticCodes": ["config.input-files.unsafe-flow"]
+    },
+    {
+      "id": "lr005-unconfigured-optional-artifacts-pass",
+      "targetRule": "LR005",
+      "set": {},
+      "remove": ["/project/apk", "/wallet/apk"],
+      "omitFiles": ["app.apk", "wallet.apk"],
+      "replaceFiles": {},
+      "expectedValid": true,
+      "expectedStatuses": ["passed", "passed", "passed", "passed", "passed"],
+      "expectedDiagnosticCodes": []
+    }
+  ],
+  "limitations": [
+    "The corpus exercises only the five configuration rules LR001 through LR005.",
+    "Passing fixtures do not exercise Android, a wallet, a publisher project, Seeker hardware, or a funded grant milestone.",
+    "Filesystem fixtures prove deterministic local validation behavior, not external artifact provenance."
+  ]
+}

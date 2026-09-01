@@ -8,6 +8,17 @@ import { fileURLToPath } from "node:url";
 
 const RESULT_SCHEMA_VERSION = 1;
 const RESULT_KIND = "launchrig-validation-action-result";
+const VALIDATION_SCHEMA_VERSION = 1;
+const VALIDATION_KIND = "launchrig-config-validation-result";
+const VALIDATION_PROFILE = "config-rules-v1";
+const VALIDATION_STATUS = "pre-award-foundation";
+const CONFIG_RULES = Object.freeze([
+  ["LR001", "config.schema"],
+  ["LR002", "config.network-safety"],
+  ["LR003", "config.wallet-safety"],
+  ["LR004", "config.privacy-safety"],
+  ["LR005", "config.input-files"],
+]);
 const MAX_PATH_INPUT_LENGTH = 240;
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_ACTION_RESULT_BYTES = 1024 * 1024;
@@ -389,27 +400,104 @@ function parseValidationOutput(execution, expectedConfigPath) {
   } catch {
     throw failure("invalid-command-output", "LaunchRig validation did not return structured JSON.");
   }
-  const expectedKeys = ["configPath", "issues", "packageName", "project", "scenarios", "valid"];
+  const expectedKeys = [
+    "configPath",
+    "diagnostics",
+    "grantMilestoneComplete",
+    "issues",
+    "kind",
+    "packageName",
+    "profile",
+    "project",
+    "ruleResults",
+    "scenarios",
+    "schemaVersion",
+    "status",
+    "valid",
+  ];
+  const validNullableString = (entry) =>
+    entry === null || (typeof entry === "string" && entry.length > 0 && entry.length <= 4096);
+  const validNullableScenarioCount = (entry) =>
+    entry === null || (Number.isSafeInteger(entry) && entry >= 0 && entry <= 50);
+  const validDiagnostic = (entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    if (
+      JSON.stringify(Object.keys(entry).sort()) !==
+      JSON.stringify(["checkId", "code", "message", "path", "ruleId"])
+    ) {
+      return false;
+    }
+    const expected = CONFIG_RULES.find(([ruleId]) => ruleId === entry.ruleId);
+    return Boolean(
+      expected &&
+      entry.checkId === expected[1] &&
+      typeof entry.code === "string" &&
+      /^config\.[a-z0-9-]+(?:\.[a-z0-9-]+)*$/.test(entry.code) &&
+      typeof entry.path === "string" &&
+      entry.path.length > 0 &&
+      entry.path.length <= 240 &&
+      /^(?:config|version|project|target|device|wallet|scenarios|artifacts|privacy|tooling)(?:\[\d+\])?(?:\.[A-Za-z0-9_-]+)?$/.test(entry.path) &&
+      !path.posix.isAbsolute(entry.path) &&
+      !path.win32.isAbsolute(entry.path) &&
+      typeof entry.message === "string" &&
+      entry.message.length > 0 &&
+      entry.message.length <= 4000 &&
+      !/[\u0000-\u001f\u007f]/.test(entry.message) &&
+      !entry.message.includes(expectedConfigPath)
+    );
+  };
+  const validRuleResults = (entries, diagnostics) => {
+    if (!Array.isArray(entries) || entries.length !== CONFIG_RULES.length) return false;
+    return entries.every((entry, index) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+      if (
+        JSON.stringify(Object.keys(entry).sort()) !==
+        JSON.stringify(["checkId", "diagnosticCount", "ruleId", "status"])
+      ) {
+        return false;
+      }
+      const expected = CONFIG_RULES[index];
+      const diagnosticCount = diagnostics.filter((diagnostic) => diagnostic.ruleId === expected[0]).length;
+      return (
+        entry.ruleId === expected[0] &&
+        entry.checkId === expected[1] &&
+        ["passed", "failed", "not-evaluated"].includes(entry.status) &&
+        Number.isSafeInteger(entry.diagnosticCount) &&
+        entry.diagnosticCount === diagnosticCount &&
+        (diagnosticCount > 0 ? entry.status === "failed" : entry.status !== "failed") &&
+        (entry.status !== "not-evaluated" || diagnosticCount === 0)
+      );
+    });
+  };
   if (
     !value ||
     typeof value !== "object" ||
     Array.isArray(value) ||
     JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expectedKeys) ||
+    value.schemaVersion !== VALIDATION_SCHEMA_VERSION ||
+    value.kind !== VALIDATION_KIND ||
+    value.profile !== VALIDATION_PROFILE ||
+    value.status !== VALIDATION_STATUS ||
+    value.grantMilestoneComplete !== false ||
     typeof value.valid !== "boolean" ||
     typeof value.configPath !== "string" ||
     path.resolve(value.configPath) !== expectedConfigPath ||
-    typeof value.project !== "string" ||
-    value.project.length === 0 ||
-    typeof value.packageName !== "string" ||
-    value.packageName.length === 0 ||
-    !Number.isSafeInteger(value.scenarios) ||
-    value.scenarios < 0 ||
-    value.scenarios > 50 ||
+    !validNullableString(value.project) ||
+    !validNullableString(value.packageName) ||
+    !validNullableScenarioCount(value.scenarios) ||
     !Array.isArray(value.issues) ||
     value.issues.length > 200 ||
     value.issues.some((issue) => typeof issue !== "string" || issue.length === 0 || issue.length > 4000) ||
-    (value.valid && value.issues.length !== 0) ||
-    (!value.valid && value.issues.length === 0) ||
+    !Array.isArray(value.diagnostics) ||
+    value.diagnostics.length > 200 ||
+    value.diagnostics.some((diagnostic) => !validDiagnostic(diagnostic)) ||
+    JSON.stringify(value.issues) !== JSON.stringify(value.diagnostics.map((entry) => entry.message)) ||
+    !validRuleResults(value.ruleResults, value.diagnostics) ||
+    (value.valid && (value.issues.length !== 0 || value.diagnostics.length !== 0)) ||
+    (!value.valid && (value.issues.length === 0 || value.diagnostics.length === 0)) ||
+    (value.valid && value.ruleResults.some((entry) => entry.status !== "passed")) ||
+    (!value.valid && !value.ruleResults.some((entry) => entry.status === "failed")) ||
+    (value.valid && (value.project === null || value.packageName === null || value.scenarios === null)) ||
     (value.valid && execution.exitCode !== 0) ||
     (!value.valid && execution.exitCode !== 2)
   ) {
@@ -429,10 +517,17 @@ function createResult(paths, validation, failureCode) {
     scenarioCount: validation?.scenarios ?? null,
     validation: validation
       ? {
+          schemaVersion: validation.schemaVersion,
+          kind: validation.kind,
+          profile: validation.profile,
+          status: validation.status,
           project: validation.project,
           packageName: validation.packageName,
           scenarios: validation.scenarios,
           issues: validation.issues,
+          diagnostics: validation.diagnostics,
+          ruleResults: validation.ruleResults,
+          grantMilestoneComplete: validation.grantMilestoneComplete,
         }
       : null,
     failureCode,

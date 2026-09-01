@@ -44,6 +44,7 @@ const ACCEPTED_BUNDLE_PROFILES = new Set([
   "phase-2l-human-prospect-review-rc-v13",
   "phase-2m-send-decision-preparation-rc-v14",
   "phase-2n-human-send-decision-rc-v15",
+  "phase-3-config-diagnostics-rc-v16",
 ]);
 
 const DRAFT_LIMITATIONS = [

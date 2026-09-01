@@ -65,6 +65,10 @@ const REHEARSAL_CHECKS_V15 = [
   ...REHEARSAL_CHECKS_V14,
   "device-free-private-human-send-decision-confirmation-refusal",
 ];
+const REHEARSAL_CHECKS_V16 = [
+  ...REHEARSAL_CHECKS_V15,
+  "device-free-structured-config-diagnostics",
+];
 const SOURCE_VERIFICATION_CHECKS = [
   "package-manager-version",
   "frozen-offline-dependency-restore",
@@ -92,6 +96,7 @@ const BUNDLE_PROFILE_V12 = "phase-2i-recruitment-register-rc-v12";
 const BUNDLE_PROFILE_V13 = "phase-2l-human-prospect-review-rc-v13";
 const BUNDLE_PROFILE_V14 = "phase-2m-send-decision-preparation-rc-v14";
 const BUNDLE_PROFILE_V15 = "phase-2n-human-send-decision-rc-v15";
+const BUNDLE_PROFILE_V16 = "phase-3-config-diagnostics-rc-v16";
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -195,6 +200,7 @@ const PACKED_DOCUMENTS_V15 = [
   ...PACKED_DOCUMENTS_V14,
   "docs/publisher-send-decision-recording.md",
 ].sort();
+const PACKED_DOCUMENTS_V16 = [...PACKED_DOCUMENTS_V15];
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -279,6 +285,11 @@ const PACKED_SCHEMAS_V15 = [
   "schemas/launchrig-private-human-send-decision-result.schema.json",
   "schemas/launchrig-private-human-send-decision.schema.json",
 ].sort();
+const PACKED_SCHEMAS_V16 = [
+  ...PACKED_SCHEMAS_V15,
+  "schemas/fixtures/launchrig-config-rule-fixtures.v1.json",
+  "schemas/launchrig-config-validation-result.schema.json",
+].sort();
 const PACKED_ACTION_FILES_V6 = [
   "action.yml",
   "action/run-validation.mjs",
@@ -322,6 +333,11 @@ const PACKED_COMPILED_ADDITIONS_V15_ONLY = [
   "package/dist/src/pilot/send-decision-recording.d.ts",
   "package/dist/src/pilot/send-decision-recording.js",
   "package/dist/src/pilot/send-decision-recording.js.map",
+];
+const PACKED_COMPILED_ADDITIONS_V16_ONLY = [
+  "package/dist/src/config/diagnostics.d.ts",
+  "package/dist/src/config/diagnostics.js",
+  "package/dist/src/config/diagnostics.js.map",
 ];
 const PACKED_TEMPLATES_V11 = [
   "templates/defect-evidence.md",
@@ -417,6 +433,13 @@ function packedInventory(profile) {
       actionFiles: PACKED_ACTION_FILES_V6,
       runtimeFiles: PACKED_RUNTIME_FILES_V11,
     };
+  } else if (profile === BUNDLE_PROFILE_V16) {
+    inventory = {
+      documents: PACKED_DOCUMENTS_V16,
+      schemas: PACKED_SCHEMAS_V16,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
+    };
   } else {
     throw new Error("Unsupported bundle manifest.");
   }
@@ -426,7 +449,8 @@ function packedInventory(profile) {
       profile === BUNDLE_PROFILE_V12 ||
       profile === BUNDLE_PROFILE_V13 ||
       profile === BUNDLE_PROFILE_V14 ||
-      profile === BUNDLE_PROFILE_V15
+      profile === BUNDLE_PROFILE_V15 ||
+      profile === BUNDLE_PROFILE_V16
         ? PACKED_TEMPLATES_V12
         : PACKED_TEMPLATES_V11,
   };
@@ -627,25 +651,32 @@ function expectedPayloadFiles(version, profile) {
     ...(profile === BUNDLE_PROFILE_V12 ||
     profile === BUNDLE_PROFILE_V13 ||
     profile === BUNDLE_PROFILE_V14 ||
-    profile === BUNDLE_PROFILE_V15
+    profile === BUNDLE_PROFILE_V15 ||
+    profile === BUNDLE_PROFILE_V16
       ? ["docs/cohort-audit.md"]
       : []),
     "docs/publisher-pilot-quickstart.md",
     ...(profile === BUNDLE_PROFILE_V12 ||
     profile === BUNDLE_PROFILE_V13 ||
     profile === BUNDLE_PROFILE_V14 ||
-    profile === BUNDLE_PROFILE_V15
+    profile === BUNDLE_PROFILE_V15 ||
+    profile === BUNDLE_PROFILE_V16
       ? ["docs/publisher-recruitment.md"]
       : []),
     ...(profile === BUNDLE_PROFILE_V13 ||
     profile === BUNDLE_PROFILE_V14 ||
-    profile === BUNDLE_PROFILE_V15
+    profile === BUNDLE_PROFILE_V15 ||
+    profile === BUNDLE_PROFILE_V16
       ? ["docs/publisher-prospect-review.md"]
       : []),
-    ...(profile === BUNDLE_PROFILE_V14 || profile === BUNDLE_PROFILE_V15
+    ...(profile === BUNDLE_PROFILE_V14 ||
+    profile === BUNDLE_PROFILE_V15 ||
+    profile === BUNDLE_PROFILE_V16
       ? ["docs/publisher-send-decision-preparation.md"]
       : []),
-    ...(profile === BUNDLE_PROFILE_V15 ? ["docs/publisher-send-decision-recording.md"] : []),
+    ...(profile === BUNDLE_PROFILE_V15 || profile === BUNDLE_PROFILE_V16
+      ? ["docs/publisher-send-decision-recording.md"]
+      : []),
     "docs/supported-environment.md",
     "docs/flows/mwa-authorize.md",
     "docs/flows/mwa-reject.md",
@@ -790,21 +821,46 @@ export function inspectLaunchRigArchive(archiveBytes, manifest) {
   }
   if (!ended) throw new Error("LaunchRig package archive has no end marker.");
 
-  if (manifest.profile !== BUNDLE_PROFILE_V14 && manifest.profile !== BUNDLE_PROFILE_V15) {
+  if (
+    manifest.profile !== BUNDLE_PROFILE_V14 &&
+    manifest.profile !== BUNDLE_PROFILE_V15 &&
+    manifest.profile !== BUNDLE_PROFILE_V16
+  ) {
     const unexpectedV14 = PACKED_COMPILED_ADDITIONS_V14_ONLY.find((entry) => entries.has(entry));
     if (unexpectedV14) {
       throw new Error("LaunchRig package contains an RC14 file outside its historical profile: " + unexpectedV14);
     }
   }
 
-  if (manifest.profile !== BUNDLE_PROFILE_V15) {
+  if (manifest.profile !== BUNDLE_PROFILE_V15 && manifest.profile !== BUNDLE_PROFILE_V16) {
     const unexpectedV15 = PACKED_COMPILED_ADDITIONS_V15_ONLY.find((entry) => entries.has(entry));
     if (unexpectedV15) {
       throw new Error("LaunchRig package contains an RC15 file outside its historical profile: " + unexpectedV15);
     }
   }
 
-  if (manifest.profile === BUNDLE_PROFILE_V15) {
+  if (manifest.profile !== BUNDLE_PROFILE_V16) {
+    const unexpectedV16 = PACKED_COMPILED_ADDITIONS_V16_ONLY.find((entry) => entries.has(entry));
+    if (unexpectedV16) {
+      throw new Error("LaunchRig package contains an RC16 file outside its historical profile: " + unexpectedV16);
+    }
+  }
+
+  if (manifest.profile === BUNDLE_PROFILE_V16) {
+    for (const required of [
+      ...PACKED_COMPILED_ADDITIONS_V8,
+      ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V12_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V13_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V14_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V15_ONLY,
+      ...PACKED_COMPILED_ADDITIONS_V16_ONLY,
+    ]) {
+      if (!entries.has(required)) {
+        throw new Error("LaunchRig package RC16 is missing " + required + ".");
+      }
+    }
+  } else if (manifest.profile === BUNDLE_PROFILE_V15) {
     for (const required of [
       ...PACKED_COMPILED_ADDITIONS_V8,
       ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
@@ -1018,25 +1074,27 @@ function validateManifest(manifest) {
     "Bundle manifest",
   );
   const expectedRehearsalChecks =
-    manifest.profile === BUNDLE_PROFILE_V15
-      ? REHEARSAL_CHECKS_V15
-      : manifest.profile === BUNDLE_PROFILE_V14
-        ? REHEARSAL_CHECKS_V14
-        : manifest.profile === BUNDLE_PROFILE_V13
-          ? REHEARSAL_CHECKS_V13
-          : manifest.profile === BUNDLE_PROFILE_V12
-            ? REHEARSAL_CHECKS_V12
-            : manifest.profile === BUNDLE_PROFILE_V11
-              ? REHEARSAL_CHECKS_V11
-              : manifest.profile === BUNDLE_PROFILE_V10
-                ? REHEARSAL_CHECKS_V10
-                : manifest.profile === BUNDLE_PROFILE_V9
-                  ? REHEARSAL_CHECKS_V9
-                  : manifest.profile === BUNDLE_PROFILE_V8
-                    ? REHEARSAL_CHECKS_V8
-                    : manifest.profile === BUNDLE_PROFILE_V7
-                      ? REHEARSAL_CHECKS_V7
-                      : LEGACY_REHEARSAL_CHECKS;
+    manifest.profile === BUNDLE_PROFILE_V16
+      ? REHEARSAL_CHECKS_V16
+      : manifest.profile === BUNDLE_PROFILE_V15
+        ? REHEARSAL_CHECKS_V15
+        : manifest.profile === BUNDLE_PROFILE_V14
+          ? REHEARSAL_CHECKS_V14
+          : manifest.profile === BUNDLE_PROFILE_V13
+            ? REHEARSAL_CHECKS_V13
+            : manifest.profile === BUNDLE_PROFILE_V12
+              ? REHEARSAL_CHECKS_V12
+              : manifest.profile === BUNDLE_PROFILE_V11
+                ? REHEARSAL_CHECKS_V11
+                : manifest.profile === BUNDLE_PROFILE_V10
+                  ? REHEARSAL_CHECKS_V10
+                  : manifest.profile === BUNDLE_PROFILE_V9
+                    ? REHEARSAL_CHECKS_V9
+                    : manifest.profile === BUNDLE_PROFILE_V8
+                      ? REHEARSAL_CHECKS_V8
+                      : manifest.profile === BUNDLE_PROFILE_V7
+                        ? REHEARSAL_CHECKS_V7
+                        : LEGACY_REHEARSAL_CHECKS;
   if (
     manifest.schemaVersion !== 1 ||
     manifest.kind !== BUNDLE_KIND ||
@@ -1056,6 +1114,7 @@ function validateManifest(manifest) {
       BUNDLE_PROFILE_V13,
       BUNDLE_PROFILE_V14,
       BUNDLE_PROFILE_V15,
+      BUNDLE_PROFILE_V16,
     ].includes(manifest.profile)
   ) {
     throw new Error("Unsupported bundle manifest.");

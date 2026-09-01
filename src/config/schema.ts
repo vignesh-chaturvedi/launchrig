@@ -1,5 +1,13 @@
 import type { LaunchRigConfig, ScenarioConfig } from "../types.js";
 import {
+  configDiagnostic,
+  configDiagnosticMessages,
+  type ConfigDiagnostic,
+  type ConfigRuleId,
+  schemaConfigDiagnostic,
+  SCHEMA_CONFIG_RULE_IDS,
+} from "./diagnostics.js";
+import {
   ANDROID_APPLICATION_ID_PATTERN,
   ARTIFACT_KEYS,
   CONFIG_NETWORKS,
@@ -28,11 +36,22 @@ import {
 
 export class ConfigError extends Error {
   readonly issues: string[];
+  readonly diagnostics: ConfigDiagnostic[];
+  readonly evaluatedRuleIds: ConfigRuleId[];
 
-  constructor(issues: string[]) {
+  constructor(
+    entries: readonly string[] | readonly ConfigDiagnostic[],
+    evaluatedRuleIds: readonly ConfigRuleId[] = ["LR005"],
+  ) {
     super("LaunchRig configuration is invalid");
     this.name = "ConfigError";
-    this.issues = issues;
+    this.diagnostics = entries.map((entry) =>
+      typeof entry === "string"
+        ? configDiagnostic("LR005", "config.input-files.invalid", "config", entry)
+        : { ...entry },
+    );
+    this.issues = configDiagnosticMessages(this.diagnostics);
+    this.evaluatedRuleIds = [...evaluatedRuleIds];
   }
 }
 
@@ -329,7 +348,12 @@ export function validateConfig(value: unknown): LaunchRigConfig {
     issues.push("wallet.packageName is required when an MWA scenario is configured");
   }
 
-  if (issues.length > 0) throw new ConfigError(issues);
+  if (issues.length > 0) {
+    throw new ConfigError(
+      issues.map((issue) => schemaConfigDiagnostic(issue)),
+      SCHEMA_CONFIG_RULE_IDS,
+    );
+  }
 
   const parsed: LaunchRigConfig = {
     version: CONFIG_V1_VERSION,
