@@ -131,7 +131,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR007",
@@ -142,7 +142,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/device.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR008",
@@ -153,7 +153,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR009",
@@ -164,7 +164,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR010",
@@ -175,7 +175,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR011",
@@ -186,7 +186,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR012",
@@ -197,7 +197,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/wallet-artifact.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR013",
@@ -208,7 +208,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR014",
@@ -219,18 +219,18 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/wallet-artifact.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR015",
     checkId: RUN_CHECK_IDS.scenarioSelection,
     domain: "runtime",
     title: "Scenario selection",
-    description: "Refuses a requested scenario ID that is not present in the validated configuration.",
+    description: "Records a valid requested scenario and refuses an ID that is absent from the validated configuration.",
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR016",
@@ -241,7 +241,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR017",
@@ -252,7 +252,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/maestro.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
   {
     ruleId: "LR018",
@@ -263,7 +263,7 @@ const RUNTIME_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "report-check",
     implementation: "src/runner/orchestrator.ts#runLaunchRig",
-    testContract: "test/orchestrator.test.ts",
+    testContract: "test/runtime-rule-results.test.ts",
   },
 ];
 
@@ -350,7 +350,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
 const RULES = Object.freeze([...CONFIGURATION_RULES, ...RUNTIME_RULES, ...PILOT_RULES]);
 const LIMITATIONS = Object.freeze([
   "The catalog versions existing local checks; it does not prove any external publisher execution.",
-  "Source test references are not the later public failure-fixture corpus.",
+  "Local executable fixtures have not been reviewed or released as the later public failure-fixture corpus.",
   "The catalog does not establish Seeker, production-wallet, Seed Vault, confirmed-defect, grant-award, or grant-readiness claims.",
 ]);
 

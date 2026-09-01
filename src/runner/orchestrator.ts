@@ -17,6 +17,7 @@ import { writeReportArtifacts, type WrittenArtifacts } from "../report/write.js"
 import { redactText } from "../security/redact.js";
 import { validateMaestroFlowSafety } from "../security/flow.js";
 import { RUN_CHECK_IDS, scenarioCheckId } from "../rules/catalog.js";
+import { inspectMaestroVersion, MINIMUM_MAESTRO_VERSION } from "../commands/doctor.js";
 import {
   managedWalletExpectedSha256,
   sha256File,
@@ -214,6 +215,17 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         summary: deviceSnapshot.manufacturer + " " + deviceSnapshot.model + " connected over USB/ADB",
       }),
     );
+    if (deviceSnapshot.isEmulator && config.device.requirePhysical) {
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        setupError: true,
+      });
+    }
   } catch (error) {
     checks.push(
       result({
@@ -246,6 +258,17 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         : "API " + deviceSnapshot.apiLevel + " is below the minimum " + config.device.minimumApiLevel,
     }),
   );
+  if (!apiPass) {
+    return await finalize({
+      config,
+      startedAt,
+      runId,
+      runDirectory,
+      checks,
+      device: deviceSnapshot,
+      setupError: true,
+    });
+  }
 
   const appPresentBeforeInstall = await adb.isPackageInstalled(serial, config.project.packageName);
   if (config.project.install && config.resolvedApk) {
@@ -277,6 +300,9 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       );
     }
   }
+  if (checks.at(-1)?.id === RUN_CHECK_IDS.appInstall && checks.at(-1)?.status === "fail") {
+    return await finalize({ config, startedAt, runId, runDirectory, checks, device: deviceSnapshot });
+  }
 
   const appStarted = Date.now();
   const appInstalled = await adb.isPackageInstalled(serial, config.project.packageName);
@@ -293,6 +319,9 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         : config.project.packageName + " is not installed on the selected phone",
     }),
   );
+  if (!appInstalled) {
+    return await finalize({ config, startedAt, runId, runDirectory, checks, device: deviceSnapshot });
+  }
   if (options.requireInstalledArtifactHashes) {
     const appBinaryStarted = Date.now();
     let expectedAppSha256: string | undefined;
@@ -321,8 +350,19 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           : config.resolvedApk
             ? "Installed app APK does not match the configured artifact"
             : "Installed app APK hash could not be captured",
-      }),
-    );
+        }),
+      );
+    if (!appBinaryMatches) {
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        ...(appSnapshot ? { app: appSnapshot } : {}),
+      });
+    }
   }
 
   if (config.wallet.packageName) {
@@ -389,6 +429,17 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
         }
       }
     }
+    if (checks.at(-1)?.id === RUN_CHECK_IDS.walletInstall && checks.at(-1)?.status === "fail") {
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        ...(appSnapshot ? { app: appSnapshot } : {}),
+      });
+    }
     const walletStarted = Date.now();
     const walletInstalled = await adb.isPackageInstalled(serial, config.wallet.packageName);
     if (walletInstalled) walletSnapshot = await adb.packageSnapshot(serial, config.wallet.packageName);
@@ -409,6 +460,17 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           : config.wallet.packageName + " is not installed on the selected phone",
       }),
     );
+    if (!walletInstalled && config.scenarios.length > 0) {
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        ...(appSnapshot ? { app: appSnapshot } : {}),
+      });
+    }
     if (options.requireInstalledArtifactHashes) {
       const walletBinaryStarted = Date.now();
       const expectedWalletSha256 = managedWalletExpectedSha256(config.wallet.packageName);
@@ -425,8 +487,20 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           summary: walletBinaryMatches
             ? "Installed test-wallet APK matches the managed artifact contract"
             : "Installed test-wallet APK does not match the managed artifact contract",
-        }),
-      );
+          }),
+        );
+      if (!walletBinaryMatches) {
+        return await finalize({
+          config,
+          startedAt,
+          runId,
+          runDirectory,
+          checks,
+          device: deviceSnapshot,
+          ...(appSnapshot ? { app: appSnapshot } : {}),
+          ...(walletSnapshot ? { wallet: walletSnapshot } : {}),
+        });
+      }
     }
   }
 
@@ -442,6 +516,17 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           required: true,
           startedAt: Date.now(),
           summary: "Scenario " + options.scenarioId + " does not exist in the configuration",
+        }),
+      );
+    } else {
+      checks.push(
+        result({
+          id: RUN_CHECK_IDS.scenarioSelection,
+          name: "Scenario selection",
+          status: "pass",
+          required: true,
+          startedAt: Date.now(),
+          summary: "Scenario " + options.scenarioId + " selected from the validated configuration",
         }),
       );
     }
@@ -494,19 +579,40 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     const maestro = new MaestroClient(maestroPath);
     const maestroEnv = minimalMaestroEnvironment(env, path.dirname(adbPath));
     const maestroVersion = await maestro.version(maestroEnv);
+    const inspectedMaestroVersion =
+      maestroVersion.exitCode === 0
+        ? inspectMaestroVersion(maestroVersion.stdout.toString("utf8").trim())
+        : null;
+    const maestroSupported = inspectedMaestroVersion?.supported === true;
     checks.push(
       result({
         id: RUN_CHECK_IDS.maestro,
         name: "Maestro available",
-        status: maestroVersion.exitCode === 0 ? "pass" : "fail",
+        status: maestroSupported ? "pass" : "fail",
         required: true,
         startedAt: maestroStarted,
-        summary:
-          maestroVersion.exitCode === 0
-            ? maestroVersion.stdout.toString("utf8").trim() || "Maestro available"
-            : "Maestro version check failed",
+        summary: maestroSupported
+          ? "Maestro " + inspectedMaestroVersion.version + " meets the minimum " + MINIMUM_MAESTRO_VERSION
+          : maestroVersion.exitCode !== 0
+            ? "Maestro version check failed"
+            : inspectedMaestroVersion
+              ? "Maestro " + inspectedMaestroVersion.version + " is below the minimum " + MINIMUM_MAESTRO_VERSION
+              : "Maestro version could not be parsed; version " + MINIMUM_MAESTRO_VERSION + " or newer is required",
       }),
     );
+    if (!maestroSupported) {
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        ...(appSnapshot ? { app: appSnapshot } : {}),
+        ...(walletSnapshot ? { wallet: walletSnapshot } : {}),
+        setupError: true,
+      });
+    }
 
     for (const scenario of scenarios) {
       const scenarioStarted = Date.now();

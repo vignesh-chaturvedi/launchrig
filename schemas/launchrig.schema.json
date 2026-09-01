@@ -54,7 +54,7 @@
         "additionalProperties": false,
         "required": ["id", "kind", "name", "flow"],
         "properties": {
-          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "id": { "type": "string", "pattern": "^(?!(?:none|selection)$)[a-z0-9][a-z0-9-]*$" },
           "kind": { "enum": ["mwa-authorize", "mwa-siws", "mwa-sign-message", "mwa-reject", "mwa-stale-authorization", "mwa-process-death", "custom"] },
           "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
           "flow": { "type": "string", "minLength": 1, "pattern": "\\S" },

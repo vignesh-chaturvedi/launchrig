@@ -46,6 +46,26 @@ test("strict config accepts versioned lifecycle scenario kinds", () => {
   }
 });
 
+test("scenario IDs cannot collide with stable runtime check IDs", () => {
+  for (const id of ["none", "selection"]) {
+    const raw = validRawConfig();
+    raw.scenarios = [
+      {
+        id,
+        kind: "custom",
+        name: "Reserved check collision",
+        flow: "./flow.yaml",
+      },
+    ];
+    assert.throws(
+      () => validateConfig(raw),
+      (error: unknown) =>
+        error instanceof ConfigError &&
+        error.issues.some((issue) => issue.includes("must not be none or selection")),
+    );
+  }
+});
+
 test("config rejects mainnet and unknown keys", () => {
   const raw = validRawConfig();
   raw.target = { network: "mainnet-beta" };

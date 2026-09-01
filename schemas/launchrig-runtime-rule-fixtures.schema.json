@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-runtime-rule-fixtures.schema.json",
+  "title": "LaunchRig runtime rule fixture corpus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "status",
+    "ruleIds",
+    "caseCount",
+    "expectationCount",
+    "grantMilestoneComplete",
+    "base",
+    "baseFiles",
+    "defaultBehavior",
+    "cases",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-runtime-rule-fixtures" },
+    "profile": { "const": "runtime-rules-v1" },
+    "status": { "const": "pre-award-foundation" },
+    "ruleIds": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "LR006" },
+        { "const": "LR007" },
+        { "const": "LR008" },
+        { "const": "LR009" },
+        { "const": "LR010" },
+        { "const": "LR011" },
+        { "const": "LR012" },
+        { "const": "LR013" },
+        { "const": "LR014" },
+        { "const": "LR015" },
+        { "const": "LR016" },
+        { "const": "LR017" },
+        { "const": "LR018" }
+      ],
+      "items": false,
+      "minItems": 13,
+      "maxItems": 13
+    },
+    "caseCount": { "const": 14 },
+    "expectationCount": { "const": 26 },
+    "grantMilestoneComplete": { "const": false },
+    "base": { "type": "object" },
+    "baseFiles": {
+      "type": "object",
+      "minProperties": 3,
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 100000 }
+    },
+    "defaultBehavior": {
+      "$ref": "#/$defs/completeBehavior"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 20, "maxLength": 500 }
+    }
+  },
+  "$defs": {
+    "ruleId": {
+      "enum": [
+        "LR006",
+        "LR007",
+        "LR008",
+        "LR009",
+        "LR010",
+        "LR011",
+        "LR012",
+        "LR013",
+        "LR014",
+        "LR015",
+        "LR016",
+        "LR017",
+        "LR018"
+      ]
+    },
+    "behaviorProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "adbVersionExitCode": { "enum": [0, 1] },
+        "deviceState": { "enum": ["device", "unauthorized"] },
+        "emulatorProperty": { "type": "boolean" },
+        "apiLevel": { "type": "integer", "minimum": 21, "maximum": 100 },
+        "appInstalled": { "type": "boolean" },
+        "appInstallExitCode": { "enum": [0, 1] },
+        "appBinary": { "enum": ["match", "mismatch"] },
+        "walletInstalled": { "type": "boolean" },
+        "walletBinary": { "enum": ["match", "mismatch"] },
+        "maestroVersionExitCode": { "enum": [0, 1] },
+        "scenarioExitCode": { "enum": [0, 1] }
+      }
+    },
+    "completeBehavior": {
+      "allOf": [
+        { "$ref": "#/$defs/behaviorProperties" },
+        {
+          "required": [
+            "adbVersionExitCode",
+            "deviceState",
+            "emulatorProperty",
+            "apiLevel",
+            "appInstalled",
+            "appInstallExitCode",
+            "appBinary",
+            "walletInstalled",
+            "walletBinary",
+            "maestroVersionExitCode",
+            "scenarioExitCode"
+          ]
+        }
+      ]
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "polarity", "checkId", "status", "required"],
+      "properties": {
+        "ruleId": { "$ref": "#/$defs/ruleId" },
+        "polarity": { "enum": ["positive", "negative"] },
+        "checkId": {
+          "type": "string",
+          "pattern": "^(tool\\.(adb|maestro)|device\\.(connected|api)|app\\.(install|installed|binary)|wallet\\.(install|installed|binary)|scenario\\.(selection|none|[a-z][a-z0-9-]{0,63}))$"
+        },
+        "status": { "enum": ["pass", "fail", "warn", "absent"] },
+        "required": { "type": ["boolean", "null"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "polarity": { "const": "positive" } },
+            "required": ["polarity"]
+          },
+          "then": {
+            "properties": {
+              "status": { "enum": ["pass", "warn"] },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "polarity": { "const": "negative" } },
+            "required": ["polarity"]
+          },
+          "then": {
+            "properties": { "status": { "enum": ["fail", "absent"] } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "absent" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": { "required": { "type": "null" } }
+          },
+          "else": {
+            "properties": { "required": { "type": "boolean" } }
+          }
+        }
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "set",
+        "remove",
+        "behavior",
+        "options",
+        "expectedExitCode",
+        "expectedOutcome",
+        "expectedReadiness",
+        "expectations"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 80 },
+        "set": {
+          "type": "object",
+          "propertyNames": { "pattern": "^/" }
+        },
+        "remove": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "pattern": "^/" },
+          "uniqueItems": true
+        },
+        "behavior": { "$ref": "#/$defs/behaviorProperties" },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scenarioId", "requireInstalledArtifactHashes"],
+          "properties": {
+            "scenarioId": {
+              "oneOf": [
+                { "type": "string", "minLength": 1, "maxLength": 64 },
+                { "type": "null" }
+              ]
+            },
+            "requireInstalledArtifactHashes": { "type": "boolean" }
+          }
+        },
+        "expectedExitCode": { "enum": [0, 1, 3] },
+        "expectedOutcome": { "enum": ["passed", "failed", "setup-error"] },
+        "expectedReadiness": { "enum": ["Android Device Ready", "Android/MWA Ready", "Not Ready"] },
+        "expectations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 13,
+          "items": { "$ref": "#/$defs/expectation" }
+        }
+      }
+    }
+  }
+}

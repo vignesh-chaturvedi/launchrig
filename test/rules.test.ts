@@ -54,7 +54,7 @@ test("core rule catalog freezes 25 implemented rule definitions without claiming
     Array.from({ length: 25 }, (_, index) => "LR" + String(index + 1).padStart(3, "0")),
   );
   assert.equal(new Set(catalog.rules.map((rule) => rule.checkId)).size, 25);
-  assert.ok(catalog.limitations.some((entry) => entry.includes("not the later public failure-fixture corpus")));
+  assert.ok(catalog.limitations.some((entry) => entry.includes("not been reviewed or released")));
   assert.ok(catalog.limitations.some((entry) => entry.includes("does not establish Seeker")));
 });
 

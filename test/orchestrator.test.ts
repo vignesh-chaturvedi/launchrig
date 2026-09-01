@@ -50,7 +50,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] === "--version") {
-  console.log("2.0.0-fixture");
+  console.log("2.8.0");
 } else {
   const flowPath = args.at(-1) ?? "";
   if (!flowPath.includes("launchrig-flow-")) {
@@ -266,6 +266,7 @@ test("physical-device run produces an Android/MWA Ready evidence set", async () 
       delete process.env.LAUNCHRIG_TEST_INSTALL_MARKER;
     }
 
+    config.wallet.installPolicy = "if-missing";
     await writeFile(path.join(directory, "authorize.yaml"), "appId: dev.launchrig.fixture\n---\n- takeScreenshot: private\n", "utf8");
     const unsafeFlowOutput = await runLaunchRig(config, {
       adbPath: adb,

@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 interface PayloadEntry {
   path: string;
@@ -85,6 +86,7 @@ const BUNDLE_PROFILE_V13 = "phase-2l-human-prospect-review-rc-v13";
 const BUNDLE_PROFILE_V14 = "phase-2m-send-decision-preparation-rc-v14";
 const BUNDLE_PROFILE_V15 = "phase-2n-human-send-decision-rc-v15";
 const BUNDLE_PROFILE_V16 = "phase-3-config-diagnostics-rc-v16";
+const BUNDLE_PROFILE_V17 = "phase-3-runtime-rule-fixtures-rc-v17";
 const LEGACY_REHEARSAL_CHECKS = [
   "offline-package-install",
   "installed-version-match",
@@ -134,6 +136,10 @@ const V16_REHEARSAL_CHECKS = [
   ...V15_REHEARSAL_CHECKS,
   "device-free-structured-config-diagnostics",
 ];
+const V17_REHEARSAL_CHECKS = [
+  ...V16_REHEARSAL_CHECKS,
+  "device-free-runtime-rule-fixtures",
+];
 const REQUIRED_PAYLOADS_V11 = [
   "README.md",
   "docs/publisher-pilot-quickstart.md",
@@ -169,6 +175,7 @@ const REQUIRED_PAYLOADS_V15 = [
   "docs/publisher-send-decision-recording.md",
 ].sort();
 const REQUIRED_PAYLOADS_V16 = [...REQUIRED_PAYLOADS_V15];
+const REQUIRED_PAYLOADS_V17 = [...REQUIRED_PAYLOADS_V16];
 const PACKED_DOCUMENTS_V1 = [
   "docs/flows/mwa-authorize.md",
   "docs/flows/mwa-reject.md",
@@ -273,6 +280,7 @@ const PACKED_DOCUMENTS_V15 = [
   "docs/publisher-send-decision-recording.md",
 ].sort();
 const PACKED_DOCUMENTS_V16 = [...PACKED_DOCUMENTS_V15];
+const PACKED_DOCUMENTS_V17 = [...PACKED_DOCUMENTS_V16];
 const PACKED_SCHEMAS_V1 = [
   "schemas/launchrig-pilot-evidence-v1.schema.json",
   "schemas/launchrig-pilot-evidence-v2.schema.json",
@@ -361,6 +369,11 @@ const PACKED_SCHEMAS_V16 = [
   ...PACKED_SCHEMAS_V15,
   "schemas/fixtures/launchrig-config-rule-fixtures.v1.json",
   "schemas/launchrig-config-validation-result.schema.json",
+].sort();
+const PACKED_SCHEMAS_V17 = [
+  ...PACKED_SCHEMAS_V16,
+  "schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json",
+  "schemas/launchrig-runtime-rule-fixtures.schema.json",
 ].sort();
 const PACKED_TEMPLATES_V11 = [
   "templates/defect-evidence.md",
@@ -473,7 +486,7 @@ const PINNED_YAML_FILES = collectPinnedYamlFiles(realpathSync(path.join(process.
 
 function createTestPackageArchive(
   extraPaths: string[] = [],
-  profile = BUNDLE_PROFILE_V16,
+  profile = BUNDLE_PROFILE_V17,
   omittedPaths: string[] = [],
 ): Buffer {
   const inventories = {
@@ -573,6 +586,12 @@ function createTestPackageArchive(
       actionFiles: PACKED_ACTION_FILES_V6,
       runtimeFiles: PACKED_RUNTIME_FILES_V11,
     },
+    [BUNDLE_PROFILE_V17]: {
+      documents: PACKED_DOCUMENTS_V17,
+      schemas: PACKED_SCHEMAS_V17,
+      actionFiles: PACKED_ACTION_FILES_V6,
+      runtimeFiles: PACKED_RUNTIME_FILES_V11,
+    },
   };
   const inventory = inventories[profile as keyof typeof inventories];
   if (!inventory) throw new Error("Unsupported synthetic bundle profile.");
@@ -583,7 +602,8 @@ function createTestPackageArchive(
     profile === BUNDLE_PROFILE_V13 ||
     profile === BUNDLE_PROFILE_V14 ||
     profile === BUNDLE_PROFILE_V15 ||
-    profile === BUNDLE_PROFILE_V16
+    profile === BUNDLE_PROFILE_V16 ||
+    profile === BUNDLE_PROFILE_V17
       ? PACKED_TEMPLATES_V12
       : PACKED_TEMPLATES_V11;
   const packageMetadata = {
@@ -600,7 +620,7 @@ function createTestPackageArchive(
     "package/dist/src/cli.js",
     "package/dist/src/fixtures/matrix.js",
     "package/package.json",
-    ...(profile === BUNDLE_PROFILE_V16
+    ...(profile === BUNDLE_PROFILE_V16 || profile === BUNDLE_PROFILE_V17
       ? [
           ...PACKED_COMPILED_ADDITIONS_V8,
           ...PACKED_COMPILED_ADDITIONS_V11_ONLY,
@@ -681,20 +701,22 @@ async function writeSyntheticBundle(
   directory: string,
   extraPayloads: string[] = [],
   archiveBytes: Buffer = createTestPackageArchive(),
-  profile = BUNDLE_PROFILE_V16,
+  profile = BUNDLE_PROFILE_V17,
 ): Promise<BundleManifest> {
   const requiredPayloads =
-    profile === BUNDLE_PROFILE_V16
-      ? REQUIRED_PAYLOADS_V16
-      : profile === BUNDLE_PROFILE_V15
-        ? REQUIRED_PAYLOADS_V15
-        : profile === BUNDLE_PROFILE_V14
-          ? REQUIRED_PAYLOADS_V14
-          : profile === BUNDLE_PROFILE_V13
-            ? REQUIRED_PAYLOADS_V13
-            : profile === BUNDLE_PROFILE_V12
-              ? REQUIRED_PAYLOADS_V12
-              : REQUIRED_PAYLOADS_V11;
+    profile === BUNDLE_PROFILE_V17
+      ? REQUIRED_PAYLOADS_V17
+      : profile === BUNDLE_PROFILE_V16
+        ? REQUIRED_PAYLOADS_V16
+        : profile === BUNDLE_PROFILE_V15
+          ? REQUIRED_PAYLOADS_V15
+          : profile === BUNDLE_PROFILE_V14
+            ? REQUIRED_PAYLOADS_V14
+            : profile === BUNDLE_PROFILE_V13
+              ? REQUIRED_PAYLOADS_V13
+              : profile === BUNDLE_PROFILE_V12
+                ? REQUIRED_PAYLOADS_V12
+                : REQUIRED_PAYLOADS_V11;
   for (const relativePath of [...requiredPayloads, ...extraPayloads]) {
     const target = path.join(directory, ...relativePath.split("/"));
     await mkdir(path.dirname(target), { recursive: true });
@@ -763,6 +785,13 @@ test("pilot bundle output refuses relative, existing, and symlink-parent paths",
 });
 
 test("publisher bundle verifier accepts the strict self-limited handoff contract", async () => {
+  const schema = JSON.parse(
+    readFileSync(
+      path.join(process.cwd(), "schemas", "launchrig-publisher-bundle.schema.json"),
+      "utf8",
+    ),
+  );
+  const validateManifestSchema = new Ajv2020({ strict: true }).compile(schema);
   for (const profile of [
     BUNDLE_PROFILE_V1,
     BUNDLE_PROFILE_V2,
@@ -780,6 +809,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
     BUNDLE_PROFILE_V14,
     BUNDLE_PROFILE_V15,
     BUNDLE_PROFILE_V16,
+    BUNDLE_PROFILE_V17,
   ]) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-valid-"));
     try {
@@ -793,27 +823,29 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
       assert.equal(verified.consumerRehearsal.deviceOrWalletTested, false);
       assert.deepEqual(
         verified.consumerRehearsal.checks,
-        profile === BUNDLE_PROFILE_V16
-          ? V16_REHEARSAL_CHECKS
-          : profile === BUNDLE_PROFILE_V15
-            ? V15_REHEARSAL_CHECKS
-            : profile === BUNDLE_PROFILE_V14
-              ? V14_REHEARSAL_CHECKS
-              : profile === BUNDLE_PROFILE_V13
-                ? V13_REHEARSAL_CHECKS
-                : profile === BUNDLE_PROFILE_V12
-                  ? V12_REHEARSAL_CHECKS
-                  : profile === BUNDLE_PROFILE_V11
-                    ? V11_REHEARSAL_CHECKS
-                    : profile === BUNDLE_PROFILE_V10
-                      ? V10_REHEARSAL_CHECKS
-                      : profile === BUNDLE_PROFILE_V9
-                        ? V9_REHEARSAL_CHECKS
-                        : profile === BUNDLE_PROFILE_V8
-                          ? V8_REHEARSAL_CHECKS
-                          : profile === BUNDLE_PROFILE_V7
-                            ? V7_REHEARSAL_CHECKS
-                            : LEGACY_REHEARSAL_CHECKS,
+        profile === BUNDLE_PROFILE_V17
+          ? V17_REHEARSAL_CHECKS
+          : profile === BUNDLE_PROFILE_V16
+            ? V16_REHEARSAL_CHECKS
+            : profile === BUNDLE_PROFILE_V15
+              ? V15_REHEARSAL_CHECKS
+              : profile === BUNDLE_PROFILE_V14
+                ? V14_REHEARSAL_CHECKS
+                : profile === BUNDLE_PROFILE_V13
+                  ? V13_REHEARSAL_CHECKS
+                  : profile === BUNDLE_PROFILE_V12
+                    ? V12_REHEARSAL_CHECKS
+                    : profile === BUNDLE_PROFILE_V11
+                      ? V11_REHEARSAL_CHECKS
+                      : profile === BUNDLE_PROFILE_V10
+                        ? V10_REHEARSAL_CHECKS
+                        : profile === BUNDLE_PROFILE_V9
+                          ? V9_REHEARSAL_CHECKS
+                          : profile === BUNDLE_PROFILE_V8
+                            ? V8_REHEARSAL_CHECKS
+                            : profile === BUNDLE_PROFILE_V7
+                              ? V7_REHEARSAL_CHECKS
+                              : LEGACY_REHEARSAL_CHECKS,
       );
       assert.deepEqual(verified.sourceVerification, {
         status: "passed",
@@ -827,6 +859,7 @@ test("publisher bundle verifier accepts the strict self-limited handoff contract
       });
       assert.ok(Object.values(verified.claims).every((claim) => claim === "not-established"));
       assert.equal(verified.grantReady, false);
+      assert.equal(validateManifestSchema(verified), true, JSON.stringify(validateManifestSchema.errors));
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -848,7 +881,7 @@ test("publisher bundle snapshot returns only verified identity fields from exact
       "packageSha256",
     ]);
     assert.deepEqual(snapshot, {
-      profile: BUNDLE_PROFILE_V16,
+      profile: BUNDLE_PROFILE_V17,
       bundleId: expected.bundleId,
       manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
       sha256SumsSha256: createHash("sha256").update(sumsBytes).digest("hex"),
@@ -875,7 +908,7 @@ test("publisher bundle snapshot returns only verified identity fields from exact
   }
 });
 
-test("publisher bundle defaults to the RC16 structured configuration diagnostics contract", () => {
+test("publisher bundle defaults to the RC17 runtime rule fixture contract", () => {
   const packageEntry = {
     path: ARCHIVE,
     sizeBytes: 1,
@@ -890,9 +923,25 @@ test("publisher bundle defaults to the RC16 structured configuration diagnostics
     packagePath: ARCHIVE,
     files: [packageEntry],
   });
-  assert.equal(manifest.profile, BUNDLE_PROFILE_V16);
-  assert.deepEqual(manifest.consumerRehearsal.checks, V16_REHEARSAL_CHECKS);
-  assert.deepEqual(V16_REHEARSAL_CHECKS.slice(0, -1), V15_REHEARSAL_CHECKS);
+  assert.equal(manifest.profile, BUNDLE_PROFILE_V17);
+  assert.deepEqual(manifest.consumerRehearsal.checks, V17_REHEARSAL_CHECKS);
+  assert.deepEqual(V17_REHEARSAL_CHECKS.slice(0, -1), V16_REHEARSAL_CHECKS);
+});
+
+test("publisher bundle v16 rejects the RC17-only rehearsal claim", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v16-rehearsal-"));
+  try {
+    const archive = createTestPackageArchive([], BUNDLE_PROFILE_V16);
+    const manifest = await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V16);
+    manifest.consumerRehearsal.checks = [...V17_REHEARSAL_CHECKS];
+    await writeFile(path.join(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+    await assert.rejects(
+      () => bundleVerifier.verifyPublisherBundle(directory),
+      /consumer rehearsal contract is invalid/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("publisher bundle v15 rejects the RC16-only rehearsal claim", async () => {
@@ -1310,6 +1359,44 @@ test("publisher bundle v16 requires its structured configuration diagnostics inv
       await assert.rejects(
         () => bundleVerifier.verifyPublisherBundle(directory),
         /RC16 is missing|inventory does not match the release allowlist/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v17 requires its runtime rule fixture inventory", async () => {
+  for (const omittedPath of [
+    "package/schemas/launchrig-runtime-rule-fixtures.schema.json",
+    "package/schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json",
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v17-required-"));
+    try {
+      const archive = createTestPackageArchive([], BUNDLE_PROFILE_V17, [omittedPath]);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V17);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /inventory does not match the release allowlist/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("publisher bundle v16 rejects the RC17-only runtime rule fixture inventory", async () => {
+  for (const addedPath of [
+    "package/schemas/launchrig-runtime-rule-fixtures.schema.json",
+    "package/schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json",
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrig-bundle-v16-frozen-"));
+    try {
+      const archive = createTestPackageArchive([addedPath], BUNDLE_PROFILE_V16);
+      await writeSyntheticBundle(directory, [], archive, BUNDLE_PROFILE_V16);
+      await assert.rejects(
+        () => bundleVerifier.verifyPublisherBundle(directory),
+        /outside the release allowlist/,
       );
     } finally {
       await rm(directory, { recursive: true, force: true });

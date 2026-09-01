@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "kind": "launchrig-runtime-rule-fixtures",
+  "profile": "runtime-rules-v1",
+  "status": "pre-award-foundation",
+  "ruleIds": [
+    "LR006",
+    "LR007",
+    "LR008",
+    "LR009",
+    "LR010",
+    "LR011",
+    "LR012",
+    "LR013",
+    "LR014",
+    "LR015",
+    "LR016",
+    "LR017",
+    "LR018"
+  ],
+  "caseCount": 14,
+  "expectationCount": 26,
+  "grantMilestoneComplete": false,
+  "base": {
+    "version": 1,
+    "project": {
+      "name": "Runtime rule fixture",
+      "packageName": "com.example.runtimefixture",
+      "apk": "./app.apk",
+      "install": true,
+      "installPolicy": "if-missing"
+    },
+    "target": {
+      "network": "devnet"
+    },
+    "device": {
+      "requirePhysical": true,
+      "minimumApiLevel": 26
+    },
+    "wallet": {
+      "mode": "mock-mwa",
+      "packageName": "com.solana.mwallet",
+      "apk": "./wallet.apk",
+      "install": true,
+      "installPolicy": "if-missing"
+    },
+    "scenarios": [
+      {
+        "id": "authorize",
+        "kind": "mwa-authorize",
+        "name": "Authorize fixture",
+        "flow": "./authorize.yaml",
+        "required": true,
+        "timeoutMs": 30000
+      }
+    ],
+    "artifacts": {
+      "directory": "./results",
+      "screenshots": "never",
+      "retention": 5
+    },
+    "privacy": {
+      "includeLogcat": false,
+      "logcatLines": 200,
+      "redactPatterns": []
+    },
+    "tooling": {}
+  },
+  "baseFiles": {
+    "app.apk": "runtime-fixture-app-bytes",
+    "wallet.apk": "runtime-fixture-wallet-bytes",
+    "authorize.yaml": "appId: com.example.runtimefixture\n---\n- launchApp\n- assertVisible: Ready\n"
+  },
+  "defaultBehavior": {
+    "adbVersionExitCode": 0,
+    "deviceState": "device",
+    "emulatorProperty": false,
+    "apiLevel": 36,
+    "appInstalled": true,
+    "appInstallExitCode": 0,
+    "appBinary": "match",
+    "walletInstalled": true,
+    "walletBinary": "match",
+    "maestroVersionExitCode": 0,
+    "scenarioExitCode": 0
+  },
+  "cases": [
+    {
+      "id": "all-applicable-runtime-rules-pass",
+      "set": {},
+      "remove": [],
+      "behavior": {},
+      "options": {
+        "scenarioId": "authorize",
+        "requireInstalledArtifactHashes": true
+      },
+      "expectedExitCode": 0,
+      "expectedOutcome": "passed",
+      "expectedReadiness": "Android Device Ready",
+      "expectations": [
+        { "ruleId": "LR006", "polarity": "positive", "checkId": "tool.adb", "status": "pass", "required": true },
+        { "ruleId": "LR007", "polarity": "positive", "checkId": "device.connected", "status": "pass", "required": true },
+        { "ruleId": "LR008", "polarity": "positive", "checkId": "device.api", "status": "pass", "required": true },
+        { "ruleId": "LR009", "polarity": "positive", "checkId": "app.install", "status": "pass", "required": true },
+        { "ruleId": "LR010", "polarity": "positive", "checkId": "app.installed", "status": "pass", "required": true },
+        { "ruleId": "LR011", "polarity": "positive", "checkId": "app.binary", "status": "pass", "required": true },
+        { "ruleId": "LR012", "polarity": "positive", "checkId": "wallet.install", "status": "pass", "required": true },
+        { "ruleId": "LR013", "polarity": "positive", "checkId": "wallet.installed", "status": "pass", "required": true },
+        { "ruleId": "LR014", "polarity": "positive", "checkId": "wallet.binary", "status": "pass", "required": true },
+        { "ruleId": "LR015", "polarity": "positive", "checkId": "scenario.selection", "status": "pass", "required": true },
+        { "ruleId": "LR016", "polarity": "negative", "checkId": "scenario.none", "status": "absent", "required": null },
+        { "ruleId": "LR017", "polarity": "positive", "checkId": "tool.maestro", "status": "pass", "required": true },
+        { "ruleId": "LR018", "polarity": "positive", "checkId": "scenario.authorize", "status": "pass", "required": true }
+      ]
+    },
+    {
+      "id": "lr006-adb-version-fails",
+      "set": {},
+      "remove": [],
+      "behavior": { "adbVersionExitCode": 1 },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 3,
+      "expectedOutcome": "setup-error",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR006", "polarity": "negative", "checkId": "tool.adb", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr007-emulator-property-refused",
+      "set": {},
+      "remove": [],
+      "behavior": { "emulatorProperty": true },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 3,
+      "expectedOutcome": "setup-error",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR007", "polarity": "negative", "checkId": "device.connected", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr008-api-below-minimum",
+      "set": {},
+      "remove": [],
+      "behavior": { "apiLevel": 25 },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 3,
+      "expectedOutcome": "setup-error",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR008", "polarity": "negative", "checkId": "device.api", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr009-app-install-fails",
+      "set": { "/project/installPolicy": "always" },
+      "remove": [],
+      "behavior": { "appInstallExitCode": 1 },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR009", "polarity": "negative", "checkId": "app.install", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr010-app-package-missing",
+      "set": { "/project/install": false },
+      "remove": [],
+      "behavior": { "appInstalled": false },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": false },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR010", "polarity": "negative", "checkId": "app.installed", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr011-app-binary-mismatch",
+      "set": {},
+      "remove": [],
+      "behavior": { "appBinary": "mismatch" },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR011", "polarity": "negative", "checkId": "app.binary", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr012-managed-wallet-artifact-refused",
+      "set": { "/wallet/installPolicy": "always" },
+      "remove": [],
+      "behavior": {},
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": false },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR012", "polarity": "negative", "checkId": "wallet.install", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr013-wallet-package-missing",
+      "set": { "/wallet/install": false },
+      "remove": [],
+      "behavior": { "walletInstalled": false },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": false },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR013", "polarity": "negative", "checkId": "wallet.installed", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr014-wallet-binary-mismatch",
+      "set": {},
+      "remove": [],
+      "behavior": { "walletBinary": "mismatch" },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR014", "polarity": "negative", "checkId": "wallet.binary", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr015-scenario-selection-missing",
+      "set": {},
+      "remove": [],
+      "behavior": {},
+      "options": { "scenarioId": "missing", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR015", "polarity": "negative", "checkId": "scenario.selection", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr016-device-only-warning",
+      "set": { "/scenarios": [] },
+      "remove": [],
+      "behavior": {},
+      "options": { "scenarioId": null, "requireInstalledArtifactHashes": false },
+      "expectedExitCode": 0,
+      "expectedOutcome": "passed",
+      "expectedReadiness": "Android Device Ready",
+      "expectations": [
+        { "ruleId": "LR016", "polarity": "positive", "checkId": "scenario.none", "status": "warn", "required": false }
+      ]
+    },
+    {
+      "id": "lr017-maestro-version-fails",
+      "set": {},
+      "remove": [],
+      "behavior": { "maestroVersionExitCode": 1 },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 3,
+      "expectedOutcome": "setup-error",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR017", "polarity": "negative", "checkId": "tool.maestro", "status": "fail", "required": true }
+      ]
+    },
+    {
+      "id": "lr018-scenario-flow-fails",
+      "set": {},
+      "remove": [],
+      "behavior": { "scenarioExitCode": 1 },
+      "options": { "scenarioId": "authorize", "requireInstalledArtifactHashes": true },
+      "expectedExitCode": 1,
+      "expectedOutcome": "failed",
+      "expectedReadiness": "Not Ready",
+      "expectations": [
+        { "ruleId": "LR018", "polarity": "negative", "checkId": "scenario.authorize", "status": "fail", "required": true }
+      ]
+    }
+  ],
+  "limitations": [
+    "The corpus exercises LR006 through LR018 with generated local process doubles and does not invoke a physical Android device.",
+    "LR016 is an informational conditional boundary, so its inverse fixture proves non-emission when a scenario is selected rather than fabricating a failure.",
+    "Passing fixtures do not establish a publisher run, real wallet, Seeker hardware, Seed Vault behavior, confirmed defect, grant award, or grant readiness."
+  ]
+}

@@ -19,6 +19,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import {
   collectPayloadEntries,
   copyRegularBundleInput,
@@ -537,6 +538,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-cohort-verification.schema.json",
       "schemas/launchrig-core-rule-catalog.schema.json",
       "schemas/fixtures/launchrig-config-v1.conformance.json",
+      "schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json",
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
       "schemas/launchrig-private-cohort-register-draft-result.schema.json",
@@ -550,6 +552,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
       "schemas/launchrig-pilot-session-scope.schema.json",
+      "schemas/launchrig-runtime-rule-fixtures.schema.json",
       "scripts/runtime-contract.mjs",
       "scripts/verify-pilot-bundle.mjs",
       "templates/pilot-consent.md",
@@ -656,6 +659,65 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       catalog.grantMilestoneComplete !== false
     ) {
       throw new Error("Installed LaunchRig rule catalog does not preserve its pre-award contract.");
+    }
+    const installedPackageRoot = path.join(installDirectory, "node_modules", "launchrig");
+    const runtimeFixtureSchema = JSON.parse(
+      await readFile(
+        path.join(installedPackageRoot, "schemas", "launchrig-runtime-rule-fixtures.schema.json"),
+        "utf8",
+      ),
+    );
+    const runtimeFixtures = JSON.parse(
+      await readFile(
+        path.join(
+          installedPackageRoot,
+          "schemas",
+          "fixtures",
+          "launchrig-runtime-rule-fixtures.v1.json",
+        ),
+        "utf8",
+      ),
+    );
+    const runtimeRuleIds = Array.from(
+      { length: 13 },
+      (_, index) => "LR" + String(index + 6).padStart(3, "0"),
+    );
+    const runtimeExpectations =
+      runtimeFixtures.cases?.flatMap((fixture) => fixture.expectations ?? []) ?? [];
+    const validateRuntimeFixtures = new Ajv2020({
+      strict: true,
+      strictTypes: false,
+      strictRequired: false,
+    }).compile(runtimeFixtureSchema);
+    if (
+      runtimeFixtureSchema.$id !==
+        "https://launchrig.dev/schemas/launchrig-runtime-rule-fixtures.schema.json" ||
+      runtimeFixtureSchema.additionalProperties !== false ||
+      runtimeFixtures.schemaVersion !== 1 ||
+      runtimeFixtures.kind !== "launchrig-runtime-rule-fixtures" ||
+      runtimeFixtures.profile !== "runtime-rules-v1" ||
+      runtimeFixtures.status !== "pre-award-foundation" ||
+      runtimeFixtures.caseCount !== 14 ||
+      runtimeFixtures.expectationCount !== 26 ||
+      runtimeFixtures.cases?.length !== 14 ||
+      runtimeExpectations.length !== 26 ||
+      new Set(runtimeFixtures.cases?.map((fixture) => fixture.id)).size !== 14 ||
+      JSON.stringify(runtimeFixtures.ruleIds) !== JSON.stringify(runtimeRuleIds) ||
+      runtimeRuleIds.some(
+        (ruleId) =>
+          !runtimeExpectations.some(
+            (expectation) =>
+              expectation.ruleId === ruleId && expectation.polarity === "positive",
+          ) ||
+          !runtimeExpectations.some(
+            (expectation) =>
+              expectation.ruleId === ruleId && expectation.polarity === "negative",
+          ),
+      ) ||
+      runtimeFixtures.grantMilestoneComplete !== false ||
+      !validateRuntimeFixtures(structuredClone(runtimeFixtures))
+    ) {
+      throw new Error("Clean consumer runtime rule fixtures do not preserve the pre-award contract.");
     }
 
     const privateRegisterPath = path.join(temporaryDirectory, "private-recruitment-register.json");

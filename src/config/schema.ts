@@ -168,7 +168,9 @@ function parseScenarios(value: unknown, issues: string[]): ScenarioConfig[] {
     rejectUnknownKeys(record, SCENARIO_KEYS, path, issues);
     const id = requiredString(record, "id", path, issues);
     if (id && !new RegExp(SCENARIO_ID_PATTERN).test(id)) {
-      issues.push(path + ".id must contain lowercase letters, numbers, or hyphens");
+      issues.push(
+        path + ".id must contain lowercase letters, numbers, or hyphens and must not be none or selection",
+      );
     }
     if (id && seen.has(id)) issues.push(path + ".id duplicates " + id);
     if (id) seen.add(id);

@@ -44,7 +44,7 @@ export const REFERENCE_FAKEDAPP_PACKAGE = "com.solana.mobilewalletadapter.fakeda
 export const INSTALLABLE_TEST_WALLET_PACKAGES = [MOCK_MWA_PACKAGE, REFERENCE_FAKEWALLET_PACKAGE] as const;
 
 export const ANDROID_APPLICATION_ID_PATTERN = "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$";
-export const SCENARIO_ID_PATTERN = "^[a-z0-9][a-z0-9-]*$";
+export const SCENARIO_ID_PATTERN = "^(?!(?:none|selection)$)[a-z0-9][a-z0-9-]*$";
 
 export const CONFIG_V1_DEFAULTS = Object.freeze({
   projectInstall: false,
