@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-pilot-rule-fixtures.schema.json",
+  "title": "LaunchRig pilot rule fixture corpus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "profile",
+    "status",
+    "ruleIds",
+    "caseCount",
+    "expectationCount",
+    "grantMilestoneComplete",
+    "base",
+    "baseFiles",
+    "cases",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "launchrig-pilot-rule-fixtures" },
+    "profile": { "const": "pilot-rules-v1" },
+    "status": { "const": "pre-award-foundation" },
+    "ruleIds": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "LR019" },
+        { "const": "LR020" },
+        { "const": "LR021" },
+        { "const": "LR022" },
+        { "const": "LR023" },
+        { "const": "LR024" },
+        { "const": "LR025" }
+      ],
+      "items": false,
+      "minItems": 7,
+      "maxItems": 7
+    },
+    "caseCount": { "const": 8 },
+    "expectationCount": { "const": 56 },
+    "grantMilestoneComplete": { "const": false },
+    "base": { "type": "object" },
+    "baseFiles": {
+      "type": "object",
+      "minProperties": 5,
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 100000 }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 10,
+      "items": { "type": "string", "minLength": 20, "maxLength": 500 }
+    }
+  },
+  "$defs": {
+    "ruleId": {
+      "enum": ["LR019", "LR020", "LR021", "LR022", "LR023", "LR024", "LR025"]
+    },
+    "checkId": {
+      "enum": [
+        "pilot.state",
+        "pilot.project",
+        "pilot.wallet",
+        "pilot.device-policy",
+        "pilot.flows",
+        "pilot.mwa-coverage",
+        "pilot.environment"
+      ]
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "classification", "checkId", "status", "summaryIncludes"],
+      "properties": {
+        "ruleId": { "$ref": "#/$defs/ruleId" },
+        "classification": { "enum": ["positive", "negative", "conditional"] },
+        "checkId": { "$ref": "#/$defs/checkId" },
+        "status": { "enum": ["pass", "fail", "skip"] },
+        "summaryIncludes": { "type": "string", "minLength": 3, "maxLength": 240 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "classification": { "const": "positive" } },
+            "required": ["classification"]
+          },
+          "then": { "properties": { "status": { "const": "pass" } } }
+        },
+        {
+          "if": {
+            "properties": { "classification": { "const": "negative" } },
+            "required": ["classification"]
+          },
+          "then": { "properties": { "status": { "const": "fail" } } }
+        },
+        {
+          "if": {
+            "properties": { "classification": { "const": "conditional" } },
+            "required": ["classification"]
+          },
+          "then": { "properties": { "status": { "const": "skip" } } }
+        }
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "mutation",
+        "doctorOk",
+        "expectedDoctorCalls",
+        "expectedExitCode",
+        "expectedReadyToRecord",
+        "expectations"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 80 },
+        "mutation": {
+          "enum": [
+            "none",
+            "corrupt-state",
+            "blocked-project",
+            "real-wallet",
+            "nonphysical-device-policy",
+            "reserved-flow-template",
+            "duplicate-flow-definition",
+            "environment-refusal"
+          ]
+        },
+        "doctorOk": { "type": "boolean" },
+        "expectedDoctorCalls": { "enum": [0, 1] },
+        "expectedExitCode": { "enum": [0, 2, 3] },
+        "expectedReadyToRecord": { "type": "boolean" },
+        "expectations": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/expectation" }
+        }
+      }
+    }
+  }
+}

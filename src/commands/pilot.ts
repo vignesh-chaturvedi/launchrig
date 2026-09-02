@@ -987,12 +987,94 @@ export interface PilotCheckOutput {
   externalGrantGate: ExternalGrantGateStatus;
 }
 
+function unavailablePilotTechnicalGate(): PilotTechnicalGate {
+  return {
+    profile: "external-mwa-pilot-v1",
+    qualified: false,
+    latestReadiness: null,
+    trailingMwaPasses: 0,
+    requiredTrailingMwaPasses: 3,
+    setupDurationMs: null,
+    medianRunDurationMs: null,
+    setupTargetMet: false,
+    runtimeTargetMet: false,
+    repeatabilityTargetMet: false,
+  };
+}
+
+function stateBlockedPilotChecks(summary: string): PilotPreflightCheck[] {
+  const skipped = "Skipped because private pilot state integrity was not established";
+  return [
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.state,
+      status: "fail",
+      summary,
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.project,
+      status: "skip",
+      summary: skipped,
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.wallet,
+      status: "skip",
+      summary: skipped,
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.devicePolicy,
+      status: "skip",
+      summary: skipped,
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.flows,
+      status: "skip",
+      summary: skipped,
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.mwaCoverage,
+      status: "skip",
+      summary: skipped,
+    },
+    {
+      id: PILOT_PREFLIGHT_CHECK_IDS.environment,
+      status: "skip",
+      summary: skipped,
+    },
+  ];
+}
+
 export async function checkPilot(options: CheckPilotOptions): Promise<PilotCheckOutput> {
   assertPilotId(options.pilotId);
   const config = await loadCheckedConfig(options.configPath ?? "launchrig.yml");
-  const statePath = await readOnlyPilotStatePath(config.configDirectory, options.pilotId);
-  const state = await readPilotState(statePath);
-  if (state.pilotId !== options.pilotId) throw new PilotError("Pilot state ID does not match its directory", 3);
+  let statePath = path.join(
+    config.configDirectory,
+    ".launchrig",
+    "pilots",
+    options.pilotId,
+    "evidence.json",
+  );
+  let state: PilotStateV1;
+  try {
+    statePath = await readOnlyPilotStatePath(config.configDirectory, options.pilotId);
+    state = await readPilotState(statePath);
+    if (state.pilotId !== options.pilotId) {
+      throw new PilotError("Pilot state ID does not match its directory", 3);
+    }
+  } catch (error) {
+    const exitCode = error instanceof PilotError ? error.exitCode : 3;
+    const summary =
+      error instanceof PilotError
+        ? error.message
+        : "Private pilot state could not be checked safely";
+    return {
+      readyToRecord: false,
+      exitCode,
+      statePath,
+      checks: stateBlockedPilotChecks(summary),
+      technicalPilot: unavailablePilotTechnicalGate(),
+      externalGrantGate: externalGrantGateStatus(),
+    };
+  }
   const scope = await evaluatePilotScope(config, await inputHashes(config), options.scopePath);
 
   const checks: PilotPreflightCheck[] = [

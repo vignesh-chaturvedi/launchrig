@@ -277,7 +277,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
   {
     ruleId: "LR020",
@@ -288,7 +288,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
   {
     ruleId: "LR021",
@@ -299,7 +299,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
   {
     ruleId: "LR022",
@@ -310,7 +310,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
   {
     ruleId: "LR023",
@@ -321,7 +321,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
   {
     ruleId: "LR024",
@@ -332,7 +332,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "always",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
   {
     ruleId: "LR025",
@@ -343,7 +343,7 @@ const PILOT_RULES: readonly CoreRuleDefinition[] = [
     requirement: "conditional",
     resultKind: "preflight-check",
     implementation: "src/commands/pilot.ts#checkPilot",
-    testContract: "test/pilot.test.ts",
+    testContract: "test/pilot-rule-results.test.ts",
   },
 ];
 

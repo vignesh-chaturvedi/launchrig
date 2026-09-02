@@ -358,6 +358,12 @@ try {
   if (!installedFiles.includes("schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json")) {
     throw new Error("Packed runtime rule fixture corpus is missing.");
   }
+  if (!installedFiles.includes("schemas/launchrig-pilot-rule-fixtures.schema.json")) {
+    throw new Error("Packed pilot rule fixture schema is missing.");
+  }
+  if (!installedFiles.includes("schemas/fixtures/launchrig-pilot-rule-fixtures.v1.json")) {
+    throw new Error("Packed pilot rule fixture corpus is missing.");
+  }
   if (!installedFiles.includes("dist/src/config/diagnostics.js")) {
     throw new Error("Packed structured configuration diagnostics implementation is missing.");
   }
@@ -431,6 +437,10 @@ try {
     ...v16RehearsalChecks,
     "device-free-runtime-rule-fixtures",
   ];
+  const v18RehearsalChecks = [
+    ...v17RehearsalChecks,
+    "device-free-pilot-rule-fixtures",
+  ];
   const v16SchemaBranch = publisherBundleSchema.allOf?.find(
     (entry) =>
       entry.if?.properties?.profile?.const === "phase-3-config-diagnostics-rc-v16",
@@ -438,6 +448,10 @@ try {
   const v17SchemaBranch = publisherBundleSchema.allOf?.find(
     (entry) =>
       entry.if?.properties?.profile?.const === "phase-3-runtime-rule-fixtures-rc-v17",
+  );
+  const v18SchemaBranch = publisherBundleSchema.allOf?.find(
+    (entry) =>
+      entry.if?.properties?.profile?.const === "phase-3-pilot-rule-fixtures-rc-v18",
   );
   const v16Manifest = createPublisherManifest({
     profile: "phase-3-config-diagnostics-rc-v16",
@@ -454,6 +468,23 @@ try {
     consumerRehearsal: {
       ...v16Manifest.consumerRehearsal,
       checks: v17RehearsalChecks,
+    },
+  };
+  const v17Manifest = createPublisherManifest({
+    profile: "phase-3-runtime-rule-fixtures-rc-v17",
+    launchRigVersion: verifiedBundleManifest.launchRigVersion,
+    gitCommit: verifiedBundleManifest.source.gitCommit,
+    lockfileSha256: verifiedBundleManifest.source.lockfileSha256,
+    nodeEngine: verifiedBundleManifest.package.nodeEngine,
+    packageManager: verifiedBundleManifest.package.packageManager,
+    packagePath: verifiedBundleManifest.package.path,
+    files: verifiedBundleManifest.files,
+  });
+  const v17WithV18Checks = {
+    ...v17Manifest,
+    consumerRehearsal: {
+      ...v17Manifest.consumerRehearsal,
+      checks: v18RehearsalChecks,
     },
   };
   if (
@@ -479,12 +510,15 @@ try {
         "phase-2n-human-send-decision-rc-v15",
         "phase-3-config-diagnostics-rc-v16",
         "phase-3-runtime-rule-fixtures-rc-v17",
+        "phase-3-pilot-rule-fixtures-rc-v18",
       ]) ||
     publisherBundleSchema.properties?.grantReady?.const !== false ||
     publisherBundleSchema.properties?.claims?.properties?.externalPublisher?.const !== "not-established" ||
     !validatePublisherBundle(structuredClone(verifiedBundleManifest)) ||
     !validatePublisherBundle(structuredClone(v16Manifest)) ||
+    !validatePublisherBundle(structuredClone(v17Manifest)) ||
     validatePublisherBundle(structuredClone(v16WithV17Checks)) !== false ||
+    validatePublisherBundle(structuredClone(v17WithV18Checks)) !== false ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[0]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v15RehearsalChecks) ||
@@ -494,6 +528,9 @@ try {
     JSON.stringify(
       v17SchemaBranch?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
     ) !== JSON.stringify(v17RehearsalChecks) ||
+    JSON.stringify(
+      v18SchemaBranch?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
+    ) !== JSON.stringify(v18RehearsalChecks) ||
     JSON.stringify(publisherBundleSchema.allOf?.[4]?.if?.properties?.profile?.enum) !==
       JSON.stringify([
         "phase-2i-recruitment-register-rc-v12",
@@ -502,6 +539,7 @@ try {
         "phase-2n-human-send-decision-rc-v15",
         "phase-3-config-diagnostics-rc-v16",
         "phase-3-runtime-rule-fixtures-rc-v17",
+        "phase-3-pilot-rule-fixtures-rc-v18",
       ]) ||
     JSON.stringify(
       publisherBundleSchema.allOf?.[1]?.then?.properties?.consumerRehearsal?.properties?.checks?.const,
@@ -757,12 +795,34 @@ try {
       "utf8",
     ),
   );
+  const pilotRuleFixtureSchema = JSON.parse(
+    await readFile(
+      path.join(installedDirectory, "schemas", "launchrig-pilot-rule-fixtures.schema.json"),
+      "utf8",
+    ),
+  );
+  const pilotRuleFixtures = JSON.parse(
+    await readFile(
+      path.join(
+        installedDirectory,
+        "schemas",
+        "fixtures",
+        "launchrig-pilot-rule-fixtures.v1.json",
+      ),
+      "utf8",
+    ),
+  );
   new Ajv2020({ strict: true, strictTypes: false }).compile(configRuleResultSchema);
   const acceptsRuntimeRuleFixtures = new Ajv2020({
     strict: true,
     strictTypes: false,
     strictRequired: false,
   }).compile(runtimeRuleFixtureSchema);
+  const acceptsPilotRuleFixtures = new Ajv2020({
+    strict: true,
+    strictTypes: false,
+    strictRequired: false,
+  }).compile(pilotRuleFixtureSchema);
   if (
     coreRuleCatalogSchema.$id !== "https://launchrig.dev/schemas/launchrig-core-rule-catalog.schema.json" ||
     coreRuleCatalogSchema.additionalProperties !== false ||
@@ -798,12 +858,12 @@ try {
     configConformance.configVersion !== 1 ||
     configConformance.status !== "pre-award-foundation" ||
     configConformance.schemaPath !== "schemas/launchrig.schema.json" ||
-    configConformance.parityCaseCount !== 23 ||
+    configConformance.parityCaseCount !== 26 ||
     configConformance.runtimeExtensionCaseCount !== 2 ||
     configConformance.grantMilestoneComplete !== false ||
-    configConformance.cases?.length !== 25 ||
-    new Set(configConformance.cases?.map((entry) => entry.id)).size !== 25 ||
-    parityCases.length !== 23 ||
+    configConformance.cases?.length !== 28 ||
+    new Set(configConformance.cases?.map((entry) => entry.id)).size !== 28 ||
+    parityCases.length !== 26 ||
     parityCases.some((entry) => entry.runtimeValid !== entry.schemaValid) ||
     runtimeExtensionCases.length !== 2 ||
     runtimeExtensionCases.some((entry) => entry.runtimeValid !== false || entry.schemaValid !== true) ||
@@ -867,6 +927,62 @@ try {
     !acceptsRuntimeRuleFixtures(structuredClone(runtimeRuleFixtures))
   ) {
     throw new Error("Packed runtime rule fixtures do not preserve the executable pre-award contract.");
+  }
+  const pilotExpectations =
+    pilotRuleFixtures.cases?.flatMap((fixture) => fixture.expectations ?? []) ?? [];
+  const pilotRuleIds = Array.from({ length: 7 }, (_, index) =>
+    "LR" + String(index + 19).padStart(3, "0"),
+  );
+  const pilotCatalogChecks = {
+    LR019: "pilot.state",
+    LR020: "pilot.project",
+    LR021: "pilot.wallet",
+    LR022: "pilot.device-policy",
+    LR023: "pilot.flows",
+    LR024: "pilot.mwa-coverage",
+    LR025: "pilot.environment",
+  };
+  if (
+    pilotRuleFixtureSchema.$id !==
+      "https://launchrig.dev/schemas/launchrig-pilot-rule-fixtures.schema.json" ||
+    pilotRuleFixtureSchema.additionalProperties !== false ||
+    pilotRuleFixtures.schemaVersion !== 1 ||
+    pilotRuleFixtures.kind !== "launchrig-pilot-rule-fixtures" ||
+    pilotRuleFixtures.profile !== "pilot-rules-v1" ||
+    pilotRuleFixtures.status !== "pre-award-foundation" ||
+    pilotRuleFixtures.caseCount !== 8 ||
+    pilotRuleFixtures.expectationCount !== 56 ||
+    pilotRuleFixtures.cases?.length !== 8 ||
+    pilotExpectations.length !== 56 ||
+    new Set(pilotRuleFixtures.cases?.map((entry) => entry.id)).size !== 8 ||
+    JSON.stringify(pilotRuleFixtures.ruleIds) !== JSON.stringify(pilotRuleIds) ||
+    pilotRuleFixtures.cases?.some(
+      (fixture) =>
+        fixture.expectations?.length !== 7 ||
+        new Set(fixture.expectations?.map((expectation) => expectation.checkId)).size !== 7,
+    ) ||
+    pilotExpectations.some(
+      (expectation) => pilotCatalogChecks[expectation.ruleId] !== expectation.checkId,
+    ) ||
+    pilotRuleIds.some(
+      (ruleId) =>
+        !pilotExpectations.some(
+          (expectation) =>
+            expectation.ruleId === ruleId && expectation.classification === "positive",
+        ) ||
+        !pilotExpectations.some(
+          (expectation) =>
+            expectation.ruleId === ruleId && expectation.classification === "negative",
+        ),
+    ) ||
+    !pilotExpectations.some(
+      (expectation) =>
+        expectation.ruleId === "LR025" && expectation.classification === "conditional",
+    ) ||
+    pilotRuleFixtures.grantMilestoneComplete !== false ||
+    !acceptsPilotRuleFixtures(structuredClone(pilotRuleFixtures))
+  ) {
+    throw new Error("Packed pilot rule fixtures do not preserve the executable pre-award contract.");
   }
   if (
     privateRegisterSchema.$id !==
@@ -1135,6 +1251,7 @@ try {
   const expectedSchemas = [
     "schemas/fixtures/launchrig-config-rule-fixtures.v1.json",
     "schemas/fixtures/launchrig-config-v1.conformance.json",
+    "schemas/fixtures/launchrig-pilot-rule-fixtures.v1.json",
     "schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json",
     "schemas/launchrig-cohort-verification.schema.json",
     "schemas/launchrig-config-validation-result.schema.json",
@@ -1147,6 +1264,7 @@ try {
     "schemas/launchrig-pilot-session-scope-receipt.schema.json",
     "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
     "schemas/launchrig-pilot-session-scope.schema.json",
+    "schemas/launchrig-pilot-rule-fixtures.schema.json",
     "schemas/launchrig-private-cohort-audit.schema.json",
     "schemas/launchrig-private-cohort-register-draft-result.schema.json",
     "schemas/launchrig-private-cohort-register.schema.json",

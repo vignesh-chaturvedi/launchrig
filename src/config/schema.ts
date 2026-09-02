@@ -167,9 +167,16 @@ function parseScenarios(value: unknown, issues: string[]): ScenarioConfig[] {
     const record = readRecord(entry, path, issues);
     rejectUnknownKeys(record, SCENARIO_KEYS, path, issues);
     const id = requiredString(record, "id", path, issues);
-    if (id && !new RegExp(SCENARIO_ID_PATTERN).test(id)) {
+    if (
+      id &&
+      (!new RegExp(SCENARIO_ID_PATTERN).test(id) ||
+        id.length > CONFIG_V1_LIMITS.scenarioId.maximumLength)
+    ) {
       issues.push(
-        path + ".id must contain lowercase letters, numbers, or hyphens and must not be none or selection",
+        path +
+          ".id must contain at most " +
+          CONFIG_V1_LIMITS.scenarioId.maximumLength +
+          " lowercase letters, numbers, or hyphens and must not be none or selection",
       );
     }
     if (id && seen.has(id)) issues.push(path + ".id duplicates " + id);

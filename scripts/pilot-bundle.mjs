@@ -538,6 +538,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-cohort-verification.schema.json",
       "schemas/launchrig-core-rule-catalog.schema.json",
       "schemas/fixtures/launchrig-config-v1.conformance.json",
+      "schemas/fixtures/launchrig-pilot-rule-fixtures.v1.json",
       "schemas/fixtures/launchrig-runtime-rule-fixtures.v1.json",
       "schemas/launchrig-private-cohort-audit.schema.json",
       "schemas/launchrig-private-cohort-register.schema.json",
@@ -552,6 +553,7 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       "schemas/launchrig-pilot-session-scope-receipt.schema.json",
       "schemas/launchrig-pilot-session-scope-draft-result.schema.json",
       "schemas/launchrig-pilot-session-scope.schema.json",
+      "schemas/launchrig-pilot-rule-fixtures.schema.json",
       "schemas/launchrig-runtime-rule-fixtures.schema.json",
       "scripts/runtime-contract.mjs",
       "scripts/verify-pilot-bundle.mjs",
@@ -718,6 +720,82 @@ async function rehearseCleanConsumer(archivePath, launchRigVersion, bundleDirect
       !validateRuntimeFixtures(structuredClone(runtimeFixtures))
     ) {
       throw new Error("Clean consumer runtime rule fixtures do not preserve the pre-award contract.");
+    }
+
+    const pilotFixtureSchema = JSON.parse(
+      await readFile(
+        path.join(installedPackageRoot, "schemas", "launchrig-pilot-rule-fixtures.schema.json"),
+        "utf8",
+      ),
+    );
+    const pilotFixtures = JSON.parse(
+      await readFile(
+        path.join(
+          installedPackageRoot,
+          "schemas",
+          "fixtures",
+          "launchrig-pilot-rule-fixtures.v1.json",
+        ),
+        "utf8",
+      ),
+    );
+    const pilotRuleIds = Array.from(
+      { length: 7 },
+      (_, index) => "LR" + String(index + 19).padStart(3, "0"),
+    );
+    const pilotExpectations =
+      pilotFixtures.cases?.flatMap((fixture) => fixture.expectations ?? []) ?? [];
+    const pilotCatalogChecks = Object.fromEntries(
+      catalog.rules
+        .filter((rule) => rule.domain === "pilot")
+        .map((rule) => [rule.ruleId, rule.checkId]),
+    );
+    const validatePilotFixtures = new Ajv2020({
+      strict: true,
+      strictTypes: false,
+      strictRequired: false,
+    }).compile(pilotFixtureSchema);
+    if (
+      pilotFixtureSchema.$id !==
+        "https://launchrig.dev/schemas/launchrig-pilot-rule-fixtures.schema.json" ||
+      pilotFixtureSchema.additionalProperties !== false ||
+      pilotFixtures.schemaVersion !== 1 ||
+      pilotFixtures.kind !== "launchrig-pilot-rule-fixtures" ||
+      pilotFixtures.profile !== "pilot-rules-v1" ||
+      pilotFixtures.status !== "pre-award-foundation" ||
+      pilotFixtures.caseCount !== 8 ||
+      pilotFixtures.expectationCount !== 56 ||
+      pilotFixtures.cases?.length !== 8 ||
+      pilotExpectations.length !== 56 ||
+      new Set(pilotFixtures.cases?.map((fixture) => fixture.id)).size !== 8 ||
+      JSON.stringify(pilotFixtures.ruleIds) !== JSON.stringify(pilotRuleIds) ||
+      pilotFixtures.cases?.some(
+        (fixture) =>
+          fixture.expectations?.length !== 7 ||
+          new Set(fixture.expectations?.map((expectation) => expectation.checkId)).size !== 7,
+      ) ||
+      pilotExpectations.some(
+        (expectation) => pilotCatalogChecks[expectation.ruleId] !== expectation.checkId,
+      ) ||
+      pilotRuleIds.some(
+        (ruleId) =>
+          !pilotExpectations.some(
+            (expectation) =>
+              expectation.ruleId === ruleId && expectation.classification === "positive",
+          ) ||
+          !pilotExpectations.some(
+            (expectation) =>
+              expectation.ruleId === ruleId && expectation.classification === "negative",
+          ),
+      ) ||
+      !pilotExpectations.some(
+        (expectation) =>
+          expectation.ruleId === "LR025" && expectation.classification === "conditional",
+      ) ||
+      pilotFixtures.grantMilestoneComplete !== false ||
+      !validatePilotFixtures(structuredClone(pilotFixtures))
+    ) {
+      throw new Error("Clean consumer pilot rule fixtures do not preserve the pre-award contract.");
     }
 
     const privateRegisterPath = path.join(temporaryDirectory, "private-recruitment-register.json");

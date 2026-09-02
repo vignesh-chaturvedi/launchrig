@@ -66,6 +66,70 @@ test("reference-wallet reset is package-scoped and never clears data", async () 
   assert.equal(calls.flat().includes("clear"), false);
 });
 
+test("package presence distinguishes a clean miss from an uncertain ADB failure", async () => {
+  const cleanMiss = new AdbClient("adb", async (command, args) => ({
+    command,
+    args,
+    exitCode: 0,
+    signal: null,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    durationMs: 1,
+  }));
+  assert.equal(await cleanMiss.isPackageInstalled("PHONE123", "com.publisher.app"), false);
+
+  const uncertain = new AdbClient("adb", async (command, args) => ({
+    command,
+    args,
+    exitCode: 1,
+    signal: null,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.from("device offline"),
+    durationMs: 1,
+  }));
+  await assert.rejects(
+    () => uncertain.isPackageInstalled("PHONE123", "com.publisher.app"),
+    /Checking Android package presence failed.*device offline/,
+  );
+});
+
+test("package presence accepts only absolute APK path lines", async () => {
+  const installed = new AdbClient("adb", async (command, args) => ({
+    command,
+    args,
+    exitCode: 0,
+    signal: null,
+    stdout: Buffer.from(
+      "package:/data/app/com.publisher.app/base.apk\n" +
+        "package:/data/app/com.publisher.app/split_config.arm64_v8a.apk\n",
+    ),
+    stderr: Buffer.alloc(0),
+    durationMs: 1,
+  }));
+  assert.equal(await installed.isPackageInstalled("PHONE123", "com.publisher.app"), true);
+
+  for (const malformed of [
+    "package:\n",
+    "package:relative/base.apk\n",
+    "package:/data/app/com.publisher.app/base.apk\nunexpected output\n",
+    "Error: package manager unavailable\n",
+  ]) {
+    const adb = new AdbClient("adb", async (command, args) => ({
+      command,
+      args,
+      exitCode: 0,
+      signal: null,
+      stdout: Buffer.from(malformed),
+      stderr: Buffer.alloc(0),
+      durationMs: 1,
+    }));
+    await assert.rejects(
+      () => adb.isPackageInstalled("PHONE123", "com.publisher.app"),
+      /package presence query returned malformed output/,
+    );
+  }
+});
+
 test("logcat refuses whole-device capture when the app PID is unavailable", async () => {
   const calls: string[][] = [];
   const runner = async (_command: string, args: string[]): Promise<ProcessResult> => {

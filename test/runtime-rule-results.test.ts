@@ -153,7 +153,7 @@ if (args[0] === "version") {
     ? fixture.behavior.appInstalled
     : packageName === fixture.walletPackage && fixture.behavior.walletInstalled;
   if (installed) console.log("package:/data/app/" + packageName + "/base.apk");
-  else fail("Package not installed");
+  else process.exitCode = 0;
 } else if (shell && (args[3] === "sha256sum" || (args[3] === "toybox" && args[4] === "sha256sum"))) {
   const apkPath = args[3] === "sha256sum" ? args[4] : args[5];
   const isWallet = apkPath.includes(fixture.walletPackage);

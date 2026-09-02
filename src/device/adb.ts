@@ -171,7 +171,19 @@ export class AdbClient {
 
   async isPackageInstalled(serial: string, packageName: string): Promise<boolean> {
     const result = await this.shell(serial, ["pm", "path", packageName]);
-    return result.exitCode === 0 && result.stdout.toString("utf8").includes("package:");
+    if (result.exitCode !== 0) {
+      throw new AdbCommandError("Checking Android package presence", result);
+    }
+    const lines = result.stdout
+      .toString("utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length === 0) return false;
+    if (!lines.every((line) => /^package:\/\S+\.apk$/.test(line))) {
+      throw new Error("Android package presence query returned malformed output");
+    }
+    return true;
   }
 
   async packageSnapshot(serial: string, packageName: string): Promise<PackageSnapshot> {

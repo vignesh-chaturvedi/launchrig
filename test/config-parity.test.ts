@@ -208,6 +208,10 @@ test("config v1 metadata and runtime defaults stay synchronized", async () => {
   assert.equal(properties.device.properties.minimumApiLevel.maximum, CONFIG_V1_LIMITS.minimumApiLevel.maximum);
   assert.equal(properties.scenarios.maxItems, CONFIG_V1_LIMITS.scenarioCount.maximum);
   assert.equal(
+    properties.scenarios.items.properties.id.maxLength,
+    CONFIG_V1_LIMITS.scenarioId.maximumLength,
+  );
+  assert.equal(
     properties.scenarios.items.properties.timeoutMs.minimum,
     CONFIG_V1_LIMITS.scenarioTimeoutMs.minimum,
   );

@@ -35,6 +35,10 @@ export interface RunOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface RunDependencies {
+  stageManagedWalletArtifact?: typeof stageManagedWalletArtifact;
+}
+
 export interface RunOutput {
   report: LaunchRigReport;
   artifacts: WrittenArtifacts;
@@ -133,7 +137,11 @@ async function captureFailureEvidence(input: {
   return artifacts;
 }
 
-export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: RunOptions = {}): Promise<RunOutput> {
+export async function runLaunchRig(
+  config: ResolvedLaunchRigConfig,
+  options: RunOptions = {},
+  dependencies: RunDependencies = {},
+): Promise<RunOutput> {
   const startedAt = new Date();
   const runId = createRunId(startedAt);
   const runDirectory = path.join(config.resolvedArtifactDirectory, runId);
@@ -270,9 +278,39 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
     });
   }
 
-  const appPresentBeforeInstall = await adb.isPackageInstalled(serial, config.project.packageName);
+  let appInstallFailed = false;
   if (config.project.install && config.resolvedApk) {
     const installStarted = Date.now();
+    let appPresentBeforeInstall: boolean;
+    try {
+      appPresentBeforeInstall = await adb.isPackageInstalled(serial, config.project.packageName);
+    } catch (error) {
+      const details = safeText(
+        error instanceof Error ? error.message : String(error),
+        config.privacy.redactPatterns,
+        [serial],
+      ).slice(0, 12000);
+      checks.push(
+        result({
+          id: RUN_CHECK_IDS.appInstall,
+          name: "Install app APK",
+          status: "fail",
+          required: true,
+          startedAt: installStarted,
+          summary: "App installation was not attempted because package presence could not be verified",
+          ...(details ? { details } : {}),
+        }),
+      );
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        setupError: true,
+      });
+    }
     if (appPresentBeforeInstall && config.project.installPolicy === "if-missing") {
       checks.push(
         result({
@@ -298,14 +336,44 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           ...(installDetails ? { details: installDetails } : {}),
         }),
       );
+      appInstallFailed = install.exitCode !== 0;
     }
   }
-  if (checks.at(-1)?.id === RUN_CHECK_IDS.appInstall && checks.at(-1)?.status === "fail") {
+  if (appInstallFailed) {
     return await finalize({ config, startedAt, runId, runDirectory, checks, device: deviceSnapshot });
   }
 
   const appStarted = Date.now();
-  const appInstalled = await adb.isPackageInstalled(serial, config.project.packageName);
+  let appInstalled: boolean;
+  try {
+    appInstalled = await adb.isPackageInstalled(serial, config.project.packageName);
+  } catch (error) {
+    const details = safeText(
+      error instanceof Error ? error.message : String(error),
+      config.privacy.redactPatterns,
+      [serial],
+    ).slice(0, 12000);
+    checks.push(
+      result({
+        id: RUN_CHECK_IDS.appInstalled,
+        name: "App under test installed",
+        status: "fail",
+        required: true,
+        startedAt: appStarted,
+        summary: "App package presence could not be verified",
+        ...(details ? { details } : {}),
+      }),
+    );
+    return await finalize({
+      config,
+      startedAt,
+      runId,
+      runDirectory,
+      checks,
+      device: deviceSnapshot,
+      setupError: true,
+    });
+  }
   if (appInstalled) appSnapshot = await adb.packageSnapshot(serial, config.project.packageName);
   checks.push(
     result({
@@ -366,9 +434,40 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
   }
 
   if (config.wallet.packageName) {
-    const walletPresentBeforeInstall = await adb.isPackageInstalled(serial, config.wallet.packageName);
+    let walletInstallFailed = false;
     if (config.wallet.install && config.resolvedWalletApk) {
       const walletInstallStarted = Date.now();
+      let walletPresentBeforeInstall: boolean;
+      try {
+        walletPresentBeforeInstall = await adb.isPackageInstalled(serial, config.wallet.packageName);
+      } catch (error) {
+        const details = safeText(
+          error instanceof Error ? error.message : String(error),
+          config.privacy.redactPatterns,
+          [serial],
+        ).slice(0, 12000);
+        checks.push(
+          result({
+            id: RUN_CHECK_IDS.walletInstall,
+            name: "Install allowlisted test wallet APK",
+            status: "fail",
+            required: true,
+            startedAt: walletInstallStarted,
+            summary: "Test-wallet installation was not attempted because package presence could not be verified",
+            ...(details ? { details } : {}),
+          }),
+        );
+        return await finalize({
+          config,
+          startedAt,
+          runId,
+          runDirectory,
+          checks,
+          device: deviceSnapshot,
+          ...(appSnapshot ? { app: appSnapshot } : {}),
+          setupError: true,
+        });
+      }
       if (walletPresentBeforeInstall && config.wallet.installPolicy === "if-missing") {
         checks.push(
           result({
@@ -381,7 +480,9 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
           }),
         );
       } else {
-        const stagedWallet = await stageManagedWalletArtifact(
+        const stageWalletArtifact =
+          dependencies.stageManagedWalletArtifact ?? stageManagedWalletArtifact;
+        const stagedWallet = await stageWalletArtifact(
           config.wallet.packageName,
           config.resolvedWalletApk,
         );
@@ -399,6 +500,7 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
                 : {}),
             }),
           );
+          walletInstallFailed = true;
           await stagedWallet.dispose();
         } else {
           try {
@@ -423,13 +525,14 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
                 ...(walletInstallDetails ? { details: walletInstallDetails } : {}),
               }),
             );
+            walletInstallFailed = walletInstall.exitCode !== 0;
           } finally {
             await stagedWallet.dispose();
           }
         }
       }
     }
-    if (checks.at(-1)?.id === RUN_CHECK_IDS.walletInstall && checks.at(-1)?.status === "fail") {
+    if (walletInstallFailed) {
       return await finalize({
         config,
         startedAt,
@@ -441,7 +544,42 @@ export async function runLaunchRig(config: ResolvedLaunchRigConfig, options: Run
       });
     }
     const walletStarted = Date.now();
-    const walletInstalled = await adb.isPackageInstalled(serial, config.wallet.packageName);
+    let walletInstalled: boolean;
+    try {
+      walletInstalled = await adb.isPackageInstalled(serial, config.wallet.packageName);
+    } catch (error) {
+      const details = safeText(
+        error instanceof Error ? error.message : String(error),
+        config.privacy.redactPatterns,
+        [serial],
+      ).slice(0, 12000);
+      checks.push(
+        result({
+          id: RUN_CHECK_IDS.walletInstalled,
+          name:
+            config.wallet.mode === "mock-mwa"
+              ? "Mock MWA Wallet installed"
+              : config.wallet.mode === "reference-fakewallet"
+                ? "Reference MWA fake wallet installed"
+                : "Wallet installed",
+          status: "fail",
+          required: config.scenarios.length > 0,
+          startedAt: walletStarted,
+          summary: "Wallet package presence could not be verified",
+          ...(details ? { details } : {}),
+        }),
+      );
+      return await finalize({
+        config,
+        startedAt,
+        runId,
+        runDirectory,
+        checks,
+        device: deviceSnapshot,
+        ...(appSnapshot ? { app: appSnapshot } : {}),
+        setupError: true,
+      });
+    }
     if (walletInstalled) walletSnapshot = await adb.packageSnapshot(serial, config.wallet.packageName);
     checks.push(
       result({

@@ -22,7 +22,12 @@ if (args[0] === "version") {
 } else if (args[0] === "-s" && args[2] === "shell" && args[3] === "df") {
   console.log("Filesystem 1K-blocks Used Available Use% Mounted on\\n/dev/data 1000000 1000 999000 1% /data");
 } else if (args[0] === "-s" && args[2] === "shell" && args[3] === "pm") {
-  console.log("package:/data/app/base.apk");
+  if (process.env.LAUNCHRIG_TEST_PM_PATH_FAIL === "1") {
+    console.error("device offline");
+    process.exitCode = 1;
+  } else {
+    console.log("package:/data/app/base.apk");
+  }
 } else if (args[0] === "-s" && args[2] === "shell" && args[3] === "pidof") {
   console.log("4242");
 } else if (args[0] === "-s" && args[2] === "logcat") {
@@ -263,6 +268,85 @@ test("physical-device run produces an Android/MWA Ready evidence set", async () 
       assert.doesNotMatch(walletInstall?.details ?? "", /wallet\.apk/);
       await assert.rejects(() => access(installMarker));
     } finally {
+      delete process.env.LAUNCHRIG_TEST_INSTALL_MARKER;
+    }
+
+    const verifiedWalletPath = path.join(directory, "generated-verified-wallet.apk");
+    await writeFile(verifiedWalletPath, "generated verified staging double", "utf8");
+    let stagedWalletCalls = 0;
+    let stagedWalletDisposals = 0;
+    const stageVerifiedWallet = async (packageName: string, sourceApkPath: string) => {
+      stagedWalletCalls += 1;
+      assert.equal(packageName, "com.solana.mwallet");
+      assert.equal(sourceApkPath, path.join(directory, "wallet.apk"));
+      return {
+        expectedSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
+        actualSha256: "b9b28b4936f388f615febc493e0af5c7e8c40002de4a3cddbef4f52315a9ef3b",
+        valid: true,
+        apkPath: verifiedWalletPath,
+        dispose: async () => {
+          stagedWalletDisposals += 1;
+        },
+      };
+    };
+    process.env.LAUNCHRIG_TEST_INSTALL_MARKER = installMarker;
+    try {
+      const installedWalletOutput = await runLaunchRig(
+        config,
+        { adbPath: adb, maestroPath: maestro },
+        { stageManagedWalletArtifact: stageVerifiedWallet },
+      );
+      assert.equal(installedWalletOutput.exitCode, 0);
+      assert.equal(
+        installedWalletOutput.report.checks.find((check) => check.id === "wallet.install")?.status,
+        "pass",
+      );
+      assert.equal(
+        installedWalletOutput.report.checks.find((check) => check.id === "wallet.installed")?.status,
+        "pass",
+      );
+      const installInvocation = await readFile(installMarker, "utf8");
+      assert.ok(installInvocation.includes(verifiedWalletPath));
+      assert.ok(installInvocation.includes("install -r"));
+      assert.equal(installInvocation.includes(" clear "), false);
+      assert.equal(stagedWalletCalls, 1);
+      assert.equal(stagedWalletDisposals, 1);
+
+      process.env.LAUNCHRIG_TEST_ADB_INSTALL_FAIL = "1";
+      const failedWalletInstall = await runLaunchRig(
+        config,
+        { adbPath: adb, maestroPath: maestro },
+        { stageManagedWalletArtifact: stageVerifiedWallet },
+      );
+      assert.equal(failedWalletInstall.exitCode, 1);
+      assert.equal(
+        failedWalletInstall.report.checks.find((check) => check.id === "wallet.install")?.status,
+        "fail",
+      );
+      assert.equal(stagedWalletCalls, 2);
+      assert.equal(stagedWalletDisposals, 2);
+    } finally {
+      delete process.env.LAUNCHRIG_TEST_INSTALL_MARKER;
+      delete process.env.LAUNCHRIG_TEST_ADB_INSTALL_FAIL;
+    }
+
+    const uncertainProbeMarker = path.join(directory, "uncertain-probe-install-called");
+    process.env.LAUNCHRIG_TEST_PM_PATH_FAIL = "1";
+    process.env.LAUNCHRIG_TEST_INSTALL_MARKER = uncertainProbeMarker;
+    config.project.installPolicy = "always";
+    try {
+      const uncertainPresence = await runLaunchRig(config, { adbPath: adb, maestroPath: maestro });
+      assert.equal(uncertainPresence.exitCode, 3);
+      assert.equal(uncertainPresence.report.outcome, "setup-error");
+      const refusedInstall = uncertainPresence.report.checks.find((check) => check.id === "app.install");
+      assert.equal(refusedInstall?.status, "fail");
+      assert.match(refusedInstall?.summary ?? "", /was not attempted/);
+      assert.match(refusedInstall?.details ?? "", /device offline/);
+      assert.doesNotMatch(JSON.stringify(uncertainPresence.report), /A1F0/);
+      await assert.rejects(() => access(uncertainProbeMarker));
+    } finally {
+      config.project.installPolicy = "if-missing";
+      delete process.env.LAUNCHRIG_TEST_PM_PATH_FAIL;
       delete process.env.LAUNCHRIG_TEST_INSTALL_MARKER;
     }
 

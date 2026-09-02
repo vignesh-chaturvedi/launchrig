@@ -307,7 +307,7 @@ test("prepare-scope derives exact private inputs with safe defaults and a strict
   }
 });
 
-test("prepare-scope accepts RC10 through RC17 without changing claim limits", async () => {
+test("prepare-scope accepts RC10 through RC18 without changing claim limits", async () => {
   const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "launchrig-prepare-scope-profiles-")));
   try {
     const bundleDirectory = path.join(directory, "verified-bundle");
@@ -322,6 +322,7 @@ test("prepare-scope accepts RC10 through RC17 without changing claim limits", as
       "phase-2n-human-send-decision-rc-v15",
       "phase-3-config-diagnostics-rc-v16",
       "phase-3-runtime-rule-fixtures-rc-v17",
+      "phase-3-pilot-rule-fixtures-rc-v18",
     ];
     const limitationSnapshots = new Set<string>();
 

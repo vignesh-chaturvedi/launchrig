@@ -4,7 +4,7 @@
   "configVersion": 1,
   "status": "pre-award-foundation",
   "schemaPath": "schemas/launchrig.schema.json",
-  "parityCaseCount": 23,
+  "parityCaseCount": 26,
   "runtimeExtensionCaseCount": 2,
   "grantMilestoneComplete": false,
   "base": {
@@ -114,6 +114,57 @@
       "remove": [],
       "runtimeValid": true,
       "schemaValid": true
+    },
+    {
+      "id": "valid-digit-first-scenario-id",
+      "classification": "parity",
+      "set": {
+        "/scenarios": [
+          {
+            "id": "1-authorize",
+            "kind": "custom",
+            "name": "Digit first ID",
+            "flow": "./flow.yaml"
+          }
+        ]
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "valid-maximum-scenario-id",
+      "classification": "parity",
+      "set": {
+        "/scenarios": [
+          {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "custom",
+            "name": "Maximum ID",
+            "flow": "./flow.yaml"
+          }
+        ]
+      },
+      "remove": [],
+      "runtimeValid": true,
+      "schemaValid": true
+    },
+    {
+      "id": "invalid-overlong-scenario-id",
+      "classification": "parity",
+      "set": {
+        "/scenarios": [
+          {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "custom",
+            "name": "Overlong ID",
+            "flow": "./flow.yaml"
+          }
+        ]
+      },
+      "remove": [],
+      "runtimeValid": false,
+      "schemaValid": false
     },
     {
       "id": "invalid-unknown-root-key",

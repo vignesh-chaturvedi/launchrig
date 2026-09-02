@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "kind": "launchrig-pilot-rule-fixtures",
+  "profile": "pilot-rules-v1",
+  "status": "pre-award-foundation",
+  "ruleIds": ["LR019", "LR020", "LR021", "LR022", "LR023", "LR024", "LR025"],
+  "caseCount": 8,
+  "expectationCount": 56,
+  "grantMilestoneComplete": false,
+  "base": {
+    "version": 1,
+    "project": {
+      "name": "Publisher Fixture",
+      "packageName": "com.publisher.launchrigfixture",
+      "apk": "./publisher-app.apk",
+      "install": false
+    },
+    "target": { "network": "devnet" },
+    "device": { "requirePhysical": true, "minimumApiLevel": 26 },
+    "wallet": {
+      "mode": "mock-mwa",
+      "packageName": "com.solana.mwallet",
+      "install": false
+    },
+    "scenarios": [
+      {
+        "id": "authorize",
+        "kind": "mwa-authorize",
+        "name": "Authorize",
+        "flow": "./authorize.yaml",
+        "required": true
+      },
+      {
+        "id": "siws",
+        "kind": "mwa-siws",
+        "name": "Sign in with Solana",
+        "flow": "./siws.yaml",
+        "required": true
+      },
+      {
+        "id": "sign-message",
+        "kind": "mwa-sign-message",
+        "name": "Sign message",
+        "flow": "./sign-message.yaml",
+        "required": true
+      },
+      {
+        "id": "reject",
+        "kind": "mwa-reject",
+        "name": "Reject and recover",
+        "flow": "./reject.yaml",
+        "required": true
+      }
+    ],
+    "artifacts": {
+      "directory": "./.launchrig/results",
+      "screenshots": "failure",
+      "retention": 5
+    },
+    "privacy": { "includeLogcat": false, "logcatLines": 200, "redactPatterns": [] },
+    "tooling": {}
+  },
+  "baseFiles": {
+    "publisher-app.apk": "generated publisher application fixture\n",
+    "authorize.yaml": "appId: com.publisher.launchrigfixture\n---\n- assertVisible:\n    id: publisher-authorize-ready\n",
+    "siws.yaml": "appId: com.publisher.launchrigfixture\n---\n- assertVisible:\n    id: publisher-siws-ready\n",
+    "sign-message.yaml": "appId: com.publisher.launchrigfixture\n---\n- assertVisible:\n    id: publisher-sign-message-ready\n",
+    "reject.yaml": "appId: com.publisher.launchrigfixture\n---\n- assertVisible:\n    id: publisher-reject-ready\n",
+    "mwa-authorize.example.yaml": "appId: com.publisher.launchrigfixture\n---\n- assertVisible:\n    id: publisher-authorize-ready\n"
+  },
+  "cases": [
+    {
+      "id": "pilot-rules-pass",
+      "mutation": "none",
+      "doctorOk": true,
+      "expectedDoctorCalls": 1,
+      "expectedExitCode": 0,
+      "expectedReadyToRecord": true,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "positive", "checkId": "pilot.project", "status": "pass", "summaryIncludes": "blocked default or reference-fixture identifiers" },
+        { "ruleId": "LR021", "classification": "positive", "checkId": "pilot.wallet", "status": "pass", "summaryIncludes": "allowlisted mock-mwa development-wallet profile" },
+        { "ruleId": "LR022", "classification": "positive", "checkId": "pilot.device-policy", "status": "pass", "summaryIncludes": "requires a physical Android device" },
+        { "ruleId": "LR023", "classification": "positive", "checkId": "pilot.flows", "status": "pass", "summaryIncludes": "Every configured flow is promoted" },
+        { "ruleId": "LR024", "classification": "positive", "checkId": "pilot.mwa-coverage", "status": "pass", "summaryIncludes": "Required authorize, SIWS, message-signing, and rejection" },
+        { "ruleId": "LR025", "classification": "positive", "checkId": "pilot.environment", "status": "pass", "summaryIncludes": "Physical Android device, invoked tools, and exact package binaries" }
+      ]
+    },
+    {
+      "id": "lr019-state-integrity-refused",
+      "mutation": "corrupt-state",
+      "doctorOk": true,
+      "expectedDoctorCalls": 0,
+      "expectedExitCode": 2,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "negative", "checkId": "pilot.state", "status": "fail", "summaryIncludes": "Pilot state integrity check failed" },
+        { "ruleId": "LR020", "classification": "conditional", "checkId": "pilot.project", "status": "skip", "summaryIncludes": "pilot state integrity was not established" },
+        { "ruleId": "LR021", "classification": "conditional", "checkId": "pilot.wallet", "status": "skip", "summaryIncludes": "pilot state integrity was not established" },
+        { "ruleId": "LR022", "classification": "conditional", "checkId": "pilot.device-policy", "status": "skip", "summaryIncludes": "pilot state integrity was not established" },
+        { "ruleId": "LR023", "classification": "conditional", "checkId": "pilot.flows", "status": "skip", "summaryIncludes": "pilot state integrity was not established" },
+        { "ruleId": "LR024", "classification": "conditional", "checkId": "pilot.mwa-coverage", "status": "skip", "summaryIncludes": "pilot state integrity was not established" },
+        { "ruleId": "LR025", "classification": "conditional", "checkId": "pilot.environment", "status": "skip", "summaryIncludes": "pilot state integrity was not established" }
+      ]
+    },
+    {
+      "id": "lr020-controlled-project-refused",
+      "mutation": "blocked-project",
+      "doctorOk": true,
+      "expectedDoctorCalls": 0,
+      "expectedExitCode": 2,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "negative", "checkId": "pilot.project", "status": "fail", "summaryIncludes": "Controlled LaunchRig fixtures cannot be recorded" },
+        { "ruleId": "LR021", "classification": "positive", "checkId": "pilot.wallet", "status": "pass", "summaryIncludes": "allowlisted mock-mwa development-wallet profile" },
+        { "ruleId": "LR022", "classification": "positive", "checkId": "pilot.device-policy", "status": "pass", "summaryIncludes": "requires a physical Android device" },
+        { "ruleId": "LR023", "classification": "positive", "checkId": "pilot.flows", "status": "pass", "summaryIncludes": "Every configured flow is promoted" },
+        { "ruleId": "LR024", "classification": "positive", "checkId": "pilot.mwa-coverage", "status": "pass", "summaryIncludes": "Required authorize, SIWS, message-signing, and rejection" },
+        { "ruleId": "LR025", "classification": "conditional", "checkId": "pilot.environment", "status": "skip", "summaryIncludes": "Environment checks were skipped" }
+      ]
+    },
+    {
+      "id": "lr021-real-wallet-refused",
+      "mutation": "real-wallet",
+      "doctorOk": true,
+      "expectedDoctorCalls": 0,
+      "expectedExitCode": 2,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "negative", "checkId": "pilot.project", "status": "fail", "summaryIncludes": "Approved scope requires exactly four required core MWA scenarios" },
+        { "ruleId": "LR021", "classification": "negative", "checkId": "pilot.wallet", "status": "fail", "summaryIncludes": "supports only allowlisted test wallets" },
+        { "ruleId": "LR022", "classification": "positive", "checkId": "pilot.device-policy", "status": "pass", "summaryIncludes": "requires a physical Android device" },
+        { "ruleId": "LR023", "classification": "positive", "checkId": "pilot.flows", "status": "pass", "summaryIncludes": "Every configured flow is promoted" },
+        { "ruleId": "LR024", "classification": "negative", "checkId": "pilot.mwa-coverage", "status": "fail", "summaryIncludes": "Required MWA coverage is missing" },
+        { "ruleId": "LR025", "classification": "conditional", "checkId": "pilot.environment", "status": "skip", "summaryIncludes": "Environment checks were skipped" }
+      ]
+    },
+    {
+      "id": "lr022-nonphysical-policy-refused",
+      "mutation": "nonphysical-device-policy",
+      "doctorOk": true,
+      "expectedDoctorCalls": 0,
+      "expectedExitCode": 2,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "negative", "checkId": "pilot.project", "status": "fail", "summaryIncludes": "physical-device policy does not match the approved scope" },
+        { "ruleId": "LR021", "classification": "positive", "checkId": "pilot.wallet", "status": "pass", "summaryIncludes": "allowlisted mock-mwa development-wallet profile" },
+        { "ruleId": "LR022", "classification": "negative", "checkId": "pilot.device-policy", "status": "fail", "summaryIncludes": "device.requirePhysical: true" },
+        { "ruleId": "LR023", "classification": "positive", "checkId": "pilot.flows", "status": "pass", "summaryIncludes": "Every configured flow is promoted" },
+        { "ruleId": "LR024", "classification": "positive", "checkId": "pilot.mwa-coverage", "status": "pass", "summaryIncludes": "Required authorize, SIWS, message-signing, and rejection" },
+        { "ruleId": "LR025", "classification": "conditional", "checkId": "pilot.environment", "status": "skip", "summaryIncludes": "Environment checks were skipped" }
+      ]
+    },
+    {
+      "id": "lr023-reserved-flow-refused",
+      "mutation": "reserved-flow-template",
+      "doctorOk": true,
+      "expectedDoctorCalls": 0,
+      "expectedExitCode": 2,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "positive", "checkId": "pilot.project", "status": "pass", "summaryIncludes": "blocked default or reference-fixture identifiers" },
+        { "ruleId": "LR021", "classification": "positive", "checkId": "pilot.wallet", "status": "pass", "summaryIncludes": "allowlisted mock-mwa development-wallet profile" },
+        { "ruleId": "LR022", "classification": "positive", "checkId": "pilot.device-policy", "status": "pass", "summaryIncludes": "requires a physical Android device" },
+        { "ruleId": "LR023", "classification": "negative", "checkId": "pilot.flows", "status": "fail", "summaryIncludes": "uses the reserved init template" },
+        { "ruleId": "LR024", "classification": "positive", "checkId": "pilot.mwa-coverage", "status": "pass", "summaryIncludes": "Required authorize, SIWS, message-signing, and rejection" },
+        { "ruleId": "LR025", "classification": "conditional", "checkId": "pilot.environment", "status": "skip", "summaryIncludes": "Environment checks were skipped" }
+      ]
+    },
+    {
+      "id": "lr024-duplicate-coverage-refused",
+      "mutation": "duplicate-flow-definition",
+      "doctorOk": true,
+      "expectedDoctorCalls": 0,
+      "expectedExitCode": 2,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "negative", "checkId": "pilot.project", "status": "fail", "summaryIncludes": "MWA flow bytes or scenario bindings do not match the approved scope" },
+        { "ruleId": "LR021", "classification": "positive", "checkId": "pilot.wallet", "status": "pass", "summaryIncludes": "allowlisted mock-mwa development-wallet profile" },
+        { "ruleId": "LR022", "classification": "positive", "checkId": "pilot.device-policy", "status": "pass", "summaryIncludes": "requires a physical Android device" },
+        { "ruleId": "LR023", "classification": "positive", "checkId": "pilot.flows", "status": "pass", "summaryIncludes": "Every configured flow is promoted" },
+        { "ruleId": "LR024", "classification": "negative", "checkId": "pilot.mwa-coverage", "status": "fail", "summaryIncludes": "four distinct promoted flow files" },
+        { "ruleId": "LR025", "classification": "conditional", "checkId": "pilot.environment", "status": "skip", "summaryIncludes": "Environment checks were skipped" }
+      ]
+    },
+    {
+      "id": "lr025-environment-refused",
+      "mutation": "environment-refusal",
+      "doctorOk": false,
+      "expectedDoctorCalls": 1,
+      "expectedExitCode": 3,
+      "expectedReadyToRecord": false,
+      "expectations": [
+        { "ruleId": "LR019", "classification": "positive", "checkId": "pilot.state", "status": "pass", "summaryIncludes": "integrity check passed" },
+        { "ruleId": "LR020", "classification": "positive", "checkId": "pilot.project", "status": "pass", "summaryIncludes": "blocked default or reference-fixture identifiers" },
+        { "ruleId": "LR021", "classification": "positive", "checkId": "pilot.wallet", "status": "pass", "summaryIncludes": "allowlisted mock-mwa development-wallet profile" },
+        { "ruleId": "LR022", "classification": "positive", "checkId": "pilot.device-policy", "status": "pass", "summaryIncludes": "requires a physical Android device" },
+        { "ruleId": "LR023", "classification": "positive", "checkId": "pilot.flows", "status": "pass", "summaryIncludes": "Every configured flow is promoted" },
+        { "ruleId": "LR024", "classification": "positive", "checkId": "pilot.mwa-coverage", "status": "pass", "summaryIncludes": "Required authorize, SIWS, message-signing, and rejection" },
+        { "ruleId": "LR025", "classification": "negative", "checkId": "pilot.environment", "status": "fail", "summaryIncludes": "Generated doctor refusal for pilot rule fixture" }
+      ]
+    }
+  ],
+  "limitations": [
+    "The corpus uses generated private project data and injected doctor results, and it never invokes ADB, Maestro, a connected phone, or a wallet.",
+    "Passing checks prove deterministic local rule behavior only and do not establish a publisher, consent, operator authority, or an attended pilot.",
+    "No fixture establishes Seeker hardware, a production wallet, Seed Vault behavior, a confirmed defect, external adoption, a grant award, or grant readiness."
+  ]
+}

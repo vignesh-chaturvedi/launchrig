@@ -66,6 +66,7 @@ export const CONFIG_V1_DEFAULTS = Object.freeze({
 export const CONFIG_V1_LIMITS = Object.freeze({
   minimumApiLevel: Object.freeze({ minimum: 23, maximum: 100 }),
   scenarioCount: Object.freeze({ maximum: 50 }),
+  scenarioId: Object.freeze({ maximumLength: 64 }),
   scenarioTimeoutMs: Object.freeze({ minimum: 1000, maximum: 600000 }),
   retention: Object.freeze({ minimum: 1, maximum: 25 }),
   logcatLines: Object.freeze({ minimum: 1, maximum: 1000 }),
