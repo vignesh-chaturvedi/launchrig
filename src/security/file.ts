@@ -61,10 +61,16 @@ export async function isRegularFileNoFollow(filePath: string): Promise<boolean> 
 }
 
 export async function readBoundedRegularFile(filePath: string, maximumBytes: number): Promise<Buffer> {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new Error("invalid file size limit");
   let handle;
   try {
     const before = await lstat(filePath, { bigint: true });
-    if (!before.isFile() || before.isSymbolicLink() || before.size > BigInt(maximumBytes)) {
+    if (
+      !before.isFile() ||
+      before.isSymbolicLink() ||
+      before.size < 1n ||
+      before.size > BigInt(maximumBytes)
+    ) {
       throw new Error("unsafe file");
     }
     handle = await open(
@@ -74,6 +80,7 @@ export async function readBoundedRegularFile(filePath: string, maximumBytes: num
     const opened = await handle.stat({ bigint: true });
     if (
       !opened.isFile() ||
+      opened.size < 1n ||
       opened.size > BigInt(maximumBytes) ||
       opened.dev !== before.dev ||
       opened.ino !== before.ino ||

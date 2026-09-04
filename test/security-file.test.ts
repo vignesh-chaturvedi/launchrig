@@ -10,11 +10,14 @@ test("bounded file reads never accept torn bytes or a symlink during mutation", 
   try {
     const target = path.join(directory, "flow.yaml");
     const linked = path.join(directory, "linked-flow.yaml");
+    const empty = path.join(directory, "empty-flow.yaml");
     const first = Buffer.alloc(512 * 1024, 0x41);
     const second = Buffer.alloc(512 * 1024, 0x42);
     await writeFile(target, first);
+    await writeFile(empty, Buffer.alloc(0));
     await symlink(target, linked);
     await assert.rejects(() => readBoundedRegularFile(linked, first.length));
+    await assert.rejects(() => readBoundedRegularFile(empty, first.length));
 
     const accepted: Buffer[] = [];
     const writer = (async () => {
