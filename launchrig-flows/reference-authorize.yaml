@@ -9,6 +9,12 @@ name: Reference MWA authorize
     timeout: 15000
 - tapOn:
     text: "^AUTHORIZE$"
+- tapOn:
+    text: "^Fake Wallet app$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
 - extendedWaitUntil:
     visible: "AUTHORIZE DAPP"
     timeout: 30000

@@ -9,6 +9,12 @@ name: Reference MWA sign message
     timeout: 15000
 - tapOn:
     text: "^AUTHORIZE$"
+- tapOn:
+    text: "^Fake Wallet app$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
 - extendedWaitUntil:
     visible: "AUTHORIZE DAPP"
     timeout: 30000
@@ -18,6 +24,12 @@ name: Reference MWA sign message
     visible: "MWA 2.0"
     timeout: 30000
 - tapOn: "SIGN MSG X1"
+- tapOn:
+    text: "^Fake Wallet app$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
 - extendedWaitUntil:
     visible: "SIGN MESSAGE\\(S\\)"
     timeout: 30000

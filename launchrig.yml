@@ -51,7 +51,7 @@ scenarios:
 artifacts:
   directory: ./.launchrig/results
   screenshots: failure
-  retention: 5
+  retention: 12
 
 privacy:
   includeLogcat: false

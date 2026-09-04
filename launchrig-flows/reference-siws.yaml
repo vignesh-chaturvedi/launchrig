@@ -8,6 +8,12 @@ name: Reference MWA SIWS
     visible: "GET CAPABILITIES"
     timeout: 15000
 - tapOn: "SIGN IN WITH SOLANA"
+- tapOn:
+    text: "^Fake Wallet app$"
+    optional: true
+- tapOn:
+    text: "^Just once$"
+    optional: true
 - extendedWaitUntil:
     visible: "Sign In Payload:"
     timeout: 30000
