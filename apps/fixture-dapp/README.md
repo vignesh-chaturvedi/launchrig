@@ -4,11 +4,11 @@ This Expo Android app is a controlled devnet sample for LaunchRig's three wallet
 
 ## Recovery cases
 
-| Case | Broken behavior | Fixed behavior |
-| --- | --- | --- |
-| Wallet rejection | Request remains pending and retry is disabled. | Reports `USER_REJECTED`, clears pending state, and enables retry. |
-| Stale authorization | Cached authorization leaves the app stuck reconnecting. | Clears the stale cache, reports `AUTHORIZATION_CLEARED`, and supports a new connection. |
-| dApp process death | Restored journal leaves the interrupted request pending. | Reports `RECOVERED_UNKNOWN`, preserves the original outcome as `UNKNOWN`, and enables retry. |
+| Case                | Broken behavior                                          | Fixed behavior                                                                               |
+| ------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Wallet rejection    | Request remains pending and retry is disabled.           | Reports `USER_REJECTED`, clears pending state, and enables retry.                            |
+| Stale authorization | Cached authorization leaves the app stuck reconnecting.  | Clears the stale cache, reports `AUTHORIZATION_CLEARED`, and supports a new connection.      |
+| dApp process death  | Restored journal leaves the interrupted request pending. | Reports `RECOVERED_UNKNOWN`, preserves the original outcome as `UNKNOWN`, and enables retry. |
 
 Process recovery never guesses whether the interrupted request was signed or rejected. The journal records minimal request state, and the fixture does not display or log authorization tokens or private keys.
 
