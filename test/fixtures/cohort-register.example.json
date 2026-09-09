@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "launchrig-private-cohort-register",
+  "profile": "phase-2c-publisher-governance-v1",
+  "privacyProfile": "opaque-refs-digests-dates-v1",
+  "registerRef": "urn:launchrig:register:00000001-0000-4000-a000-000000000001",
+  "revision": 1,
+  "asOfDate": "2026-08-28",
+  "operatorRef": "urn:launchrig:operator:00000001-0000-4000-a000-000000000001",
+  "candidates": [],
+  "defects": [],
+  "integritySha256": null
+}
