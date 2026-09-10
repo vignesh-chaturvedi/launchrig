@@ -1,0 +1,622 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrig.dev/schemas/launchrig-local-grant-proof.v2.schema.json",
+  "title": "LaunchRig local Android grant proof v2 documents",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/proof"
+    },
+    {
+      "$ref": "#/$defs/manifest"
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "award",
+        "externalDefect",
+        "externalPublisher",
+        "onChainTransaction",
+        "productionWallet",
+        "seedVault",
+        "seekerHardware"
+      ],
+      "properties": {
+        "award": {
+          "const": "not-established"
+        },
+        "externalDefect": {
+          "const": "not-established"
+        },
+        "externalPublisher": {
+          "const": "not-established"
+        },
+        "onChainTransaction": {
+          "const": "not-established"
+        },
+        "productionWallet": {
+          "const": "not-established"
+        },
+        "seedVault": {
+          "const": "not-established"
+        },
+        "seekerHardware": {
+          "const": "not-established"
+        }
+      }
+    },
+    "fileEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sizeBytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "enum": [
+            "index.html",
+            "proof.json",
+            "schema.json",
+            "styles.css"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageName",
+        "versionName",
+        "versionCode"
+      ],
+      "properties": {
+        "packageName": {
+          "enum": [
+            "com.solana.mobilewalletadapter.fakedapp",
+            "dev.launchrig.fixture"
+          ]
+        },
+        "versionName": {
+          "enum": [
+            "1.0",
+            "0.2.0"
+          ]
+        },
+        "versionCode": {
+          "enum": [
+            "1",
+            "2"
+          ]
+        }
+      }
+    },
+    "wallet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "packageName",
+        "versionName",
+        "versionCode"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "reference-test-wallet",
+            "mock-mwa-wallet"
+          ]
+        },
+        "packageName": {
+          "enum": [
+            "com.solana.mobilewalletadapter.fakewallet",
+            "com.solana.mwallet"
+          ]
+        },
+        "versionName": {
+          "enum": [
+            "1.0",
+            "1.0.1"
+          ]
+        },
+        "versionCode": {
+          "enum": [
+            "1",
+            "2"
+          ]
+        }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manufacturer",
+        "model",
+        "androidVersion",
+        "apiLevel",
+        "abi",
+        "physicalDevice"
+      ],
+      "properties": {
+        "manufacturer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "androidVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "apiLevel": {
+          "type": "integer",
+          "minimum": 26,
+          "maximum": 100
+        },
+        "abi": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "physicalDevice": {
+          "const": true
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "status",
+        "durationMs"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "authorize",
+            "siws",
+            "sign-message",
+            "reject",
+            "rejection-recovery",
+            "stale-authorization-recovery",
+            "process-death-recovery"
+          ]
+        },
+        "name": {
+          "enum": [
+            "Authorize and return to dApp",
+            "Sign In With Solana",
+            "Sign one fixture message",
+            "Reject and recover cleanly",
+            "Controlled wallet rejection recovery",
+            "Controlled stale authorization recovery",
+            "Controlled process-death recovery"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300000
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordId",
+        "evidenceClass",
+        "caseId",
+        "variant",
+        "sourceReportSha256",
+        "launchRigVersion",
+        "network",
+        "app",
+        "wallet",
+        "device",
+        "outcome",
+        "readiness",
+        "durationMs",
+        "scenarioChecks",
+        "normalizedRecordSha256"
+      ],
+      "properties": {
+        "recordId": {
+          "enum": [
+            "reference-mwa-01",
+            "reference-mwa-02",
+            "reference-mwa-03",
+            "rejection-recovery-broken",
+            "rejection-recovery-fixed",
+            "stale-authorization-recovery-broken",
+            "stale-authorization-recovery-fixed",
+            "process-death-recovery-broken",
+            "process-death-recovery-fixed"
+          ]
+        },
+        "evidenceClass": {
+          "enum": [
+            "reference-mwa",
+            "controlled-regression"
+          ]
+        },
+        "caseId": {
+          "enum": [
+            "reference-mwa-suite",
+            "rejection-recovery",
+            "stale-authorization-recovery",
+            "process-death-recovery"
+          ]
+        },
+        "variant": {
+          "enum": [
+            "observed-pass",
+            "broken",
+            "fixed"
+          ]
+        },
+        "sourceReportSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "launchRigVersion": {
+          "const": "0.1.0"
+        },
+        "network": {
+          "enum": [
+            "devnet",
+            "testnet"
+          ]
+        },
+        "app": {
+          "$ref": "#/$defs/app"
+        },
+        "wallet": {
+          "$ref": "#/$defs/wallet"
+        },
+        "device": {
+          "$ref": "#/$defs/device"
+        },
+        "outcome": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "readiness": {
+          "enum": [
+            "Android/MWA Ready",
+            "Android Device Ready",
+            "Not Ready"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "scenarioChecks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/scenario"
+          }
+        },
+        "normalizedRecordSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportCount",
+        "physicalAndroidReports",
+        "physicalDeviceProfiles",
+        "referenceMwaPasses",
+        "controlledRegressionPairs",
+        "controlledBrokenFailures",
+        "controlledFixedPasses",
+        "scenarioCheckCount",
+        "networks",
+        "allExpectedStatusesObserved"
+      ],
+      "properties": {
+        "reportCount": {
+          "const": 9
+        },
+        "physicalAndroidReports": {
+          "const": 9
+        },
+        "physicalDeviceProfiles": {
+          "const": 1
+        },
+        "referenceMwaPasses": {
+          "const": 3
+        },
+        "controlledRegressionPairs": {
+          "const": 3
+        },
+        "controlledBrokenFailures": {
+          "const": 3
+        },
+        "controlledFixedPasses": {
+          "const": 3
+        },
+        "scenarioCheckCount": {
+          "const": 18
+        },
+        "networks": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "devnet"
+            },
+            {
+              "const": "testnet"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "allExpectedStatusesObserved": {
+          "const": true
+        }
+      }
+    },
+    "buildVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAllowlist",
+        "sourceDigests",
+        "normalizedRecordDigests",
+        "claimBoundaryCheck",
+        "sourceTests",
+        "packageSmoke"
+      ],
+      "properties": {
+        "sourceAllowlist": {
+          "const": "matched"
+        },
+        "sourceDigests": {
+          "const": "matched"
+        },
+        "normalizedRecordDigests": {
+          "const": "generated"
+        },
+        "claimBoundaryCheck": {
+          "const": "passed"
+        },
+        "sourceTests": {
+          "const": "not-run-by-proof-builder"
+        },
+        "packageSmoke": {
+          "const": "not-run-by-proof-builder"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "profile",
+        "claimStatus",
+        "applicationUse",
+        "applicationEligibility",
+        "summary",
+        "buildVerification",
+        "records",
+        "claims",
+        "limitations",
+        "proofSha256"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "kind": {
+          "const": "launchrig-local-grant-proof"
+        },
+        "profile": {
+          "const": "local-android-mwa-application-evidence-v2"
+        },
+        "claimStatus": {
+          "const": "self-recorded-unattested"
+        },
+        "applicationUse": {
+          "const": "supporting-technical-evidence-only"
+        },
+        "applicationEligibility": {
+          "const": "not-evaluated"
+        },
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "buildVerification": {
+          "$ref": "#/$defs/buildVerification"
+        },
+        "records": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": {
+            "$ref": "#/$defs/record"
+          }
+        },
+        "claims": {
+          "$ref": "#/$defs/claims"
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 300
+          }
+        },
+        "proofSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "profile",
+        "claimStatus",
+        "applicationUse",
+        "applicationEligibility",
+        "schemaPath",
+        "proofPath",
+        "proofSha256",
+        "files",
+        "claims",
+        "bundleId"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "kind": {
+          "const": "launchrig-local-grant-proof-manifest"
+        },
+        "profile": {
+          "const": "local-android-mwa-application-evidence-v2"
+        },
+        "claimStatus": {
+          "const": "self-recorded-unattested"
+        },
+        "applicationUse": {
+          "const": "supporting-technical-evidence-only"
+        },
+        "applicationEligibility": {
+          "const": "not-evaluated"
+        },
+        "schemaPath": {
+          "const": "schema.json"
+        },
+        "proofPath": {
+          "const": "proof.json"
+        },
+        "proofSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "files": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/fileEntry"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "index.html"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/fileEntry"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "proof.json"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/fileEntry"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "schema.json"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/fileEntry"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "styles.css"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "claims": {
+          "$ref": "#/$defs/claims"
+        },
+        "bundleId": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

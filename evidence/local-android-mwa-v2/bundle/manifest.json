@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "kind": "launchrig-local-grant-proof-manifest",
+  "profile": "local-android-mwa-application-evidence-v2",
+  "claimStatus": "self-recorded-unattested",
+  "applicationUse": "supporting-technical-evidence-only",
+  "applicationEligibility": "not-evaluated",
+  "schemaPath": "schema.json",
+  "proofPath": "proof.json",
+  "proofSha256": "36908ca01e8727806253b0570948663b42cf092ea259026f43c34d29f237dd82",
+  "files": [
+    {
+      "path": "index.html",
+      "sizeBytes": 6914,
+      "sha256": "921ce058f7ac26687506fb3c776d58323b8908e2170880f49a44ddfb569bed09"
+    },
+    {
+      "path": "proof.json",
+      "sizeBytes": 14723,
+      "sha256": "57da3d523ef15743013fa09354dc5af91ef41311e9cc27936ac8a991949fdf7c"
+    },
+    {
+      "path": "schema.json",
+      "sizeBytes": 14257,
+      "sha256": "354e1733a4c8c8e539ed5d347e5ace9183c622b06b3842cff67efe09f131e3d8"
+    },
+    {
+      "path": "styles.css",
+      "sizeBytes": 2286,
+      "sha256": "d46feba6fac4f15548e749288c62fb440af91378beb0bfc7968ccd9c7b6aaec0"
+    }
+  ],
+  "claims": {
+    "award": "not-established",
+    "externalDefect": "not-established",
+    "externalPublisher": "not-established",
+    "onChainTransaction": "not-established",
+    "productionWallet": "not-established",
+    "seedVault": "not-established",
+    "seekerHardware": "not-established"
+  },
+  "bundleId": "sha256:2abad82c99415d792d6fde855564430fb374f878a90d808ca94b187e2abb050f"
+}

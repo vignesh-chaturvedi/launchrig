@@ -73,6 +73,12 @@ Reports are written under `.launchrig/`, which is ignored by Git. LaunchRig reda
 
 The repository includes configuration schemas, a configuration-validation GitHub Action, fixture flows, and additional CLI commands available through `--help`. See [source setup and scope](PUBLIC_SOURCE.md) for the supported source workflow.
 
+## Recorded local evidence
+
+The [normalized Android and MWA evidence package](https://github.com/vignesh-chaturvedi/launchrig/tree/main/evidence/local-android-mwa-v2) contains nine recorded results: three reference-suite passes and three controlled broken/fixed pairs, with 18 scenario checks. Its guide explains how to check file integrity and view the static HTML locally. No phone is needed to inspect the package.
+
+This is self-recorded, unattested supporting evidence. It does not establish production-wallet compatibility, Seeker or Seed Vault behavior, an on-chain transaction, or external adoption. The original v0.1.0 source-preview tag remains unchanged and contains no evidence assets.
+
 ## License
 
 LaunchRig is provided under the MIT License in `LICENSE`. The fixture app retains the upstream template notice in `apps/fixture-dapp/LICENSE.template`.

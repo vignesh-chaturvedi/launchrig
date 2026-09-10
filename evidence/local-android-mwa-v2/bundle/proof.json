@@ -1,0 +1,465 @@
+{
+  "schemaVersion": 2,
+  "kind": "launchrig-local-grant-proof",
+  "profile": "local-android-mwa-application-evidence-v2",
+  "claimStatus": "self-recorded-unattested",
+  "applicationUse": "supporting-technical-evidence-only",
+  "applicationEligibility": "not-evaluated",
+  "summary": {
+    "reportCount": 9,
+    "physicalAndroidReports": 9,
+    "physicalDeviceProfiles": 1,
+    "referenceMwaPasses": 3,
+    "controlledRegressionPairs": 3,
+    "controlledBrokenFailures": 3,
+    "controlledFixedPasses": 3,
+    "scenarioCheckCount": 18,
+    "networks": [
+      "devnet",
+      "testnet"
+    ],
+    "allExpectedStatusesObserved": true
+  },
+  "buildVerification": {
+    "sourceAllowlist": "matched",
+    "sourceDigests": "matched",
+    "normalizedRecordDigests": "generated",
+    "claimBoundaryCheck": "passed",
+    "sourceTests": "not-run-by-proof-builder",
+    "packageSmoke": "not-run-by-proof-builder"
+  },
+  "records": [
+    {
+      "recordId": "reference-mwa-01",
+      "evidenceClass": "reference-mwa",
+      "caseId": "reference-mwa-suite",
+      "variant": "observed-pass",
+      "sourceReportSha256": "15a9a7e815a0995f3f889ff38bccaf76158bfbb430c31596c7947460e2d7a1f7",
+      "launchRigVersion": "0.1.0",
+      "network": "testnet",
+      "app": {
+        "packageName": "com.solana.mobilewalletadapter.fakedapp",
+        "versionName": "1.0",
+        "versionCode": "1"
+      },
+      "wallet": {
+        "role": "reference-test-wallet",
+        "packageName": "com.solana.mobilewalletadapter.fakewallet",
+        "versionName": "1.0",
+        "versionCode": "1"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "passed",
+      "readiness": "Android/MWA Ready",
+      "durationMs": 144544,
+      "scenarioChecks": [
+        {
+          "id": "authorize",
+          "name": "Authorize and return to dApp",
+          "status": "pass",
+          "durationMs": 26816
+        },
+        {
+          "id": "siws",
+          "name": "Sign In With Solana",
+          "status": "pass",
+          "durationMs": 27991
+        },
+        {
+          "id": "sign-message",
+          "name": "Sign one fixture message",
+          "status": "pass",
+          "durationMs": 43662
+        },
+        {
+          "id": "reject",
+          "name": "Reject and recover cleanly",
+          "status": "pass",
+          "durationMs": 42734
+        }
+      ],
+      "normalizedRecordSha256": "9adb0f5ef670f41ce834af74e53cc077242e3533c272cfcaf55198bdf7cf4b03"
+    },
+    {
+      "recordId": "reference-mwa-02",
+      "evidenceClass": "reference-mwa",
+      "caseId": "reference-mwa-suite",
+      "variant": "observed-pass",
+      "sourceReportSha256": "31af7a182ab55b6d027cfdf9193fd84a2ecc41678e6dd5c41796ab92e52fc98e",
+      "launchRigVersion": "0.1.0",
+      "network": "testnet",
+      "app": {
+        "packageName": "com.solana.mobilewalletadapter.fakedapp",
+        "versionName": "1.0",
+        "versionCode": "1"
+      },
+      "wallet": {
+        "role": "reference-test-wallet",
+        "packageName": "com.solana.mobilewalletadapter.fakewallet",
+        "versionName": "1.0",
+        "versionCode": "1"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "passed",
+      "readiness": "Android/MWA Ready",
+      "durationMs": 143774,
+      "scenarioChecks": [
+        {
+          "id": "authorize",
+          "name": "Authorize and return to dApp",
+          "status": "pass",
+          "durationMs": 27559
+        },
+        {
+          "id": "siws",
+          "name": "Sign In With Solana",
+          "status": "pass",
+          "durationMs": 26614
+        },
+        {
+          "id": "sign-message",
+          "name": "Sign one fixture message",
+          "status": "pass",
+          "durationMs": 41937
+        },
+        {
+          "id": "reject",
+          "name": "Reject and recover cleanly",
+          "status": "pass",
+          "durationMs": 44346
+        }
+      ],
+      "normalizedRecordSha256": "6c38728b4d429afd593f0eb2647e7bf37a23068ffe98d1bee9f9a8bcab75fa74"
+    },
+    {
+      "recordId": "reference-mwa-03",
+      "evidenceClass": "reference-mwa",
+      "caseId": "reference-mwa-suite",
+      "variant": "observed-pass",
+      "sourceReportSha256": "4b4170f13fa145e954baed8d6230c3a91ea177db5a86dd66390f9738e87e8597",
+      "launchRigVersion": "0.1.0",
+      "network": "testnet",
+      "app": {
+        "packageName": "com.solana.mobilewalletadapter.fakedapp",
+        "versionName": "1.0",
+        "versionCode": "1"
+      },
+      "wallet": {
+        "role": "reference-test-wallet",
+        "packageName": "com.solana.mobilewalletadapter.fakewallet",
+        "versionName": "1.0",
+        "versionCode": "1"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "passed",
+      "readiness": "Android/MWA Ready",
+      "durationMs": 149824,
+      "scenarioChecks": [
+        {
+          "id": "authorize",
+          "name": "Authorize and return to dApp",
+          "status": "pass",
+          "durationMs": 28351
+        },
+        {
+          "id": "siws",
+          "name": "Sign In With Solana",
+          "status": "pass",
+          "durationMs": 26423
+        },
+        {
+          "id": "sign-message",
+          "name": "Sign one fixture message",
+          "status": "pass",
+          "durationMs": 45680
+        },
+        {
+          "id": "reject",
+          "name": "Reject and recover cleanly",
+          "status": "pass",
+          "durationMs": 45997
+        }
+      ],
+      "normalizedRecordSha256": "6f04d4d8fd3ad783291588fe7383ed6cb8583625e6b6fe809de87e978c16df13"
+    },
+    {
+      "recordId": "rejection-recovery-broken",
+      "evidenceClass": "controlled-regression",
+      "caseId": "rejection-recovery",
+      "variant": "broken",
+      "sourceReportSha256": "13cba6ec68239069b7c5b21c2bab679ac2eae89cc32fc1500b26174c667dc263",
+      "launchRigVersion": "0.1.0",
+      "network": "devnet",
+      "app": {
+        "packageName": "dev.launchrig.fixture",
+        "versionName": "0.2.0",
+        "versionCode": "2"
+      },
+      "wallet": {
+        "role": "mock-mwa-wallet",
+        "packageName": "com.solana.mwallet",
+        "versionName": "1.0.1",
+        "versionCode": "2"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "failed",
+      "readiness": "Not Ready",
+      "durationMs": 83169,
+      "scenarioChecks": [
+        {
+          "id": "rejection-recovery",
+          "name": "Controlled wallet rejection recovery",
+          "status": "fail",
+          "durationMs": 63841
+        }
+      ],
+      "normalizedRecordSha256": "967c839795621e0333ef10f5a548d6e8c22037fbe7ce2450c02ba36d58988d67"
+    },
+    {
+      "recordId": "rejection-recovery-fixed",
+      "evidenceClass": "controlled-regression",
+      "caseId": "rejection-recovery",
+      "variant": "fixed",
+      "sourceReportSha256": "d8a8a819931adc564f2d4927cec9adfb6ac8b42be74fc3b07eecf1425704cb8e",
+      "launchRigVersion": "0.1.0",
+      "network": "devnet",
+      "app": {
+        "packageName": "dev.launchrig.fixture",
+        "versionName": "0.2.0",
+        "versionCode": "2"
+      },
+      "wallet": {
+        "role": "mock-mwa-wallet",
+        "packageName": "com.solana.mwallet",
+        "versionName": "1.0.1",
+        "versionCode": "2"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "passed",
+      "readiness": "Android Device Ready",
+      "durationMs": 44045,
+      "scenarioChecks": [
+        {
+          "id": "rejection-recovery",
+          "name": "Controlled wallet rejection recovery",
+          "status": "pass",
+          "durationMs": 41000
+        }
+      ],
+      "normalizedRecordSha256": "e87462ce93bb58b5e31481ea7de22a3b98efa0b80547c1aa201cbdaa95389c32"
+    },
+    {
+      "recordId": "stale-authorization-recovery-broken",
+      "evidenceClass": "controlled-regression",
+      "caseId": "stale-authorization-recovery",
+      "variant": "broken",
+      "sourceReportSha256": "10bf01acb12a2a67f5bfe6b63e399657b99f6960c967c895be85f36b961a2e16",
+      "launchRigVersion": "0.1.0",
+      "network": "devnet",
+      "app": {
+        "packageName": "dev.launchrig.fixture",
+        "versionName": "0.2.0",
+        "versionCode": "2"
+      },
+      "wallet": {
+        "role": "mock-mwa-wallet",
+        "packageName": "com.solana.mwallet",
+        "versionName": "1.0.1",
+        "versionCode": "2"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "failed",
+      "readiness": "Not Ready",
+      "durationMs": 79009,
+      "scenarioChecks": [
+        {
+          "id": "stale-authorization-recovery",
+          "name": "Controlled stale authorization recovery",
+          "status": "fail",
+          "durationMs": 75496
+        }
+      ],
+      "normalizedRecordSha256": "ba16f8d932b3e8dc94aaa7c87168c59cc1e8e3a53a78a277ac08cff05e1777bc"
+    },
+    {
+      "recordId": "stale-authorization-recovery-fixed",
+      "evidenceClass": "controlled-regression",
+      "caseId": "stale-authorization-recovery",
+      "variant": "fixed",
+      "sourceReportSha256": "ca3626766194d2eec331a01951f6e4b18388938545c5ac4a3b52265c87426bf2",
+      "launchRigVersion": "0.1.0",
+      "network": "devnet",
+      "app": {
+        "packageName": "dev.launchrig.fixture",
+        "versionName": "0.2.0",
+        "versionCode": "2"
+      },
+      "wallet": {
+        "role": "mock-mwa-wallet",
+        "packageName": "com.solana.mwallet",
+        "versionName": "1.0.1",
+        "versionCode": "2"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "passed",
+      "readiness": "Android Device Ready",
+      "durationMs": 66178,
+      "scenarioChecks": [
+        {
+          "id": "stale-authorization-recovery",
+          "name": "Controlled stale authorization recovery",
+          "status": "pass",
+          "durationMs": 62908
+        }
+      ],
+      "normalizedRecordSha256": "3c19ca6d9b41514b4c18e5e58abcbfac03f9740017e6d8dbe1c19ef4ff2503c2"
+    },
+    {
+      "recordId": "process-death-recovery-broken",
+      "evidenceClass": "controlled-regression",
+      "caseId": "process-death-recovery",
+      "variant": "broken",
+      "sourceReportSha256": "f15877a101d45142768e7b57a5639229d09add6b5430db226808ecc7dafdb113",
+      "launchRigVersion": "0.1.0",
+      "network": "devnet",
+      "app": {
+        "packageName": "dev.launchrig.fixture",
+        "versionName": "0.2.0",
+        "versionCode": "2"
+      },
+      "wallet": {
+        "role": "mock-mwa-wallet",
+        "packageName": "com.solana.mwallet",
+        "versionName": "1.0.1",
+        "versionCode": "2"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "failed",
+      "readiness": "Not Ready",
+      "durationMs": 88111,
+      "scenarioChecks": [
+        {
+          "id": "process-death-recovery",
+          "name": "Controlled process-death recovery",
+          "status": "fail",
+          "durationMs": 85412
+        }
+      ],
+      "normalizedRecordSha256": "8cfec06aea05216fb66e17739f671073c419ea5365c0bfaffcce39dbac932951"
+    },
+    {
+      "recordId": "process-death-recovery-fixed",
+      "evidenceClass": "controlled-regression",
+      "caseId": "process-death-recovery",
+      "variant": "fixed",
+      "sourceReportSha256": "6cd1ebdd452d9413c594f698e27f58053551c21a73e2219db44d027182589f3b",
+      "launchRigVersion": "0.1.0",
+      "network": "devnet",
+      "app": {
+        "packageName": "dev.launchrig.fixture",
+        "versionName": "0.2.0",
+        "versionCode": "2"
+      },
+      "wallet": {
+        "role": "mock-mwa-wallet",
+        "packageName": "com.solana.mwallet",
+        "versionName": "1.0.1",
+        "versionCode": "2"
+      },
+      "device": {
+        "manufacturer": "motorola",
+        "model": "moto g(40) fusion",
+        "androidVersion": "12",
+        "apiLevel": 31,
+        "abi": "arm64-v8a",
+        "physicalDevice": true
+      },
+      "outcome": "passed",
+      "readiness": "Android Device Ready",
+      "durationMs": 58119,
+      "scenarioChecks": [
+        {
+          "id": "process-death-recovery",
+          "name": "Controlled process-death recovery",
+          "status": "pass",
+          "durationMs": 54975
+        }
+      ],
+      "normalizedRecordSha256": "a30d5ee0e9c4213109ded3e811e1284be7d3cd3873f04df6535c66d954ad560f"
+    }
+  ],
+  "claims": {
+    "award": "not-established",
+    "externalDefect": "not-established",
+    "externalPublisher": "not-established",
+    "onChainTransaction": "not-established",
+    "productionWallet": "not-established",
+    "seedVault": "not-established",
+    "seekerHardware": "not-established"
+  },
+  "limitations": [
+    "This package contains self-recorded fresh-session evidence and no independent attestation.",
+    "The reports used an ordinary physical Android device with reference or mock MWA wallets.",
+    "Controlled broken and fixed fixtures do not establish defects in an external publisher project.",
+    "The observed flows do not establish a production wallet, Seed Vault, Seeker hardware, or an on-chain transaction.",
+    "Stable private source SHA-256 values provide integrity bindings and may allow correlation by anyone who already has the private source bytes.",
+    "This package may support a grant application, but it does not evaluate submission eligibility or establish an award."
+  ],
+  "proofSha256": "36908ca01e8727806253b0570948663b42cf092ea259026f43c34d29f237dd82"
+}

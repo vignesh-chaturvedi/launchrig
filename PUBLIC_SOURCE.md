@@ -2,7 +2,7 @@
 
 This checkout contains the LaunchRig product and controlled fixture source. Its history is a filtered reconstruction of product development. Original author dates are retained, commit IDs change, and commits with no exported product changes are omitted. Documentation was added separately after review. Commit metadata uses the maintainer's GitHub noreply address. This is not the original unfiltered repository history.
 
-The checkout includes no recorded phone reports, APKs, wallet data, completed operator records, or application material. Tests create synthetic input in temporary directories. Two optional cached-APK checks skip when the local binaries are absent. A skipped binary check does not establish an artifact or physical-device result.
+The checkout includes no raw phone reports, APKs, wallet secrets, completed operator records, or application drafts. A separately reviewed [normalized six-file evidence package](evidence/local-android-mwa-v2/README.md) is included after the v0.1.0 source preview. It contains limited device and test metadata with explicit claim boundaries, not the original report bytes. The v0.1.0 tag remains source-only. Tests create synthetic input in temporary directories. Two optional cached-APK checks skip when the local binaries are absent. A skipped binary check does not establish an artifact or physical-device result.
 
 ## Local verification
 
