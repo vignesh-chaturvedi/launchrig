@@ -75,6 +75,8 @@ The repository includes configuration schemas, a configuration-validation GitHub
 
 ## Recorded local evidence
 
+Read the [controlled Android wallet recovery case study](case-studies/android-wallet-recovery.md) for the rejection, stale-authorization, and process-death checks, with source links and evidence limits.
+
 The [normalized Android and MWA evidence package](https://github.com/vignesh-chaturvedi/launchrig/tree/main/evidence/local-android-mwa-v2) contains nine recorded results: three reference-suite passes and three controlled broken/fixed pairs, with 18 scenario checks. Its guide explains how to check file integrity and view the static HTML locally. No phone is needed to inspect the package.
 
 This is self-recorded, unattested supporting evidence. It does not establish production-wallet compatibility, Seeker or Seed Vault behavior, an on-chain transaction, or external adoption. The original v0.1.0 source-preview tag remains unchanged and contains no evidence assets.

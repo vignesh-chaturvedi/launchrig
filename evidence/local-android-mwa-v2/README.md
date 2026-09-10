@@ -6,6 +6,7 @@ The evidence is self-recorded and unattested, for supporting technical evidence 
 
 ## View the evidence
 
+- [Controlled Android wallet recovery case study](../../case-studies/android-wallet-recovery.md)
 - [HTML report](bundle/index.html)
 - [Normalized proof](bundle/proof.json)
 - [Proof schema](bundle/schema.json)
