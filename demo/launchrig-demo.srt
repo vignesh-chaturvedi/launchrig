@@ -1,0 +1,96 @@
+1
+00:00:00,000 --> 00:00:03,600
+LaunchRig checks Android wallet-flow recovery.
+
+2
+00:00:03,600 --> 00:00:08,000
+Published evidence walkthrough,
+not live phone execution.
+
+3
+00:00:08,000 --> 00:00:12,000
+One ordinary Android 12 / API 31 profile.
+
+4
+00:00:12,000 --> 00:00:16,000
+Three reference test-wallet suites passed on testnet.
+
+5
+00:00:16,000 --> 00:00:20,000
+Authorization, SIWS, message signing, rejection recovery.
+
+6
+00:00:20,000 --> 00:00:24,000
+Source-defined behavior:
+broken rejection stays pending.
+
+7
+00:00:24,000 --> 00:00:28,000
+Fixed source reports USER_REJECTED and enables retry.
+
+8
+00:00:28,000 --> 00:00:32,000
+Recorded outcomes: broken failed; fixed passed.
+
+9
+00:00:32,000 --> 00:00:37,000
+Source explains behavior;
+proof records scenario outcomes.
+
+10
+00:00:37,000 --> 00:00:40,750
+Broken source keeps stale authorization pending.
+
+11
+00:00:40,750 --> 00:00:44,500
+Fixed source clears stale authorization.
+
+12
+00:00:44,500 --> 00:00:48,250
+Reconnection is supported by the fixed source.
+
+13
+00:00:48,250 --> 00:00:52,000
+Recorded outcomes: broken failed; fixed passed.
+
+14
+00:00:52,000 --> 00:00:55,750
+Fixed source exposes RECOVERED_UNKNOWN and enables retry.
+
+15
+00:00:55,750 --> 00:00:59,500
+Interrupted signing outcome remains UNKNOWN.
+
+16
+00:00:59,500 --> 00:01:03,250
+Neither signing completion nor cancellation is claimed.
+
+17
+00:01:03,250 --> 00:01:07,000
+Recorded outcomes: broken failed; fixed passed.
+
+18
+00:01:07,000 --> 00:01:11,000
+Three reference passes; three controlled recovery pairs.
+
+19
+00:01:11,000 --> 00:01:15,000
+Three broken failures; three paired fixed passes.
+
+20
+00:01:15,000 --> 00:01:19,000
+Nine reports, 18 checks. Not external bugs.
+
+21
+00:01:19,000 --> 00:01:22,500
+Self-recorded, unattested.
+Checksums: integrity, not authenticity.
+
+22
+00:01:22,500 --> 00:01:26,000
+Seeker, Seed Vault, production wallets:
+not validated.
+
+23
+00:01:26,000 --> 00:01:30,000
+Inspect the source and evidence on GitHub.

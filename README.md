@@ -6,6 +6,14 @@ LaunchRig is a TypeScript CLI prototype for checking an Android app on a physica
 
 The current validation scope is ordinary Android with reference MWA and Mock MWA test wallets. The controlled app exercises wallet rejection, stale authorization, and recovery after the dApp process dies. Mainnet is unsupported. Seeker hardware, production wallets, and Seed Vault behavior have not been validated.
 
+## Watch the 90-second demo
+
+[![Watch LaunchRig's published evidence walkthrough](demo/launchrig-demo-thumbnail.png)](demo/launchrig-demo.mp4)
+
+[Watch or download the video](demo/launchrig-demo.mp4) · [Captions and evidence limits](demo/README.md)
+
+An overview of the published Android and MWA results, including three controlled broken/fixed recovery pairs. Captions carry the explanation; audio contains only subtle transition cues, with no narration or music. This is a walkthrough of self-recorded, unattested evidence, not live phone execution or Seeker validation.
+
 ## Start with the CLI
 
 Use Node.js 20.11 or later and pnpm 10.34.0. From this source checkout:
