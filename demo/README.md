@@ -1,6 +1,6 @@
 # LaunchRig: controlled Android wallet recovery
 
-[![Watch the 90-second LaunchRig walkthrough](launchrig-demo-thumbnail.png)](launchrig-demo.mp4)
+https://github.com/user-attachments/assets/ffc9650b-b944-49c9-a24a-7e2b540c6f27
 
 [Watch or download the 1080p MP4](launchrig-demo.mp4) · [Download captions](launchrig-demo.srt)
 

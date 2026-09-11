@@ -8,7 +8,7 @@ The current validation scope is ordinary Android with reference MWA and Mock MWA
 
 ## Watch the 90-second demo
 
-[![Watch LaunchRig's published evidence walkthrough](demo/launchrig-demo-thumbnail.png)](demo/launchrig-demo.mp4)
+https://github.com/user-attachments/assets/ffc9650b-b944-49c9-a24a-7e2b540c6f27
 
 [Watch or download the video](demo/launchrig-demo.mp4) · [Captions and evidence limits](demo/README.md)
 
