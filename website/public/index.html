@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Inspect wallet rejection, stale authorization, and Android process recovery with LaunchRig, a release test rig for Solana Mobile apps.">
+  <meta name="theme-color" content="#101216">
+  <title>LaunchRig | Inspect the return path</title>
+  <link rel="icon" type="image/webp" href="assets/ion-wing.webp">
+  <link rel="stylesheet" href="styles.css">
+  <script src="motion.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="header wrap">
+    <a class="wordmark" href="#main"><img class="brand-icon" src="assets/ion-wing.webp" width="52" height="52" alt="" decoding="async">LaunchRig</a>
+    <nav aria-label="Main navigation"><a href="#evidence">Evidence</a><a href="https://github.com/vignesh-chaturvedi/launchrig">GitHub <span aria-hidden="true">↗</span></a></nav>
+    <span class="review-label">ANDROID / MWA</span>
+  </header>
+  <main id="main">
+    <section class="sequence wrap" aria-label="How LaunchRig inspects wallet recovery">
+      <div class="intro" id="connect">
+        <p class="eyebrow">SOLANA MOBILE / RELEASE TOOLING</p>
+        <h1>Test the return.<br><span>Not just the<br>connection.</span></h1>
+        <p class="lead">Your wallet connects. What happens next?<br>Inspect rejection, expired sessions, and Android process recovery before release.</p>
+        <div class="actions">
+          <a class="button demo-button" href="https://github.com/vignesh-chaturvedi/launchrig#watch-the-90-second-demo">
+            <span class="demo-copy">Watch the 90-second demo</span>
+            <span class="demo-fill" aria-hidden="true"><span class="demo-copy">Watch the 90-second demo</span></span>
+            <span class="demo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></span>
+          </a>
+          <a class="text-link" href="#evidence">Inspect the evidence <span aria-hidden="true">↓</span></a>
+        </div>
+        <div class="intro-note"><span class="mono">01 / CONNECT</span><span>Physical Android. Local execution.<br>Inspectable reports.</span></div>
+      </div>
+      <figure class="visual" aria-labelledby="rig-caption">
+        <div class="visual-bar"><span class="mono">LR / RECOVERY TEST RIG</span><button id="motion-toggle" type="button" aria-pressed="false" hidden>Pause motion</button></div>
+        <div class="stage" aria-hidden="true">
+          <div class="rig">
+            <div class="plane report-plane"><div class="plane-bar"><span>03 / EVIDENCE</span><span>HTML · JSON · JUNIT</span></div><div class="report-title">Recovery report<span class="pill">LOCAL</span></div><div class="report-row"><span>Broken fixture</span><b class="fail">FAIL</b></div><div class="report-row"><span>Paired fix</span><b class="pass">PASS</b></div><div class="report-foot">FAILURES STAY IN THE RECORD</div></div>
+            <div class="plane wallet-plane"><div class="plane-bar"><span>02 / WALLET SESSION</span><span>MWA</span></div><div class="wallet-title">Authorization boundary</div><div class="session-line"><span>Request</span><span class="signal">Awaiting response</span></div><div class="session-line"><span>Return path</span><span class="blue">Under test</span></div></div>
+            <div class="plane app-plane"><div class="plane-bar"><span>01 / ANDROID APP</span><span>FIXTURE</span></div><div class="app-title">Sign request<span class="app-arrow">↗</span></div><div class="app-footer"><span>App lifecycle</span><span class="blue">Recovery checks</span></div></div>
+          </div>
+          <div class="axis-label axis-app">APP</div><div class="axis-label axis-wallet">WALLET</div><div class="axis-label axis-report">REPORT</div>
+        </div>
+        <figcaption id="rig-caption">Illustrative flow, not a live device session.</figcaption>
+        <nav class="stage-nav" aria-label="Explore the test rig"><a href="#connect" data-stage="0" aria-current="step"><span>01</span>Connect</a><a href="#interrupt" data-stage="1"><span>02</span>Interrupt</a><a href="#inspect" data-stage="2"><span>03</span>Inspect</a></nav>
+      </figure>
+      <article class="chapter" id="interrupt">
+        <p class="eyebrow">02 / INTERRUPT</p><h2>A connection is<br>only the beginning.</h2><p>Users reject requests. Sessions expire. Android stops processes. Each return path deserves its own test.</p>
+        <ol class="failure-list"><li><span>R01</span><div><h3>Wallet rejection</h3><p>Return to a usable state without reporting success.</p></div></li><li><span>R02</span><div><h3>Stale authorization</h3><p>Clear the stale session and offer reconnection.</p></div></li><li><span>R03</span><div><h3>Process death</h3><p>Preserve uncertainty. Allow a deliberate retry.</p></div></li></ol>
+      </article>
+      <article class="chapter" id="inspect">
+        <p class="eyebrow">03 / INSPECT</p><h2>Keep the failure.<br><span class="blue">Prove the recovery.</span></h2><p>A passing fix must not erase its broken counterpart. LaunchRig keeps both results available for inspection.</p><div class="outcome"><span class="mono">PROCESS-DEATH RECOVERY</span><code>RECOVERED_UNKNOWN</code><p>Retry is available. Interrupted signing is not assumed to have succeeded.</p></div><a class="text-link" href="https://github.com/vignesh-chaturvedi/launchrig/blob/14bf99da7de198a605637dc3452cc4ff151e8e29/case-studies/android-wallet-recovery.md">Read the recovery case study <span aria-hidden="true">↗</span></a>
+      </article>
+    </section>
+    <section class="evidence" id="evidence"><div class="wrap">
+      <div class="evidence-heading"><p class="eyebrow">THE RECORDED SNAPSHOT</p><h2>Real runs.<br>Explicit limits.</h2><p>Self-recorded, unattested evidence from one ordinary Android 12 / API 31 device profile. This is separate from the illustrative diagram above.</p></div>
+      <dl class="numbers"><div><dt>Normalized reports</dt><dd>09</dd></div><div><dt>Scenario checks</dt><dd>18</dd></div><div><dt>Broken / fixed pairs</dt><dd>03</dd></div></dl>
+      <div class="evidence-bottom"><a class="button primary" href="https://github.com/vignesh-chaturvedi/launchrig/tree/07160c9e71fa90a5723dbc3da5e42a2cd439996c/evidence/local-android-mwa-v2">Open the evidence package <span aria-hidden="true">↗</span></a><p>Development wallets and controlled fixtures only. No Seeker, Seed Vault, production-wallet compatibility, on-chain execution, or external adoption claims.</p></div>
+    </div></section>
+  </main>
+  <footer class="wrap"><a class="wordmark" href="#main"><img class="brand-icon" src="assets/ion-wing.webp" width="52" height="52" alt="" decoding="async">LaunchRig</a><p>Inspectable recovery tests for Solana Mobile apps.</p><a href="https://github.com/vignesh-chaturvedi/launchrig">Explore the source <span aria-hidden="true">↗</span></a></footer>
+</body>
+</html>

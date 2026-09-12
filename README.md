@@ -1,3 +1,5 @@
+<p><img src="website/public/assets/ion-wing.webp" width="72" height="72" alt="LaunchRig Ion Wing logo"></p>
+
 # LaunchRig
 
 The release test rig for Solana Mobile apps.
@@ -15,6 +17,8 @@ https://github.com/user-attachments/assets/ffc9650b-b944-49c9-a24a-7e2b540c6f27
 An overview of the published Android and MWA results, including three controlled broken/fixed recovery pairs. Captions carry the explanation; audio contains only subtle transition cues, with no narration or music. This is a walkthrough of self-recorded, unattested evidence, not live phone execution or Seeker validation.
 
 ## Start with the CLI
+
+The [product website source and Vercel setup guide](website/README.md) are available separately. The website is static and does not require the CLI build or an Android phone.
 
 Use Node.js 20.11 or later and pnpm 10.34.0. From this source checkout:
 
