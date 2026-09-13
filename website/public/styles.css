@@ -29,7 +29,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-
 ::selection { color: var(--ink); background: var(--blue); }
 .wrap { width: min(100%, 1440px); padding-inline: var(--gutter); margin-inline: auto; }
 .header { min-height: 100px; display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 3rem; }
-.wordmark { display: inline-flex; align-items: center; gap: .75rem; font-size: 1.375rem; font-weight: 600; letter-spacing: -.045em; min-height: 44px; }
+.wordmark { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; max-width: 100%; font-size: 1.375rem; font-weight: 600; letter-spacing: -.045em; min-height: 44px; }
 .brand-icon { display: block; width: 3.25rem; height: 3.25rem; flex: 0 0 auto; object-fit: contain; }
 .header nav { display: flex; gap: 2rem; margin-left: auto; }
 .header nav a, footer > a:last-child { min-height: 44px; display: inline-flex; align-items: center; gap: .5rem; font-size: .875rem; }
@@ -53,7 +53,7 @@ h1 span { color: var(--muted); }
 .mono { font: .75rem/1.6 var(--mono); letter-spacing: .025em; }
 .intro-note .mono { color: var(--blue); white-space: nowrap; }
 .visual { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 2rem; align-self: start; margin: 2rem 0 0; min-width: 0; }
-.visual-bar { display: flex; align-items: center; justify-content: space-between; min-height: 44px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.visual-bar { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; min-height: 44px; color: var(--muted); border-bottom: 1px solid var(--line); }
 #motion-toggle { border: 1px solid var(--control); background: transparent; border-radius: 5px; min-height: 40px; padding: .5rem .75rem; font-size: .75rem; cursor: pointer; }
 [hidden] { display: none !important; }
 .stage { position: relative; height: 500px; perspective: 1100px; overflow: clip; font-size: 16px; container: rig-stage / inline-size; }
@@ -76,6 +76,7 @@ h1 span { color: var(--muted); }
 .app-footer { display: flex; justify-content: space-between; font: .8em var(--mono); margin-top: .8em; }
 .axis-label { position: absolute; font: .75em var(--mono); color: var(--muted); letter-spacing: .1em; border-left: 1px solid var(--control); padding-left: .5em; }
 .axis-app { right: 1rem; top: 85px; }.axis-wallet { right: .25rem; top: 225px; }.axis-report { left: 1.5rem; bottom: 40px; }
+.mobile-legend { display: none; }
 figcaption { color: var(--muted); font-size: .75rem; padding-block: .75rem; }
 .stage-nav { display: flex; border-top: 1px solid var(--line); }
 .stage-nav a { flex: 1; display: flex; align-items: center; gap: .75rem; min-height: 52px; color: var(--muted); font-size: .875rem; border-top: 1px solid transparent; margin-top: -1px; }
@@ -119,7 +120,7 @@ footer p { color: var(--muted); font-size: .75rem; margin-right: auto; }
   .demo-button:focus-visible .demo-fill { clip-path: inset(0 round 999px); transition: none; }
   .demo-button:focus-visible .demo-icon { opacity: 1; transform: translateY(-50%); transition: none; }
 }
-@media (min-width: 1001px) and (min-height: 701px) and (prefers-reduced-motion: no-preference) {
+@media (prefers-reduced-motion: no-preference) {
   .motion-enabled .rig { transform: rotateX(var(--rx, 48deg)) rotateY(var(--ry, 0deg)) rotateZ(var(--rz, -28deg)); }
   .motion-enabled .app-plane { transform: translate3d(var(--ax, 0px), var(--ay, -45px), var(--az, 120px)); }
   .motion-enabled .wallet-plane { transform: translate3d(var(--wx, 0px), var(--wy, -2px), var(--wz, 25px)); }
@@ -131,10 +132,16 @@ footer p { color: var(--muted); font-size: .75rem; margin-right: auto; }
   .intro { grid-column: 1 / -1; min-height: 0; padding-block: 3rem 1rem; }
   h1 { font-size: clamp(3.2rem, 7vw, 5rem); }.lead { max-width: 52ch; }.intro-note { max-width: 40rem; }
   .visual { position: relative; top: auto; grid-column: 1 / -1; grid-row: 2; margin: 1rem 0 2rem; }
-  .rig { scale: .94; top: 130px; }
-  .axis-app { right: 10%; }.axis-wallet { right: 6%; }.axis-report { left: 12%; }
+  .visual-bar { padding-block: .5rem; }
+  .stage { height: 452px; }
+  .rig { scale: .94; top: 112px; transform: rotateX(40deg) rotateZ(-20deg); --rx: 40deg; --rz: -20deg; --ax: 0px; --ay: -48px; --az: 95px; --wx: 0px; --wy: 0px; --wz: 15px; --ex: 0px; --ey: 45px; --ez: -55px; }
+  .app-plane { transform: translate3d(0, -48px, 95px); }
+  .wallet-plane { transform: translate3d(0, 0, 15px); }
+  .report-plane { transform: translate3d(0, 45px, -55px); }
+  .axis-label { display: none; }
+  .mobile-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 5rem), 1fr)); gap: .75rem; color: var(--muted); font: .75rem/1.5 var(--mono); letter-spacing: .05em; }
+  .mobile-legend span { border-left: 1px solid var(--control); padding-left: .5rem; overflow-wrap: anywhere; }
   .chapter { grid-column: auto; min-height: 0; padding-block: 2rem 4rem; }
-  #motion-toggle { display: none; }
   .evidence-bottom { gap: 2rem; }.evidence-heading { gap: 1rem 2rem; }
 }
 @media (max-width: 600px) {
@@ -142,7 +149,7 @@ footer p { color: var(--muted); font-size: .75rem; margin-right: auto; }
   .sequence { display: flex; flex-direction: column; }.intro { padding-top: 2.5rem; }h1 { font-size: clamp(2.65rem, 10.6vw, 3.8rem); }
   .eyebrow { font-size: .75rem; letter-spacing: .035em; }.intro-note { flex-direction: column; gap: .75rem; }
   .visual { width: 100%; }.visual-bar .mono { font-size: .75rem; }
-  .stage { height: 390px; }.rig { scale: .71; top: 75px; }.axis-app { top: 50px; right: 0; }.axis-wallet { top: 175px; right: 0; }.axis-report { bottom: 20px; left: 0; }
+  .stage { height: 336px; }.rig { scale: .65; top: 44px; }
   .stage-nav { flex-wrap: wrap; }.stage-nav a { gap: .5rem; font-size: .875rem; min-width: min-content; }.chapter { padding-block: 2rem 3rem; }.chapter h2 { font-size: 2.5rem; }
   .evidence { padding-block: 3rem; }.evidence-heading { display: block; }.evidence-heading .eyebrow { margin-bottom: 1.5rem; }
   .numbers { gap: .75rem; }.numbers div { padding-left: .75rem; min-width: 0; }.numbers dd { font-size: 2.5rem; }.numbers dt { font-size: .75rem; overflow-wrap: anywhere; }

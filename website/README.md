@@ -35,7 +35,7 @@ Open `http://127.0.0.1:4183/`. This serves only the website assets.
 
 ## Motion and evidence limits
 
-Desktop scrolling changes the illustrative card poses; fine-pointer movement adds limited tilt. The pause control freezes the diagram. Small or short screens receive a static layout. The demo button adapts the dot-to-fill technique in [Denys Sergushkin's CTA reference](https://dribbble.com/shots/23115628-Interaction-with-CTA), using LaunchRig colors and unchanged demo copy. Reference media is not included.
+Desktop scrolling changes the illustrative card poses; fine-pointer movement adds limited tilt. Small and short screens use compact poses linked to scrolling while the diagram is visible, with a separate label row and no sticky scrolling. The pause control freezes the diagram at every screen size. The demo button adapts the dot-to-fill technique in [Denys Sergushkin's CTA reference](https://dribbble.com/shots/23115628-Interaction-with-CTA), using LaunchRig colors and unchanged demo copy. Reference media is not included.
 
 Reduced-motion users receive static controls. Navigation remains usable without JavaScript. There is no perpetual rendering loop.
 

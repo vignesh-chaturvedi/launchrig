@@ -2,6 +2,7 @@
   const root = document.documentElement;
   const sequence = document.querySelector('.sequence');
   const visual = document.querySelector('.visual');
+  const stage = document.querySelector('.stage');
   const rig = document.querySelector('.rig');
   const toggle = document.querySelector('#motion-toggle');
   const anchors = [...document.querySelectorAll('[data-stage]')];
@@ -20,6 +21,12 @@
     { rx: 38, rz: -18, ax: -22, ay: -78, az: 130, wx: 18, wy: 0, wz: 20, ex: 10, ey: 70, ez: -65 },
     { rx: 12, rz: -6, ax: 20, ay: -115, az: -50, wx: -20, wy: -55, wz: -5, ex: 0, ey: 65, ez: 135 }
   ];
+  // Compact poses keep the full recovery sequence inside the mobile canvas.
+  const compactPoses = [
+    { rx: 40, rz: -20, ax: 0, ay: -48, az: 95, wx: 0, wy: 0, wz: 15, ex: 0, ey: 45, ez: -55 },
+    { rx: 30, rz: -12, ax: -12, ay: -65, az: 100, wx: 12, wy: 0, wz: 15, ex: 0, ey: 50, ez: -50 },
+    { rx: 16, rz: -4, ax: 12, ay: -75, az: -45, wx: -12, wy: -30, wz: 0, ex: 0, ey: 55, ez: 80 }
+  ];
   function render() {
     frame = 0;
     if (document.hidden) return;
@@ -29,19 +36,23 @@
       if (i === chapterIndex) anchor.setAttribute('aria-current', 'step');
       else anchor.removeAttribute('aria-current');
     });
-    if (!visible || paused || reduced.matches || !desktop.matches) return;
-    const bounds = sequence.getBoundingClientRect();
-    const progress = clamp((80 - bounds.top) / Math.max(1, bounds.height - innerHeight + 80), 0, 1) * 2;
+    if (!visible || paused || reduced.matches) return;
+    const bounds = (desktop.matches ? sequence : stage).getBoundingClientRect();
+    // Mobile has no sticky column. Complete the movement while its canvas is in view.
+    const progress = desktop.matches
+      ? clamp((80 - bounds.top) / Math.max(1, bounds.height - innerHeight + 80), 0, 1) * 2
+      : clamp((innerHeight * .85 - bounds.top) / Math.max(1, innerHeight * .65), 0, 1) * 2;
+    const activePoses = desktop.matches ? poses : compactPoses;
     const index = Math.min(1, Math.floor(progress));
     const t = progress - index;
     const smooth = t * t * (3 - 2 * t);
-    for (const key of Object.keys(poses[0])) {
-      let value = mix(poses[index][key], poses[index + 1][key], smooth);
-      if (key === 'rx') value += tiltY;
+    for (const key of Object.keys(activePoses[0])) {
+      let value = mix(activePoses[index][key], activePoses[index + 1][key], smooth);
+      if (key === 'rx' && desktop.matches) value += tiltY;
       const unit = key.startsWith('r') ? 'deg' : 'px';
       rig.style.setProperty(`--${key}`, `${value.toFixed(2)}${unit}`);
     }
-    rig.style.setProperty('--ry', `${tiltX.toFixed(2)}deg`);
+    rig.style.setProperty('--ry', `${(desktop.matches ? tiltX : 0).toFixed(2)}deg`);
   }
   function schedule() {
     if (!frame && !document.hidden) frame = requestAnimationFrame(render);
@@ -49,10 +60,14 @@
   function configure() {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
-    const enabled = !reduced.matches && desktop.matches;
+    const enabled = !reduced.matches;
+    tiltX = 0;
+    tiltY = 0;
+    // Breakpoint changes must not retain a paused desktop pose on a narrow canvas.
+    rig.removeAttribute('style');
     root.classList.toggle('motion-enabled', enabled);
     toggle.hidden = !enabled;
-    if (!enabled) { rig.removeAttribute('style'); anchors.forEach(a => a.removeAttribute('aria-current')); }
+    if (!enabled) anchors.forEach(a => a.removeAttribute('aria-current'));
     schedule();
   }
   toggle.addEventListener('click', () => {
