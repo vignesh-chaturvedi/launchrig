@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-status="review-ready-unpublished">
+<html lang="en" data-status="published-pending-final-review">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -660,6 +660,49 @@
       #printButton { display: none; }
     }
 
+    @media (min-width: 1050px) and (max-height: 760px) {
+      :root { --slide-pad: 34px; }
+      h2 { margin-bottom: 18px; font-size: clamp(44px, 4.7vw, 64px); }
+      .eyebrow { margin-bottom: 10px; }
+      .flow { margin-top: 20px; }
+      .flow-step { min-height: 168px; padding: 18px 16px; }
+      .flow-step strong { margin: 27px 0 7px; font-size: 22px; }
+      .flow-step p { font-size: 15px; line-height: 1.38; }
+      .safety-row { margin-top: 12px; font-size: 15px; }
+      .result { min-height: 83px; padding: 11px 14px; }
+      .result strong { margin-top: 11px; font-size: 18px; }
+      .reference-proof { min-height: 80px; padding: 13px; }
+      .reference-proof strong { font-size: 30px; }
+      .reference-proof span { margin-top: 6px; font-size: 16px; }
+      .proof-metric { min-height: 86px; padding: 12px; }
+      .proof-metric strong { font-size: 42px; }
+      .proof-metric span { margin-top: 6px; font-size: 16px; }
+      .proof-chip { padding: 6px 8px; font-size: 13px; }
+      .proof-caption { font-size: 15px; }
+      .proof-links { font-size: 14px; }
+      .now-grid { margin-top: 20px; }
+      .now-metric, .now-thesis { min-height: 210px; padding: 22px; }
+      .now-metric strong { font-size: 74px; }
+      .now-metric p { margin: 17px 0 12px; font-size: 19px; }
+      .now-thesis p { font-size: 24px; }
+      .boundary-layout { margin-top: 14px; }
+      .boundary { min-height: 0; padding: 20px; }
+      .boundary ul { margin-top: 13px; gap: 9px; }
+      .boundary li { font-size: 16px; line-height: 1.3; }
+      .stack-note { margin-top: 10px; font-size: 14px; }
+      .comparison-wrap { margin-top: 12px; }
+      .comparison th, .comparison td { padding: 10px 12px; font-size: 15px; }
+      .comparison th { font-size: 14px; }
+      .layer-note { margin-top: 9px; font-size: 13px; }
+      .shipped-item { padding: 9px 0; }
+      .shipped-item strong { font-size: 19px; }
+      .shipped-item span { font-size: 14px; }
+      .execution-card { padding: 20px; }
+      .execution-card .big { margin: 9px 0; font-size: 42px; }
+      .execution-card p { font-size: 16px; }
+      .execution-card .status-line { margin-top: 12px; padding-top: 10px; font-size: 12px; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .slide.is-active { animation: none; }
       .progress-fill { transition: none; }
@@ -737,7 +780,7 @@
     </div>
   </header>
 
-  <main id="deck" class="deck" data-status="review-ready-unpublished" aria-live="polite">
+  <main id="deck" class="deck" data-status="published-pending-final-review" aria-live="polite">
     <section class="slide is-active" data-slide="1" aria-label="Slide 1 of 10">
       <div class="canvas">
         <span class="slide-index">01 / 10</span>
@@ -804,7 +847,7 @@
       <div class="canvas">
         <span class="slide-index">03 / 10</span>
         <p class="eyebrow">One versioned release contract</p>
-        <h2>Turn wallet and lifecycle checks into one repeatable gate.</h2>
+        <h2>One release gate for wallet recovery.</h2>
         <div class="flow" aria-label="LaunchRig workflow">
           <div class="flow-step"><span class="number">01</span><strong><code>launchrig.yml</code></strong><p>Declare app identity, wallet fixture, network, core flows, and privacy policy.</p></div>
           <div class="flow-step"><span class="number">02</span><strong>Validate</strong><p>Reject unsafe or incomplete release configuration before device access.</p></div>
@@ -830,7 +873,7 @@
       <div class="canvas">
         <span class="slide-index">04 / 10</span>
         <p class="eyebrow">Working proof, not a concept</p>
-        <h2>Every controlled failure stayed red. Every paired fix turned green.</h2>
+        <h2>Broken recovery fails. The paired fix passes.</h2>
         <div class="proof-layout">
           <div class="proof-board" aria-label="Controlled mobile matrix">
             <div class="result fail"><span class="status">EXPECTED FAIL</span><strong>Rejection broken</strong></div>
@@ -862,7 +905,7 @@
       <div class="canvas">
         <span class="slide-index">05 / 10</span>
         <p class="eyebrow">Why now</p>
-        <h2>Solana Mobile is scaling. Release confidence has to scale with it.</h2>
+        <h2>More mobile apps raise the QA burden.</h2>
         <div class="now-grid">
           <div class="now-metric">
             <strong class="green">100K+</strong>
@@ -892,7 +935,7 @@
       <div class="canvas">
         <span class="slide-index">06 / 10</span>
         <p class="eyebrow">Why Solana Mobile</p>
-        <h2>Android wallet handoff and recovery through MWA.</h2>
+        <h2>MWA recovery today. Seeker next.</h2>
         <div class="boundary-layout">
           <div class="boundary current">
             <p class="eyebrow green">Established now</p>
@@ -928,7 +971,7 @@
       <div class="canvas">
         <span class="slide-index">07 / 10</span>
         <p class="eyebrow">The missing layer in the stack</p>
-        <h2 class="comparison-title">LaunchRig connects tools that solve different parts of mobile QA.</h2>
+        <h2 class="comparison-title">The missing release decision layer.</h2>
         <div class="comparison-wrap">
           <table class="comparison">
             <thead>
@@ -955,7 +998,7 @@
       <div class="canvas">
         <span class="slide-index">08 / 10</span>
         <p class="eyebrow">Founder-led execution</p>
-        <h2>The strongest team credential today is shipped engineering evidence.</h2>
+        <h2>Shipped engineering is the execution record.</h2>
         <div class="execution-grid">
           <div class="shipped-list">
             <div class="shipped-item"><span class="num">01</span><div><strong>Working TypeScript CLI</strong><span>Config validation, device doctor, run, matrix, reports, and proof verification.</span></div></div>
