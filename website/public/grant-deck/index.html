@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="en" data-status="review-ready-unpublished">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="LaunchRig Solana Mobile Builder Grant pitch deck." />
+  <title>LaunchRig | Solana Mobile Builder Grant</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f5f7fa;
+      --ink-soft: #c0c8d4;
+      --muted: #7f8a9a;
+      --bg: #090d14;
+      --surface: #101722;
+      --surface-2: #151e2c;
+      --surface-3: #0d131d;
+      --line: #263142;
+      --line-strong: #3b485c;
+      --green: #14f195;
+      --cyan: #25d9f8;
+      --violet: #9945ff;
+      --amber: #f2bd62;
+      --red: #ff7878;
+      --shadow: rgba(1, 5, 12, .52);
+      --max: 1480px;
+      --radius: 20px;
+      --radius-sm: 12px;
+      --slide-pad: clamp(34px, 5vw, 78px);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button, a { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, a:focus-visible {
+      outline: 3px solid var(--cyan);
+      outline-offset: 3px;
+    }
+    a { color: inherit; text-underline-offset: 4px; }
+    code, .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-rail {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 80;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      height: 4px;
+    }
+    .signal-rail span:nth-child(1) { background: var(--cyan); }
+    .signal-rail span:nth-child(2) { background: var(--violet); }
+    .signal-rail span:nth-child(3) { background: var(--green); }
+
+    .deck-chrome {
+      position: fixed;
+      inset: 4px 0 auto;
+      z-index: 70;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 58px;
+      padding: 0 clamp(20px, 3.2vw, 52px);
+      border-bottom: 1px solid rgba(59, 72, 92, .55);
+      background: rgba(9, 13, 20, .92);
+      backdrop-filter: blur(18px);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 760;
+      letter-spacing: -.02em;
+    }
+    .brand-mark { width: 30px; height: 30px; object-fit: contain; }
+    .hero-emblem {
+      display: block;
+      width: clamp(68px, 7vw, 102px);
+      height: clamp(68px, 7vw, 102px);
+      margin-bottom: 24px;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 22px rgba(37, 217, 248, .15));
+    }
+    .grant-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 9px;
+      border: 1px solid var(--amber);
+      border-radius: 999px;
+      color: var(--amber);
+      font: 700 11px "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    .chrome-right { display: flex; align-items: center; gap: 18px; }
+    .key-hint { color: var(--muted); font-size: 13px; }
+
+    .deck {
+      position: fixed;
+      inset: 63px 0 60px;
+      overflow: hidden;
+    }
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: auto;
+      background: var(--bg);
+    }
+    .slide.is-active { display: block; animation: reveal 260ms ease-out both; }
+    @keyframes reveal {
+      from { opacity: .9; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .canvas {
+      width: min(var(--max), 100%);
+      min-height: 100%;
+      margin: 0 auto;
+      padding: var(--slide-pad);
+      display: grid;
+      align-content: center;
+      position: relative;
+    }
+    .canvas.top { align-content: start; }
+    .slide-index {
+      position: absolute;
+      top: 25px;
+      right: var(--slide-pad);
+      color: var(--muted);
+      font: 700 13px "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .12em;
+    }
+    .eyebrow {
+      margin: 0 0 16px;
+      color: var(--cyan);
+      font: 760 13px "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      margin-bottom: 22px;
+      font-size: clamp(70px, 10vw, 154px);
+      line-height: .82;
+      letter-spacing: -.075em;
+      font-weight: 820;
+    }
+    h2 {
+      max-width: 1120px;
+      margin-bottom: 28px;
+      font-size: clamp(48px, 6vw, 92px);
+      line-height: .96;
+      letter-spacing: -.058em;
+      font-weight: 780;
+    }
+    h3 {
+      margin-bottom: 11px;
+      font-size: clamp(22px, 2vw, 31px);
+      line-height: 1.12;
+      letter-spacing: -.028em;
+    }
+    .lead {
+      max-width: 1020px;
+      margin-bottom: 0;
+      color: var(--ink-soft);
+      font-size: clamp(25px, 2.2vw, 36px);
+      line-height: 1.32;
+      letter-spacing: -.02em;
+    }
+    .quiet { color: var(--muted); }
+    .green { color: var(--green); }
+    .cyan { color: var(--cyan); }
+    .violet { color: var(--violet); }
+    .amber { color: var(--amber); }
+    .red { color: var(--red); }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(390px, .75fr);
+      gap: clamp(36px, 6vw, 92px);
+      align-items: center;
+    }
+    .hero-tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      color: var(--ink-soft);
+      background: var(--surface-3);
+      font: 700 12px "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .pill.live { border-color: rgba(20, 241, 149, .6); color: var(--green); }
+    .terminal {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #0b111a;
+      box-shadow: 0 28px 80px var(--shadow);
+      transform: rotate(1.1deg);
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 42px;
+      padding: 0 15px;
+      border-bottom: 1px solid var(--line);
+      background: #121a26;
+    }
+    .terminal-bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+    .terminal-body {
+      padding: 25px;
+      color: var(--ink-soft);
+      font: 600 clamp(14px, 1.25vw, 19px)/1.75 "SFMono-Regular", Consolas, monospace;
+    }
+    .terminal-body p { margin-bottom: 2px; }
+    .terminal-body .cmd { color: var(--cyan); }
+
+    .origin-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(420px, .9fr);
+      gap: clamp(34px, 6vw, 90px);
+      align-items: end;
+    }
+    .origin-card {
+      border-left: 3px solid var(--violet);
+      padding: 5px 0 5px 28px;
+    }
+    .origin-card p {
+      margin-bottom: 0;
+      color: var(--ink-soft);
+      font-size: clamp(23px, 2.2vw, 34px);
+      line-height: 1.42;
+    }
+    .failure-stack { display: grid; gap: 12px; }
+    .failure {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 16px;
+      align-items: center;
+      min-height: 92px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .failure strong { font-size: 22px; }
+    .failure span { display: block; margin-top: 3px; color: var(--muted); font-size: 16px; }
+    .failure .code {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(255, 120, 120, .55);
+      border-radius: 10px;
+      color: var(--red);
+      font: 800 14px "SFMono-Regular", Consolas, monospace;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-top: 36px;
+    }
+    .flow-step {
+      position: relative;
+      min-height: 220px;
+      padding: 24px 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .flow-step::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -13px;
+      width: 12px;
+      height: 1px;
+      background: var(--line-strong);
+    }
+    .flow-step:last-child::after { display: none; }
+    .flow-step .number { color: var(--violet); font: 800 13px "SFMono-Regular", Consolas, monospace; }
+    .flow-step strong { display: block; margin: 46px 0 10px; font-size: 25px; letter-spacing: -.025em; }
+    .flow-step p { margin-bottom: 0; color: var(--muted); font-size: 17px; line-height: 1.45; }
+    .safety-row { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 20px; color: var(--ink-soft); font-size: 17px; }
+    .safety-row span { padding-right: 13px; border-right: 1px solid var(--line); }
+    .safety-row span:last-child { border-right: 0; }
+
+    .proof-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(350px, .75fr);
+      gap: clamp(28px, 5vw, 76px);
+      align-items: stretch;
+    }
+    .proof-board {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .result {
+      min-height: 108px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .result .status { font: 800 13px "SFMono-Regular", Consolas, monospace; letter-spacing: .08em; }
+    .result strong { display: block; margin-top: 22px; font-size: 21px; }
+    .result.pass .status { color: var(--green); }
+    .result.fail .status { color: var(--red); }
+    .proof-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .reference-proof {
+      grid-column: 1 / -1;
+      min-height: 108px;
+      padding: 18px;
+      border: 1px solid rgba(20, 241, 149, .45);
+      border-radius: var(--radius-sm);
+      background: rgba(20, 241, 149, .055);
+    }
+    .reference-proof strong { display: block; color: var(--green); font-size: 36px; line-height: 1; }
+    .reference-proof span { display: block; margin-top: 10px; color: var(--ink-soft); font-size: 18px; }
+    .proof-metric {
+      min-height: 130px;
+      padding: 17px;
+      border-top: 2px solid var(--cyan);
+      background: var(--surface-3);
+    }
+    .proof-metric strong { display: block; font-size: clamp(38px, 4vw, 62px); line-height: .9; letter-spacing: -.055em; }
+    .proof-metric span { display: block; margin-top: 11px; color: var(--muted); font-size: 18px; }
+    .proof-chip-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+    .proof-chip { padding: 8px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-soft); font-size: 15px; }
+    .proof-caption { grid-column: 1 / -1; margin: 4px 0 0; color: var(--amber); font-size: 18px; line-height: 1.4; }
+    .proof-links { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 4px 0 0; color: var(--cyan); font-size: 16px; }
+    .proof-links a { color: var(--cyan); }
+    .proof-id {
+      grid-column: 1 / -1;
+      margin-top: 10px;
+      color: var(--muted);
+      font: 11px/1.55 "SFMono-Regular", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .now-grid {
+      display: grid;
+      grid-template-columns: .9fr .9fr 1.2fr;
+      gap: 14px;
+      margin-top: 38px;
+      align-items: stretch;
+    }
+    .now-metric, .now-thesis {
+      min-height: 270px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .now-metric strong { display: block; font-size: clamp(64px, 6.5vw, 104px); line-height: .88; letter-spacing: -.07em; }
+    .now-metric p { margin: 25px 0 16px; color: var(--ink-soft); font-size: 23px; }
+    .source-link { color: var(--muted); font-size: 17px; }
+    .source-link a { color: var(--cyan); }
+    .now-thesis { display: grid; align-content: center; border-color: var(--line-strong); }
+    .now-thesis p { margin-bottom: 0; color: var(--ink-soft); font-size: clamp(24px, 2.3vw, 35px); line-height: 1.35; }
+    .inference { display: block; margin-bottom: 14px; color: var(--amber); font: 800 11px "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+
+    .boundary-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      margin-top: 26px;
+    }
+    .boundary {
+      min-height: 310px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .boundary.current { border-top: 3px solid var(--green); }
+    .boundary.next { border-top: 3px solid var(--violet); }
+    .boundary ul { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 16px; }
+    .boundary li { display: grid; grid-template-columns: 18px 1fr; gap: 12px; color: var(--ink-soft); font-size: 20px; line-height: 1.35; }
+    .boundary li::before { content: "+"; color: var(--cyan); font: 800 15px "SFMono-Regular", Consolas, monospace; }
+    .stack-note { margin-top: 18px; color: var(--muted); font-size: 17px; line-height: 1.5; }
+    .stack-note a { color: var(--cyan); }
+
+    .comparison-wrap {
+      margin-top: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface-3);
+    }
+    .comparison {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .comparison th, .comparison td {
+      padding: 15px 16px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 18px;
+      line-height: 1.32;
+    }
+    .comparison th:last-child, .comparison td:last-child { border-right: 0; }
+    .comparison tr:last-child td { border-bottom: 0; }
+    .comparison th { color: var(--muted); background: var(--surface); font: 760 18px "SFMono-Regular", Consolas, monospace; letter-spacing: .04em; text-transform: uppercase; }
+    .comparison th:first-child, .comparison td:first-child { width: 23%; }
+    .comparison th:last-child, .comparison td:last-child { background: rgba(20, 241, 149, .055); }
+    .yes { color: var(--green); font-weight: 760; }
+    .partial { color: var(--amber); }
+    .layer-note { margin-top: 15px; color: var(--muted); font-size: 14px; }
+    .comparison-title { max-width: 1400px; font-size: clamp(46px, 4.8vw, 76px); }
+
+    .execution-grid {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: clamp(30px, 5vw, 74px);
+      align-items: start;
+    }
+    .shipped-list { display: grid; gap: 14px; }
+    .shipped-item {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 17px;
+      align-items: center;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .shipped-item:last-child { border-bottom: 0; }
+    .shipped-item .num { color: var(--violet); font: 800 13px "SFMono-Regular", Consolas, monospace; }
+    .shipped-item strong { display: block; font-size: 22px; }
+    .shipped-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 16px; }
+    .execution-card {
+      padding: 27px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .execution-card .big { margin: 17px 0 10px; font-size: clamp(38px, 4vw, 62px); line-height: .95; letter-spacing: -.055em; }
+    .execution-card p { color: var(--ink-soft); font-size: 19px; line-height: 1.45; }
+    .execution-card .status-line { margin: 25px 0 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--amber); font-size: 14px; }
+
+    .timeline-grid { display: grid; gap: 12px; margin-top: 25px; }
+    .milestone-slide .canvas { padding-top: clamp(28px, 3vw, 46px); padding-bottom: clamp(28px, 3vw, 46px); }
+    .milestone-title { max-width: 1400px; margin-bottom: 19px; font-size: clamp(46px, 4.8vw, 76px); }
+    .milestone-slide .timeline-grid { gap: 8px; margin-top: 14px; }
+    .milestone {
+      display: grid;
+      grid-template-columns: 130px 140px minmax(0, 1fr) 100px;
+      gap: 22px;
+      align-items: center;
+      min-height: 126px;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .milestone-slide .milestone { min-height: 108px; padding: 16px 20px; }
+    .milestone .id { color: var(--cyan); font: 800 15px "SFMono-Regular", Consolas, monospace; letter-spacing: .08em; }
+    .milestone .weeks { color: var(--ink-soft); font-size: 18px; }
+    .milestone .copy strong { display: block; font-size: 22px; }
+    .milestone .copy span { display: block; margin-top: 5px; color: var(--muted); font-size: 17px; line-height: 1.35; }
+    .milestone .amount { text-align: right; font-size: 28px; font-weight: 800; letter-spacing: -.04em; }
+    .public-output { margin: 17px 0 0; color: var(--ink-soft); font-size: 17px; }
+    .milestone-slide .public-output { margin-top: 11px; font-size: 15px; }
+    .public-output strong { color: var(--green); }
+
+    .ask-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(400px, .85fr);
+      gap: clamp(36px, 6vw, 92px);
+      align-items: center;
+    }
+    .ask-amount {
+      margin: 2px 0 22px;
+      font-size: clamp(88px, 11vw, 168px);
+      line-height: .82;
+      letter-spacing: -.085em;
+      font-weight: 840;
+    }
+    .allocation { display: grid; gap: 8px; }
+    .allocation-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink-soft);
+      font-size: 18px;
+    }
+    .allocation-row strong { color: var(--ink); }
+    .closing {
+      margin: 32px 0 0;
+      padding-left: 22px;
+      border-left: 3px solid var(--green);
+      color: var(--ink-soft);
+      font-size: clamp(23px, 2.2vw, 33px);
+      line-height: 1.35;
+    }
+    .publication-status {
+      margin-top: 28px;
+      color: var(--amber);
+      font: 700 12px/1.5 "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .presenter-notes { display: none; }
+    .scroll-hint {
+      position: fixed;
+      right: clamp(20px, 3.2vw, 52px);
+      bottom: 75px;
+      z-index: 62;
+      display: none;
+      min-height: 34px;
+      align-items: center;
+      padding: 0 11px;
+      border: 1px solid var(--amber);
+      border-radius: 999px;
+      background: var(--surface-3);
+      color: var(--amber);
+      font: 700 11px "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .04em;
+    }
+    .scroll-hint.is-visible { display: inline-flex; }
+    .controls {
+      position: fixed;
+      inset: auto 0 0;
+      z-index: 70;
+      min-height: 60px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 20px;
+      padding: 0 clamp(20px, 3.2vw, 52px);
+      border-top: 1px solid rgba(59, 72, 92, .62);
+      background: rgba(9, 13, 20, .94);
+      backdrop-filter: blur(18px);
+    }
+    .progress-track {
+      height: 3px;
+      background: var(--line);
+      overflow: hidden;
+    }
+    .progress-fill { width: 10%; height: 100%; background: var(--green); transition: width 180ms ease-out; }
+    .nav-buttons { display: flex; align-items: center; gap: 8px; }
+    .nav-button, .utility-button {
+      min-width: 40px;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: background-color 120ms ease-out, border-color 120ms ease-out, transform 120ms ease-out;
+    }
+    .nav-button:hover, .utility-button:hover { border-color: var(--line-strong); background: var(--surface-2); }
+    .nav-button:active, .utility-button:active { transform: translateY(1px); }
+    .counter { min-width: 74px; text-align: center; color: var(--ink-soft); font: 700 13px "SFMono-Regular", Consolas, monospace; }
+    .utility { justify-self: end; display: flex; align-items: center; gap: 8px; }
+    .utility-button { padding: 0 12px; color: var(--ink-soft); font-size: 13px; }
+
+    .panel-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      place-items: end;
+      background: rgba(5, 9, 15, .64);
+    }
+    .panel-overlay.is-open { display: grid; }
+    .side-panel {
+      width: min(600px, 100%);
+      height: 100%;
+      overflow: auto;
+      padding: 34px;
+      border-left: 1px solid var(--line-strong);
+      background: var(--surface-3);
+      box-shadow: -24px 0 80px var(--shadow);
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 30px; }
+    .panel-head h2 { margin: 0; font-size: 32px; }
+    .panel-close {
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .panel-body { color: var(--ink-soft); font-size: 18px; line-height: 1.62; }
+    .panel-body h3 { color: var(--ink); font-size: 24px; }
+    .panel-body ul { padding-left: 22px; }
+    .panel-body li { margin-bottom: 9px; }
+    .source-list { display: grid; gap: 12px; }
+    .source-item { padding: 17px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+    .source-item strong { display: block; margin-bottom: 5px; }
+    .source-item a { color: var(--cyan); overflow-wrap: anywhere; font-size: 14px; }
+    .source-item span { display: block; margin-top: 7px; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 1040px) {
+      .deck { bottom: 66px; }
+      .canvas { align-content: start; }
+      .hero-grid, .origin-grid, .proof-layout, .execution-grid, .ask-grid { grid-template-columns: 1fr; }
+      .hero-grid { padding-top: 20px; }
+      .terminal { max-width: 680px; transform: none; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .flow-step::after { display: none; }
+      .now-grid { grid-template-columns: 1fr; }
+      .boundary-layout { grid-template-columns: 1fr; }
+      .comparison-wrap { overflow-x: auto; }
+      .comparison { min-width: 850px; }
+      .milestone { grid-template-columns: 90px 110px minmax(0, 1fr) 80px; }
+    }
+
+    @media (max-width: 700px) {
+      :root { --slide-pad: 25px; }
+      .deck-chrome { padding: 0 16px; }
+      .key-hint { display: none; }
+      .deck { top: 63px; }
+      h1 { font-size: 68px; }
+      h2 { font-size: 46px; }
+      .lead { font-size: 23px; }
+      .flow, .proof-board, .proof-metrics { grid-template-columns: 1fr; }
+      .proof-id { grid-column: auto; }
+      .milestone { grid-template-columns: 1fr auto; gap: 10px; }
+      .milestone .weeks, .milestone .copy { grid-column: 1 / -1; }
+      .milestone .amount { grid-column: 2; grid-row: 1; }
+      .controls { grid-template-columns: 1fr auto; padding: 0 12px; }
+      .progress-track { display: none; }
+      .utility { display: flex; gap: 5px; }
+      .utility-button { min-width: 36px; padding: 0; font-size: 0; }
+      #notesButton::after { content: "N"; font-size: 13px; }
+      #sourcesButton::after { content: "S"; font-size: 13px; }
+      #printButton { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .slide.is-active { animation: none; }
+      .progress-fill { transition: none; }
+    }
+
+    @media print {
+      @page { size: 16in 9in; margin: 0; }
+      html, body { width: auto; height: auto; overflow: visible; background: var(--bg); }
+      .signal-rail, .deck-chrome, .controls, .panel-overlay, .scroll-hint { display: none !important; }
+      .deck { position: static; overflow: visible; }
+      .slide, .slide.is-active {
+        position: relative;
+        display: block;
+        width: 16in;
+        height: 9in;
+        overflow: hidden;
+        break-after: page;
+        animation: none;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .canvas {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        padding: .48in .62in;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .canvas.top { justify-content: flex-start; }
+      h1 { font-size: 112px; }
+      h2, .comparison-title, .milestone-title { max-width: 100%; margin-bottom: 18px; font-size: 62px; }
+      .hero-grid, .origin-grid, .proof-layout, .now-grid, .boundary-layout, .execution-grid, .ask-grid {
+        display: flex;
+        align-items: center;
+        gap: .42in;
+      }
+      .hero-grid > *, .origin-grid > *, .proof-layout > *, .boundary-layout > *, .execution-grid > *, .ask-grid > * { flex: 1; }
+      .now-grid > * { flex: 1; }
+      .failure-stack, .shipped-list, .timeline-grid, .allocation { display: block; }
+      .failure, .shipped-item, .allocation-row { display: flex; }
+      .failure, .shipped-item { margin-bottom: 8px; }
+      .flow { display: flex; gap: 10px; margin-top: 20px; }
+      .flow-step { flex: 1; min-height: 190px; }
+      .proof-board, .proof-metrics { display: flex; flex-wrap: wrap; gap: 8px; }
+      .proof-board .result { width: calc(50% - 4px); }
+      .reference-proof, .proof-chip-row, .proof-caption { width: 100%; }
+      .proof-metric { width: calc(50% - 4px); }
+      .now-thesis { display: block; }
+      .boundary ul { display: block; }
+      .boundary li { display: flex; margin-bottom: 12px; }
+      .comparison-wrap { margin-top: 12px; }
+      .milestone-slide .canvas { padding: .36in .58in; }
+      .milestone { display: flex; min-height: 102px; margin-bottom: 7px; }
+      .milestone .id { flex: 0 0 86px; }
+      .milestone .weeks { flex: 0 0 110px; }
+      .milestone .copy { flex: 1; }
+      .milestone .amount { flex: 0 0 80px; }
+      .public-output { margin-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="signal-rail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <header class="deck-chrome">
+    <div class="brand">
+      <img class="brand-mark" src="https://launchrig.vercel.app/assets/ion-wing.webp" alt="" />
+      <span>LaunchRig</span>
+      <span class="grant-badge">Grant proposal</span>
+    </div>
+    <div class="chrome-right">
+      <span class="key-hint">Arrow keys navigate · N notes · S sources</span>
+    </div>
+  </header>
+
+  <main id="deck" class="deck" data-status="review-ready-unpublished" aria-live="polite">
+    <section class="slide is-active" data-slide="1" aria-label="Slide 1 of 10">
+      <div class="canvas">
+        <span class="slide-index">01 / 10</span>
+        <div class="hero-grid">
+          <div>
+            <p class="eyebrow">Solana Mobile Builder Grant · Developer Tooling</p>
+            <img class="hero-emblem" src="https://launchrig.vercel.app/assets/ion-wing.webp" alt="LaunchRig Ion Wing mark" />
+            <h1>Launch<span class="green">Rig</span></h1>
+            <p class="lead">LaunchRig is the release test rig for Solana Mobile apps.</p>
+            <p class="lead" style="margin-top: 22px; color: var(--ink);">A wallet flow can authenticate and still fail on the way back.</p>
+            <div class="hero-tags">
+              <span class="pill live">Working local prototype</span>
+              <span class="pill">$28K milestone ask</span>
+              <span class="pill">12 weeks</span>
+            </div>
+          </div>
+          <div class="terminal" aria-label="LaunchRig result preview">
+            <div class="terminal-bar"><i></i><i></i><i></i></div>
+            <div class="terminal-body">
+              <p class="cmd">Published evidence summary</p>
+              <p><span class="green">PASS</span> reference MWA 3 / 3</p>
+              <p><span class="red">EXPECTED FAIL</span> rejection broken</p>
+              <p><span class="green">PASS</span> rejection fixed</p>
+              <p><span class="red">EXPECTED FAIL</span> stale auth broken</p>
+              <p><span class="green">PASS</span> stale auth fixed</p>
+              <p><span class="red">EXPECTED FAIL</span> process death broken</p>
+              <p><span class="green">PASS</span> process death fixed</p>
+              <p class="quiet">evidence: 9 reports / 18 checks</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Opening</h3>
+        <p>LaunchRig is a developer tool for the failure boundary after a mobile wallet interaction. The current proof is a working local prototype on ordinary Android, not a claim of Seeker or production-wallet coverage.</p>
+        <p><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/2547c3a1806a9a1186c8f8758355dab5588933d5/demo">Watch the published 90-second demo</a> after this opening. It walks through recorded evidence and source contracts, without live phone execution or narration.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="2" aria-label="Slide 2 of 10">
+      <div class="canvas">
+        <span class="slide-index">02 / 10</span>
+        <p class="eyebrow">The origin and the problem</p>
+        <h2>The failure happens after the wallet says done.</h2>
+        <div class="origin-grid">
+          <div class="origin-card">
+            <p>I wanted to build for Solana Mobile without a Seeker, on a laptop that could not comfortably carry an emulator-heavy workflow. Testing on an ordinary USB-connected Android phone exposed the larger problem: successful authentication did not prove safe recovery from every mobile lifecycle path.</p>
+          </div>
+          <div class="failure-stack" aria-label="Controlled failure taxonomy">
+            <div class="failure"><span class="code">R01</span><div><strong>User rejection</strong><span>The app must recover without a false success state.</span></div></div>
+            <div class="failure"><span class="code">R02</span><div><strong>Stale authorization</strong><span>The session must renew or fail clearly.</span></div></div>
+            <div class="failure"><span class="code">R03</span><div><strong>Process death</strong><span>Recover to UNKNOWN and enable retry.</span></div></div>
+          </div>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Founder story</h3>
+        <p>This account comes from the actual build constraints: no Seeker, limited laptop resources, and an ordinary Android phone connected over USB. It makes no claim of prior user losses, employer experience, or a production incident.</p>
+        <p>The three cases are deliberately controlled fixture regressions. They are not defects found in an external publisher app.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="3" aria-label="Slide 3 of 10">
+      <div class="canvas">
+        <span class="slide-index">03 / 10</span>
+        <p class="eyebrow">One versioned release contract</p>
+        <h2>Turn wallet and lifecycle checks into one repeatable gate.</h2>
+        <div class="flow" aria-label="LaunchRig workflow">
+          <div class="flow-step"><span class="number">01</span><strong><code>launchrig.yml</code></strong><p>Declare app identity, wallet fixture, network, core flows, and privacy policy.</p></div>
+          <div class="flow-step"><span class="number">02</span><strong>Validate</strong><p>Reject unsafe or incomplete release configuration before device access.</p></div>
+          <div class="flow-step"><span class="number">03</span><strong>Doctor</strong><p>Check the authorized Android device, APK bytes, wallet, and runner.</p></div>
+          <div class="flow-step"><span class="number">04</span><strong>Run suites</strong><p>Use <code>run</code> for reference flows and <code>matrix</code> for controlled recovery pairs.</p></div>
+          <div class="flow-step"><span class="number">05</span><strong>Inspect evidence</strong><p>Emit bounded HTML, JSON, and JUnit results. Public checksums verify file integrity.</p></div>
+        </div>
+        <div class="safety-row">
+          <span>Current config rejects mainnet</span>
+          <span>Exact artifact checks</span>
+          <span>Identifiers redacted</span>
+          <span>Raw device evidence stays private</span>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Product workflow</h3>
+        <p>The publisher supplies stable app flows. LaunchRig owns the Solana-specific validation, lifecycle matrix, artifact binding, run policy, and normalized output.</p>
+        <p>The HTML, JSON, and JUnit reports serve human review, machine checking, and CI. The normalized nine-report evidence package is public. Its standalone semantic verifier remains internal. Public checksums establish file integrity, not independent authenticity.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="4" aria-label="Slide 4 of 10">
+      <div class="canvas">
+        <span class="slide-index">04 / 10</span>
+        <p class="eyebrow">Working proof, not a concept</p>
+        <h2>Every controlled failure stayed red. Every paired fix turned green.</h2>
+        <div class="proof-layout">
+          <div class="proof-board" aria-label="Controlled mobile matrix">
+            <div class="result fail"><span class="status">EXPECTED FAIL</span><strong>Rejection broken</strong></div>
+            <div class="result pass"><span class="status">PASS</span><strong>Rejection fixed</strong></div>
+            <div class="result fail"><span class="status">EXPECTED FAIL</span><strong>Stale auth broken</strong></div>
+            <div class="result pass"><span class="status">PASS</span><strong>Stale auth fixed</strong></div>
+            <div class="result fail"><span class="status">EXPECTED FAIL</span><strong>Process death broken</strong></div>
+            <div class="result pass"><span class="status">PASS</span><strong>Process death fixed</strong></div>
+          </div>
+          <div class="proof-metrics">
+            <div class="reference-proof"><strong>3 × PASS</strong><span>consecutive reference MWA suites</span></div>
+            <div class="proof-metric"><strong>9</strong><span>normalized reports</span></div>
+            <div class="proof-metric"><strong>18</strong><span>scenario checks</span></div>
+            <div class="proof-chip-row"><span class="proof-chip">Two allowlisted builds were byte-identical</span><span class="proof-chip">Internal verifier passed</span></div>
+            <p class="proof-caption">One ordinary physical Android 12/API 31 profile. Self-recorded, unattested supporting technical evidence only.</p>
+            <p class="proof-links"><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/07160c9e71fa90a5723dbc3da5e42a2cd439996c/evidence/local-android-mwa-v2" target="_blank" rel="noreferrer">Inspect the normalized proof</a><a href="https://github.com/vignesh-chaturvedi/launchrig/blob/14bf99da7de198a605637dc3452cc4ff151e8e29/case-studies/android-wallet-recovery.md" target="_blank" rel="noreferrer">Read the recovery case study</a></p>
+          </div>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Proof boundary</h3>
+        <p>The device evidence covers exactly one ordinary physical Android 12/API 31 profile and does not generalize to Android as a whole.</p>
+        <p>The three red records are expected failures from deliberately broken fixtures. The proof establishes no external defect, publisher, on-chain transaction, production wallet, Seed Vault behavior, Seeker hardware, or grant eligibility.</p>
+        <p class="mono">Bundle sha256:2abad82c99415d792d6fde855564430fb374f878a90d808ca94b187e2abb050f<br />Proof 36908ca01e8727806253b0570948663b42cf092ea259026f43c34d29f237dd82</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="5" aria-label="Slide 5 of 10">
+      <div class="canvas">
+        <span class="slide-index">05 / 10</span>
+        <p class="eyebrow">Why now</p>
+        <h2>Solana Mobile is scaling. Release confidence has to scale with it.</h2>
+        <div class="now-grid">
+          <div class="now-metric">
+            <strong class="green">100K+</strong>
+            <p>power users exploring apps through the Solana dApp Store</p>
+            <div class="source-link"><a href="https://solanamobile.com/blog/solana-mobile-builder-grants-bring-your-best-seeker-and-skr-ideas" target="_blank" rel="noreferrer">Official grant guidance</a> · 14 Jul 2026</div>
+          </div>
+          <div class="now-metric">
+            <strong class="violet">1,000+</strong>
+            <p>live apps in the Solana dApp Store</p>
+            <div class="source-link"><a href="https://solanamobile.com/blog/1-000-dapps-smarter-discovery-and-a-bigger-seeker-season" target="_blank" rel="noreferrer">Official ecosystem update</a> · 14 Jul 2026</div>
+          </div>
+          <div class="now-thesis">
+            <span class="inference">Inference from official growth figures</span>
+            <p>As more apps ship to more mobile users, a shared Solana-specific release contract becomes more valuable than another one-off test checklist.</p>
+            <div class="source-link" style="margin-top: 22px;"><a href="https://solanamobile.com/grants" target="_blank" rel="noreferrer">The current grant brief</a> explicitly includes infrastructure and developer tooling.</div>
+          </div>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Why now</h3>
+        <p>The 100K+ and 1,000+ figures were reported by Solana Mobile on 14 July 2026 and checked again on 23 September 2026. They are dated ecosystem figures, not LaunchRig users, measured monthly active users, or independently verified current totals. The conclusion about standardized release evidence is our inference, not a quote from Solana Mobile.</p>
+        <p>No measured ecosystem defect rate or regression-cost estimate is asserted.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="6" aria-label="Slide 6 of 10">
+      <div class="canvas">
+        <span class="slide-index">06 / 10</span>
+        <p class="eyebrow">Why Solana Mobile</p>
+        <h2>Android wallet handoff and recovery through MWA.</h2>
+        <div class="boundary-layout">
+          <div class="boundary current">
+            <p class="eyebrow green">Established now</p>
+            <h3>Ordinary Android + development fixtures</h3>
+            <ul>
+              <li>Reference and Mock MWA mobile wallet flows</li>
+              <li>Wallet rejection, stale authorization, and process-death recovery</li>
+              <li>Reference requests use testnet; controlled cases use devnet</li>
+              <li>Artifact identity, bounded logs, and offline verification</li>
+            </ul>
+          </div>
+          <div class="boundary next">
+            <p class="eyebrow violet">Proposed post-award</p>
+            <h3>Actual Solana Mobile hardware qualification</h3>
+            <ul>
+              <li>Acquire or obtain separately permissioned Seeker access</li>
+              <li>Test production-wallet behavior as a distinct compatibility layer</li>
+              <li>Observe Seeker and Seed Vault-backed wallet behavior through MWA</li>
+              <li>Publish only separately permissioned, attributable results</li>
+            </ul>
+          </div>
+        </div>
+        <p class="stack-note">MWA is the open app-to-wallet protocol on Android. Solana Mobile documentation directs dApp developers to MWA, while Seed Vault is primarily consumed through wallets. Sources: <a href="https://docs.solanamobile.com/solana-mobile-stack/mobile-wallet-adapter" target="_blank" rel="noreferrer">MWA</a> and <a href="https://docs.solanamobile.com/solana-mobile-stack/seed-vault" target="_blank" rel="noreferrer">Seed Vault</a>, checked 23 Sep 2026.</p>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Stack fit</h3>
+        <p>The current technical integration is MWA, which Solana Mobile documents as the open protocol connecting Android apps and wallets. Seed Vault is hardware-level key custody on Seeker and is normally reached by dApps through a wallet and MWA.</p>
+        <p>Seed Vault compatibility, production-wallet readiness, and Seeker validation remain explicit post-award qualification tasks. Observing a Seed Vault-backed wallet through MWA does not independently validate secure key custody. The current evidence does not establish on-chain execution.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="7" aria-label="Slide 7 of 10">
+      <div class="canvas">
+        <span class="slide-index">07 / 10</span>
+        <p class="eyebrow">The missing layer in the stack</p>
+        <h2 class="comparison-title">LaunchRig connects tools that solve different parts of mobile QA.</h2>
+        <div class="comparison-wrap">
+          <table class="comparison">
+            <thead>
+              <tr><th>Layer</th><th>Generic Android automation</th><th>Mock MWA</th><th>Manual QA</th><th>LaunchRig</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Execute Android UI flows</td><td class="yes">Core purpose</td><td>Not its purpose</td><td class="yes">Human-driven</td><td class="partial">Orchestrates a runner</td></tr>
+              <tr><td>Provide a development wallet fixture</td><td>Bring your own</td><td class="yes">Core purpose</td><td class="partial">Optional</td><td class="partial">Pins and integrates it</td></tr>
+              <tr><td>Version LaunchRig's mobile release policy</td><td>Project-defined</td><td>Wallet behavior only</td><td>Checklist-dependent</td><td class="yes">MWA, lifecycle, artifacts, scope</td></tr>
+              <tr><td>Emit privacy-limited, offline-checkable proof</td><td>Project-defined</td><td>Not its purpose</td><td>Review-dependent</td><td class="yes">One normalized format</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="layer-note">This is a product-scope comparison, not a claim that every tool lacks extensibility. LaunchRig composes the execution and wallet layers into a Solana-specific release decision.</p>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Differentiation</h3>
+        <p>LaunchRig complements Maestro, Appium, Firebase Test Lab, and Mock MWA as the contract and evidence layer around a mobile runner and wallet fixture.</p>
+        <p>The wedge is a stable Solana Mobile rule set, exact artifact and scope binding, lifecycle recovery assertions, privacy-limited results, and offline checking.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="8" aria-label="Slide 8 of 10">
+      <div class="canvas">
+        <span class="slide-index">08 / 10</span>
+        <p class="eyebrow">Founder-led execution</p>
+        <h2>The strongest team credential today is shipped engineering evidence.</h2>
+        <div class="execution-grid">
+          <div class="shipped-list">
+            <div class="shipped-item"><span class="num">01</span><div><strong>Working TypeScript CLI</strong><span>Config validation, device doctor, run, matrix, reports, and proof verification.</span></div></div>
+            <div class="shipped-item"><span class="num">02</span><div><strong>25-rule local foundation</strong><span>Stable rule definitions with executable positive and negative fixture coverage.</span></div></div>
+            <div class="shipped-item"><span class="num">03</span><div><strong>Public source checks</strong><span>301 CLI passes, 2 optional APK skips, and 56 fixture app passes.</span></div></div>
+            <div class="shipped-item"><span class="num">04</span><div><strong>Physical-phone evidence pipeline</strong><span>Nine normalized reports and public checksums. Semantic verification remains internal.</span></div></div>
+          </div>
+          <aside class="execution-card">
+            <p class="eyebrow green">Execution model</p>
+            <div class="big">Founder-led</div>
+            <p><strong>Vignesh Chaturvedi</strong><br />Applicant and project lead</p>
+            <p>The MIT-licensed source, immutable v0.1.0 preview, normalized evidence, and controlled recovery case study are public.</p>
+            <p class="status-line">The current grant proposal lists the founder only. Public code and evidence show the work completed so far.</p>
+          </aside>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Team boundary</h3>
+        <p>Execution is currently founder-led and demonstrated through the working repository. The applicant chose to list no additional team member until a role and participation are confirmed. No unsupported biography or credentials are asserted.</p>
+        <p>The internal baseline recorded 319 LaunchRig tests and 56 fixture tests. The sanitized public checkout has 301 passing CLI tests and two optional cached-APK skips, plus 56 fixture passes. These counts describe different source scopes and do not imply new phone testing.</p>
+      </aside>
+    </section>
+
+    <section class="slide milestone-slide" data-slide="9" aria-label="Slide 9 of 10">
+      <div class="canvas top">
+        <span class="slide-index">09 / 10</span>
+        <p class="eyebrow">A 12-week public-good conversion</p>
+        <h2 class="milestone-title">Each tranche closes on inspectable evidence.</h2>
+        <div class="timeline-grid">
+          <div class="milestone">
+            <span class="id">M1</span><span class="weeks">Weeks 1-3</span>
+            <div class="copy"><strong>Publish the contract and qualify actual hardware</strong><span>Supported 25-check release, public fixtures and Action, compatibility policy, Seeker access, separately labeled production-wallet and Seed Vault findings.</span></div>
+            <span class="amount">$8K</span>
+          </div>
+          <div class="milestone">
+            <span class="id">M2</span><span class="weeks">Weeks 4-6</span>
+            <div class="copy"><strong>Run permissioned publisher pilots</strong><span>Complete three separately consented projects, publish operational measures, and report the 10-app and 100-run targets as achieved or missed.</span></div>
+            <span class="amount">$11K</span>
+          </div>
+          <div class="milestone">
+            <span class="id">M3 + M4</span><span class="weeks">Weeks 7-12</span>
+            <div class="copy"><strong>Public beta, review, v1, and handoff</strong><span>Report participation against the 25-project target, publish three approved case studies, complete independent review, and ship v1.0.0 with a maintenance guide.</span></div>
+            <span class="amount">$9K</span>
+          </div>
+        </div>
+        <p class="public-output"><strong>Open ecosystem output:</strong> repository, rule contract, fixtures, validation Action, compatibility policy, evidence format, case studies, and maintenance guidance. All post-award figures are proposed milestones or targets.</p>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Milestones</h3>
+        <p>M1 converts the local foundation into a supported public contract and adds actual hardware qualification. M2 tests integration cost and usefulness with permissioned projects. M3 and M4 harden, document, and hand the tool to the ecosystem.</p>
+        <p>A pilot can succeed even if it finds zero defects. Acceptance measures completion, setup time, qualifying run time, maintenance cost, verification result, and sharing review.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-slide="10" aria-label="Slide 10 of 10">
+      <div class="canvas">
+        <span class="slide-index">10 / 10</span>
+        <div class="ask-grid">
+          <div>
+            <p class="eyebrow">The ask</p>
+            <div class="ask-amount">$28<span class="green">K</span></div>
+            <p class="lead">A milestone grant to turn a working local release contract into a supported public tool validated on actual Solana Mobile hardware.</p>
+            <p class="closing">Fund the step from controlled ordinary-Android proof to open, permissioned, hardware-qualified ecosystem infrastructure.</p>
+            <p class="publication-status"><a href="https://launchrig.vercel.app/" target="_blank" rel="noreferrer">Visit LaunchRig</a> · <a href="https://github.com/vignesh-chaturvedi/launchrig#watch-the-90-second-demo" target="_blank" rel="noreferrer">Watch the demo</a> · <a href="https://github.com/vignesh-chaturvedi/launchrig" target="_blank" rel="noreferrer">Inspect the source</a></p>
+          </div>
+          <div>
+            <p class="eyebrow violet">Use of funds</p>
+            <div class="allocation">
+              <div class="allocation-row"><span>Engineering</span><strong>$19,500</strong></div>
+              <div class="allocation-row"><span>Devices and testing</span><strong>$3,000</strong></div>
+              <div class="allocation-row"><span>Security and privacy review</span><strong>$2,500</strong></div>
+              <div class="allocation-row"><span>Documentation and pilots</span><strong>$2,000</strong></div>
+              <div class="allocation-row"><span>Contingency</span><strong>$1,000</strong></div>
+              <div class="allocation-row"><span>Total · 12 weeks</span><strong class="green">$28,000</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="presenter-notes" data-notes>
+        <h3>Close</h3>
+        <p>The ask is $28,000 over 12 weeks, reconciled both by milestone tranche and use-of-funds category. The requested grant would not retroactively buy the current proof; it would fund public release quality, actual hardware access, permissioned pilots, independent review, and ecosystem handoff.</p>
+        <p>The website, source, release preview, proof, case study, and demo are public and linked in this deck. The proposal is for a 12-week grant. Application submission remains a separate applicant decision.</p>
+      </aside>
+    </section>
+  </main>
+
+  <div id="scrollHint" class="scroll-hint" role="status">↓ Scroll for the rest of this slide</div>
+
+  <nav class="controls" aria-label="Presentation controls">
+    <div class="progress-track" aria-hidden="true"><div id="progressFill" class="progress-fill"></div></div>
+    <div class="nav-buttons">
+      <button id="previousSlide" class="nav-button" type="button" aria-label="Previous slide">←</button>
+      <span id="slideCounter" class="counter">01 / 10</span>
+      <button id="nextSlide" class="nav-button" type="button" aria-label="Next slide">→</button>
+    </div>
+    <div class="utility">
+      <button id="notesButton" class="utility-button" type="button">N · Notes</button>
+      <button id="sourcesButton" class="utility-button" type="button">S · Sources</button>
+      <button id="printButton" class="utility-button" type="button">Print</button>
+    </div>
+  </nav>
+
+  <div id="notesOverlay" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="notesTitle" aria-hidden="true">
+    <aside class="side-panel">
+      <div class="panel-head"><h2 id="notesTitle">Presenter notes</h2><button class="panel-close" type="button" data-close-panel aria-label="Close notes">×</button></div>
+      <div id="notesContent" class="panel-body"></div>
+    </aside>
+  </div>
+
+  <div id="sourcesOverlay" class="panel-overlay" role="dialog" aria-modal="true" aria-labelledby="sourcesTitle" aria-hidden="true">
+    <aside class="side-panel">
+      <div class="panel-head"><h2 id="sourcesTitle">Source record</h2><button class="panel-close" type="button" data-close-panel aria-label="Close sources">×</button></div>
+      <div class="panel-body">
+        <p>Official sources checked 23 September 2026. Ecosystem figures describe the cited 14 July reports. Recheck sources and application fields on submission day.</p>
+        <div class="source-list">
+          <div class="source-item"><strong>LaunchRig website</strong><a href="https://launchrig.vercel.app/" target="_blank" rel="noreferrer">https://launchrig.vercel.app/</a><span>Public product website with demo and scope limits.</span></div>
+          <div class="source-item"><strong>LaunchRig public source</strong><a href="https://github.com/vignesh-chaturvedi/launchrig" target="_blank" rel="noreferrer">Public MIT-licensed repository</a><span>Source preview, not a packaged npm or APK product release.</span></div>
+          <div class="source-item"><strong>v0.1.0 source preview</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/releases/tag/v0.1.0" target="_blank" rel="noreferrer">Published release tag</a><span>Immutable source preview; no binary release assets.</span></div>
+          <div class="source-item"><strong>Normalized Android evidence</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/07160c9e71fa90a5723dbc3da5e42a2cd439996c/evidence/local-android-mwa-v2" target="_blank" rel="noreferrer">Pinned nine-report proof and checksum guide</a><span>Self-recorded, unattested. Checksums verify file integrity, not phone-session authenticity. Standalone semantic verifier remains internal.</span></div>
+          <div class="source-item"><strong>Controlled recovery case study</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/blob/14bf99da7de198a605637dc3452cc4ff151e8e29/case-studies/android-wallet-recovery.md" target="_blank" rel="noreferrer">Pinned broken and fixed recovery pairs</a><span>Controlled fixtures, not defects in external projects.</span></div>
+          <div class="source-item"><strong>90-second demo</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/2547c3a1806a9a1186c8f8758355dab5588933d5/demo" target="_blank" rel="noreferrer">Published video, captions, and source links</a><span>Evidence walkthrough with captions and transition cues, not live phone execution.</span></div>
+          <div class="source-item"><strong>Solana Mobile Builder Grants</strong><a href="https://solanamobile.com/grants" target="_blank" rel="noreferrer">https://solanamobile.com/grants</a><span>Criteria, infrastructure eligibility, milestones, and community value.</span></div>
+          <div class="source-item"><strong>Builder Grants guidance</strong><a href="https://solanamobile.com/blog/solana-mobile-builder-grants-bring-your-best-seeker-and-skr-ideas" target="_blank" rel="noreferrer">https://solanamobile.com/blog/solana-mobile-builder-grants-bring-your-best-seeker-and-skr-ideas</a><span>100K+ power users and developer-tooling emphasis, published 14 July 2026.</span></div>
+          <div class="source-item"><strong>1,000 dApps ecosystem update</strong><a href="https://solanamobile.com/blog/1-000-dapps-smarter-discovery-and-a-bigger-seeker-season" target="_blank" rel="noreferrer">https://solanamobile.com/blog/1-000-dapps-smarter-discovery-and-a-bigger-seeker-season</a><span>1,000+ live dApp Store apps, published 14 July 2026.</span></div>
+          <div class="source-item"><strong>Test with any Android device</strong><a href="https://docs.solanamobile.com/recipes/general/test-with-any-android-device" target="_blank" rel="noreferrer">https://docs.solanamobile.com/recipes/general/test-with-any-android-device</a><span>Ordinary Android development path and Mock MWA guidance.</span></div>
+          <div class="source-item"><strong>Mobile Wallet Adapter</strong><a href="https://docs.solanamobile.com/solana-mobile-stack/mobile-wallet-adapter" target="_blank" rel="noreferrer">https://docs.solanamobile.com/solana-mobile-stack/mobile-wallet-adapter</a><span>Open Android app-to-wallet protocol and handoff model.</span></div>
+          <div class="source-item"><strong>Seed Vault</strong><a href="https://docs.solanamobile.com/solana-mobile-stack/seed-vault" target="_blank" rel="noreferrer">https://docs.solanamobile.com/solana-mobile-stack/seed-vault</a><span>Hardware key custody boundary and dApp integration guidance.</span></div>
+          <div class="source-item"><strong>Mock MWA Wallet</strong><a href="https://github.com/solana-mobile/mock-mwa-wallet" target="_blank" rel="noreferrer">https://github.com/solana-mobile/mock-mwa-wallet</a><span>Official development fixture. Not a production wallet.</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    (() => {
+      const slides = Array.from(document.querySelectorAll("[data-slide]"));
+      const counter = document.getElementById("slideCounter");
+      const progress = document.getElementById("progressFill");
+      const notesOverlay = document.getElementById("notesOverlay");
+      const sourcesOverlay = document.getElementById("sourcesOverlay");
+      const notesContent = document.getElementById("notesContent");
+      const scrollHint = document.getElementById("scrollHint");
+      let current = 0;
+      let touchStartX = null;
+      let touchStartY = null;
+      let lastFocusedElement = null;
+
+      const twoDigits = (number) => String(number).padStart(2, "0");
+
+      const updateNotes = () => {
+        const notes = slides[current].querySelector("[data-notes]");
+        notesContent.innerHTML = notes ? notes.innerHTML : "<p>No notes for this slide.</p>";
+      };
+
+      const updateScrollHint = () => {
+        const slide = slides[current];
+        const hasMore = slide.scrollHeight > slide.clientHeight + 4 &&
+          slide.scrollTop + slide.clientHeight < slide.scrollHeight - 4;
+        scrollHint.classList.toggle("is-visible", hasMore);
+      };
+
+      const showSlide = (index) => {
+        current = Math.max(0, Math.min(slides.length - 1, index));
+        slides.forEach((slide, slideIndex) => slide.classList.toggle("is-active", slideIndex === current));
+        slides[current].scrollTop = 0;
+        counter.textContent = `${twoDigits(current + 1)} / ${twoDigits(slides.length)}`;
+        progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+        history.replaceState(null, "", `#${current + 1}`);
+        updateNotes();
+        window.requestAnimationFrame(updateScrollHint);
+      };
+
+      const closePanels = (restoreFocus = true) => {
+        [notesOverlay, sourcesOverlay].forEach((panel) => {
+          panel.classList.remove("is-open");
+          panel.setAttribute("aria-hidden", "true");
+        });
+        if (restoreFocus && lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
+        lastFocusedElement = null;
+      };
+
+      const togglePanel = (panel) => {
+        const shouldOpen = !panel.classList.contains("is-open");
+        if (!shouldOpen) { closePanels(); return; }
+        const focusOrigin = document.activeElement;
+        closePanels(false);
+        lastFocusedElement = focusOrigin;
+        panel.classList.add("is-open");
+        panel.setAttribute("aria-hidden", "false");
+        const firstControl = panel.querySelector("button, a[href]");
+        if (firstControl instanceof HTMLElement) firstControl.focus();
+      };
+
+      document.getElementById("previousSlide").addEventListener("click", () => showSlide(current - 1));
+      document.getElementById("nextSlide").addEventListener("click", () => showSlide(current + 1));
+      document.getElementById("notesButton").addEventListener("click", () => togglePanel(notesOverlay));
+      document.getElementById("sourcesButton").addEventListener("click", () => togglePanel(sourcesOverlay));
+      document.getElementById("printButton").addEventListener("click", () => window.print());
+      document.querySelectorAll("[data-close-panel]").forEach((button) => button.addEventListener("click", closePanels));
+      document.querySelectorAll(".panel-overlay").forEach((panel) => {
+        panel.addEventListener("click", (event) => { if (event.target === panel) closePanels(); });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        const key = event.key.toLowerCase();
+        const target = event.target;
+        const isInteractiveTarget = target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true']"));
+        const openPanel = [notesOverlay, sourcesOverlay].find((panel) => panel.classList.contains("is-open"));
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (key === "escape") { closePanels(); return; }
+        if (key === "tab" && openPanel) {
+          const focusable = Array.from(openPanel.querySelectorAll("button, a[href]"))
+            .filter((element) => element instanceof HTMLElement && !element.hasAttribute("disabled"));
+          if (focusable.length > 0) {
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+          }
+          return;
+        }
+        if (isInteractiveTarget) return;
+        if (key === "n") { togglePanel(notesOverlay); return; }
+        if (key === "s") { togglePanel(sourcesOverlay); return; }
+        if (openPanel) return;
+        if (key === "arrowright") { event.preventDefault(); showSlide(current + 1); return; }
+        if (key === "arrowleft") { event.preventDefault(); showSlide(current - 1); return; }
+        if (["arrowdown", "pagedown", " "].includes(key)) {
+          event.preventDefault();
+          const slide = slides[current];
+          const hasMore = slide.scrollTop + slide.clientHeight < slide.scrollHeight - 4;
+          if (hasMore) slide.scrollBy({ top: slide.clientHeight * .82, behavior: "smooth" });
+          else showSlide(current + 1);
+          return;
+        }
+        if (["arrowup", "pageup"].includes(key)) {
+          event.preventDefault();
+          const slide = slides[current];
+          if (slide.scrollTop > 4) slide.scrollBy({ top: -slide.clientHeight * .82, behavior: "smooth" });
+          else showSlide(current - 1);
+          return;
+        }
+        if (key === "home") { event.preventDefault(); showSlide(0); }
+        if (key === "end") { event.preventDefault(); showSlide(slides.length - 1); }
+      });
+
+      slides.forEach((slide) => slide.addEventListener("scroll", updateScrollHint, { passive: true }));
+      window.addEventListener("resize", updateScrollHint);
+
+      document.addEventListener("touchstart", (event) => {
+        const target = event.target;
+        const gestureBlocked = target instanceof Element && Boolean(target.closest(".comparison-wrap, .side-panel, button, a"));
+        const panelOpen = notesOverlay.classList.contains("is-open") || sourcesOverlay.classList.contains("is-open");
+        if (gestureBlocked || panelOpen) { touchStartX = null; touchStartY = null; return; }
+        touchStartX = event.changedTouches[0].clientX;
+        touchStartY = event.changedTouches[0].clientY;
+      }, { passive: true });
+      document.addEventListener("touchend", (event) => {
+        if (touchStartX === null || touchStartY === null) return;
+        const deltaX = event.changedTouches[0].clientX - touchStartX;
+        const deltaY = event.changedTouches[0].clientY - touchStartY;
+        if (Math.abs(deltaX) > 55 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+          showSlide(current + (deltaX < 0 ? 1 : -1));
+        }
+        touchStartX = null;
+        touchStartY = null;
+      }, { passive: true });
+
+      const hashSlide = Number.parseInt(window.location.hash.slice(1), 10);
+      showSlide(Number.isInteger(hashSlide) ? hashSlide - 1 : 0);
+    })();
+  </script>
+</body>
+</html>
