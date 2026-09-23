@@ -4,6 +4,8 @@ This checkout contains the LaunchRig product and controlled fixture source. Its 
 
 The checkout includes no raw phone reports, APKs, wallet secrets, completed operator records, or application drafts. A separately reviewed [normalized six-file evidence package](evidence/local-android-mwa-v2/README.md) is included after the v0.1.0 source preview. It contains limited device and test metadata with explicit claim boundaries, not the original report bytes. The v0.1.0 tag remains source-only. Tests create synthetic input in temporary directories. Two optional cached-APK checks skip when the local binaries are absent. A skipped binary check does not establish an artifact or physical-device result.
 
+The later [Android Preview source](apps/launchrig-preview/README.md) is a separate informational companion. It was installed for local UI review on one ordinary Android phone. The preview displays project status and the public deck, but has no wallet, transaction, or test-run functions. No preview APK or private phone screenshot is in this checkout, and its UI check does not change the normalized wallet evidence.
+
 ## Local verification
 
 ```bash

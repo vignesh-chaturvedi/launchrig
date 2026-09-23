@@ -16,3 +16,7 @@ dist/
 *.key
 private/
 internal/
+apps/launchrig-preview/.gradle/
+apps/launchrig-preview/build/
+apps/launchrig-preview/app/build/
+apps/launchrig-preview/local.properties

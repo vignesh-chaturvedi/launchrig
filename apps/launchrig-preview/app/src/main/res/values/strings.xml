@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="deck_unavailable">Deck unavailable. Check your connection, then tap Open to use your browser.</string>
+</resources>

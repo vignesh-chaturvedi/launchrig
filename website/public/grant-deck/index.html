@@ -465,6 +465,7 @@
     .execution-card .big { margin: 17px 0 10px; font-size: clamp(38px, 4vw, 62px); line-height: .95; letter-spacing: -.055em; }
     .execution-card p { color: var(--ink-soft); font-size: 19px; line-height: 1.45; }
     .execution-card .status-line { margin: 25px 0 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--amber); font-size: 14px; }
+    .execution-card .status-line a { color: var(--cyan); text-decoration: underline; }
 
     .timeline-grid { display: grid; gap: 12px; margin-top: 25px; }
     .milestone-slide .canvas { padding-top: clamp(28px, 3vw, 46px); padding-bottom: clamp(28px, 3vw, 46px); }
@@ -1012,7 +1013,7 @@
             <div class="big">Founder-led</div>
             <p><strong>Vignesh Chaturvedi</strong><br />Applicant and project lead</p>
             <p>The MIT-licensed source, immutable v0.1.0 preview, normalized evidence, and controlled recovery case study are public.</p>
-            <p class="status-line">The current grant proposal lists the founder only. Public code and evidence show the work completed so far.</p>
+            <p class="status-line"><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/main/apps/launchrig-preview" target="_blank" rel="noreferrer">Android Preview source</a>: project status and this deck, checked on one ordinary Android phone. No wallet, test-run controls, or store listing.</p>
           </aside>
         </div>
       </div>
@@ -1020,6 +1021,7 @@
         <h3>Team boundary</h3>
         <p>Execution is currently founder-led and demonstrated through the working repository. The applicant chose to list no additional team member until a role and participation are confirmed. No unsupported biography or credentials are asserted.</p>
         <p>The internal baseline recorded 319 LaunchRig tests and 56 fixture tests. The sanitized public checkout has 301 passing CLI tests and two optional cached-APK skips, plus 56 fixture passes. These counts describe different source scopes and do not imply new phone testing.</p>
+        <p>The separate Android Preview is an informational companion, not the CLI runner or the controlled fixture. It was installed and checked on one ordinary Android phone. Source is public, but no preview APK or dApp Store listing is published.</p>
       </aside>
     </section>
 
@@ -1117,6 +1119,7 @@
         <div class="source-list">
           <div class="source-item"><strong>LaunchRig website</strong><a href="https://launchrig.vercel.app/" target="_blank" rel="noreferrer">https://launchrig.vercel.app/</a><span>Public product website with demo and scope limits.</span></div>
           <div class="source-item"><strong>LaunchRig public source</strong><a href="https://github.com/vignesh-chaturvedi/launchrig" target="_blank" rel="noreferrer">Public MIT-licensed repository</a><span>Source preview, not a packaged npm or APK product release.</span></div>
+          <div class="source-item"><strong>Android Preview source</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/main/apps/launchrig-preview" target="_blank" rel="noreferrer">Informational Android companion</a><span>Local UI and deck checked on one ordinary Android phone; no wallet, test-run controls, or store listing.</span></div>
           <div class="source-item"><strong>v0.1.0 source preview</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/releases/tag/v0.1.0" target="_blank" rel="noreferrer">Published release tag</a><span>Immutable source preview; no binary release assets.</span></div>
           <div class="source-item"><strong>Normalized Android evidence</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/tree/07160c9e71fa90a5723dbc3da5e42a2cd439996c/evidence/local-android-mwa-v2" target="_blank" rel="noreferrer">Pinned nine-report proof and checksum guide</a><span>Self-recorded, unattested. Checksums verify file integrity, not phone-session authenticity. Standalone semantic verifier remains internal.</span></div>
           <div class="source-item"><strong>Controlled recovery case study</strong><a href="https://github.com/vignesh-chaturvedi/launchrig/blob/14bf99da7de198a605637dc3452cc4ff151e8e29/case-studies/android-wallet-recovery.md" target="_blank" rel="noreferrer">Pinned broken and fixed recovery pairs</a><span>Controlled fixtures, not defects in external projects.</span></div>

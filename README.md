@@ -16,6 +16,10 @@ https://github.com/user-attachments/assets/ffc9650b-b944-49c9-a24a-7e2b540c6f27
 
 An overview of the published Android and MWA results, including three controlled broken/fixed recovery pairs. Captions carry the explanation; audio contains only subtle transition cues, with no narration or music. This is a walkthrough of self-recorded, unattested evidence, not live phone execution or Seeker validation.
 
+## Android Preview
+
+The separate [LaunchRig Android Preview](apps/launchrig-preview/README.md) is a small informational companion with the Ion Wing icon, a native project-status screen, and the [public grant deck](https://launchrig.vercel.app/grant-deck/). It was installed and checked on one ordinary Android phone. It does not connect a wallet or run LaunchRig tests. The CLI remains the working test tool, and the controlled fixture app remains test input. Only preview source is published here; there is no downloadable APK or Solana dApp Store listing.
+
 ## Start with the CLI
 
 The [product website source and Vercel setup guide](website/README.md) are available separately. The website is static and does not require the CLI build or an Android phone.
